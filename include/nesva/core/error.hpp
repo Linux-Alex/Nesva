@@ -28,6 +28,9 @@ enum class ErrorCode : int {
     NotImplemented = 12,
     IntegrityError = 13,
     Internal = 14,
+    /// The destination itself is unusable (unwritable, disconnected, ...);
+    /// continuing with more files cannot succeed.
+    DestinationUnavailable = 15,
 };
 
 /// Lower-case token used in logs and JSON output ("invalid_argument", ...).

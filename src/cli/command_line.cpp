@@ -12,9 +12,9 @@ namespace {
 
 const QStringList& knownCommands() {
     static const QStringList commands = {
-        QStringLiteral("status"), QStringLiteral("doctor"),  QStringLiteral("jobs"),
-        QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("verify"),
-        QStringLiteral("version"), QStringLiteral("help"),
+        QStringLiteral("status"),  QStringLiteral("doctor"),  QStringLiteral("jobs"),
+        QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("archive"),
+        QStringLiteral("verify"),  QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
 }
@@ -71,8 +71,8 @@ Options parseArguments(const QStringList& arguments) {
     }
     if (!remaining.isEmpty() && !remaining.constFirst().startsWith(QLatin1Char('-'))) {
         const QString candidate = remaining.constFirst();
-        static const QStringList subcommands = {"list", "run",  "cancel", "test",
-                                                "show", "help", "add"};
+        static const QStringList subcommands = {"list",    "run",  "cancel", "test",
+                                                "restore", "show", "help",   "add"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
@@ -107,17 +107,22 @@ QString usageText() {
         "  --version, -V     Show version information\n"
         "\n"
         "Commands:\n"
-        "  status                  Overall application, database and storage status\n"
-        "  doctor                  Environment and dependency diagnostics\n"
-        "  jobs list               List configured jobs\n"
-        "  jobs run <job-id>       Run a job now (Phase 2)\n"
-        "  jobs cancel <job-id>    Cancel a running job (Phase 2)\n"
-        "  storage list            List configured storage providers\n"
-        "  storage test <id>       Test a storage connection (Phase 2)\n"
-        "  history list            List recent job runs\n"
-        "  verify <job-id>         Verify the last run of a job (Phase 2)\n"
-        "  version                 Show version information\n"
-        "  help                    Show this help\n"
+        "  status                    Overall application, database and storage status\n"
+        "  doctor                    Environment and dependency diagnostics\n"
+        "  jobs list                 List configured jobs\n"
+        "  jobs run <job-id>         Run an archive job now\n"
+        "                            options: --dry-run, --force, --retries <n>\n"
+        "  jobs cancel <job-id>      Recover a run whose owner process is gone\n"
+        "  storage list              List configured storage providers\n"
+        "  storage test <id>         Test a storage connection\n"
+        "  archive list <job-id>     List the archived objects of a job\n"
+        "  archive restore <job-id>  Restore into a directory\n"
+        "                            options: --to <dir>, --policy skip|overwrite|rename,\n"
+        "                                     --overwrite, --rename, --no-verify\n"
+        "  history list              List recent job runs (--limit <n>)\n"
+        "  verify <job-id>           Re-check archived objects against the manifest\n"
+        "  version                   Show version information\n"
+        "  help                      Show this help\n"
         "\n"
         "Exit codes:\n"
         "  0 success, 1 usage error, 2 runtime failure, 3 not found, 4 not implemented\n");

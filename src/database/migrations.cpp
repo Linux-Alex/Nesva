@@ -315,6 +315,31 @@ CREATE TABLE application_events (
     };
 }
 
+QStringList migrationV2Statements() {
+    return {
+        // Distinguish a genuinely running job from a row left behind by a
+        // crashed process, so stale runs can be recovered instead of blocking
+        // future runs.
+        QStringLiteral("ALTER TABLE job_runs ADD COLUMN owner_pid INTEGER"),
+        QStringLiteral("ALTER TABLE job_runs ADD COLUMN owner_host TEXT NOT NULL DEFAULT ''"),
+
+        // A source label gives every source its own namespace on the remote,
+        // so two sources with identical file names cannot collide.
+        QStringLiteral("ALTER TABLE backup_sources ADD COLUMN label TEXT NOT NULL DEFAULT ''"),
+
+        // Why a file was not transferred (incremental skip, exclusion, ...).
+        QStringLiteral("ALTER TABLE file_manifest ADD COLUMN skip_reason TEXT"),
+
+        // At most one running run per job: the database enforces the
+        // duplicate-execution guard instead of trusting the UI.
+        QStringLiteral("CREATE UNIQUE INDEX ux_job_runs_single_running "
+                       "ON job_runs(job_id) WHERE status = 'running'"),
+
+        QStringLiteral("CREATE INDEX idx_archive_objects_job ON archive_objects(job_id)"),
+        QStringLiteral("CREATE INDEX idx_restore_jobs_job ON restore_jobs(job_id)"),
+    };
+}
+
 } // namespace
 
 const QStringList& bootstrapStatements() {
@@ -336,6 +361,13 @@ const std::vector<Migration>& allMigrations() {
             QStringLiteral("initial-schema"),
             QStringLiteral("Baseline schema: settings, storage, jobs, runs, manifests, mail."),
             migrationV1Statements(),
+        },
+        Migration{
+            2,
+            QStringLiteral("archive-execution"),
+            QStringLiteral("Execution support: run ownership, source labels, skip reasons, "
+                           "single-running-run guard and lookup indexes."),
+            migrationV2Statements(),
         },
     };
     return migrations;

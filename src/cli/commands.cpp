@@ -14,6 +14,7 @@
 #include <QtSql/QSqlError>
 #include <QtSql/QSqlQuery>
 
+#include <cstdio>
 #include <algorithm>
 #include <utility>
 
@@ -24,6 +25,10 @@
 #include "nesva/core/logging.hpp"
 #include "nesva/core/paths.hpp"
 #include "nesva/db/database.hpp"
+#include "nesva/jobs/archive_restore.hpp"
+#include "nesva/jobs/archive_runner.hpp"
+#include "nesva/jobs/job_store.hpp"
+#include "nesva/providers/provider_factory.hpp"
 
 namespace nesva::cli {
 namespace {
@@ -348,6 +353,46 @@ struct CheckResult {
     QString detail;
 };
 
+/// Job plus the storage provider row it references (when any).
+struct JobContext {
+    jobs::ArchiveJob job;
+    std::optional<jobs::StorageProviderRecord> provider;
+};
+
+Result<JobContext> loadJobContext(jobs::JobStore& store, qint64 jobId) {
+    Result<jobs::ArchiveJob> job = store.getJob(jobId);
+    if (!job) {
+        return job.error();
+    }
+    JobContext context;
+    context.job = job.value();
+    if (context.job.storageProviderId) {
+        Result<jobs::StorageProviderRecord> provider = store.getProvider(*context.job.storageProviderId);
+        if (!provider) {
+            return provider.error();
+        }
+        context.provider = provider.value();
+    }
+    return context;
+}
+
+void printProgressLine(const jobs::RunProgress& progress, bool json) {
+    if (json) {
+        return;
+    }
+    QString line = QStringLiteral("[%1] %2")
+                       .arg(progress.filesProcessed)
+                       .arg(progress.filesTotal);
+    if (!progress.currentFile.isEmpty()) {
+        line += QStringLiteral(" ") + progress.currentFile;
+    }
+    if (!progress.message.isEmpty()) {
+        line += QStringLiteral(" — ") + progress.message;
+    }
+    std::fprintf(stderr, "%s\n", qPrintable(line));
+    std::fflush(stderr);
+}
+
 CheckResult makeCheck(const QString& name, const QString& status, const QString& detail) {
     return CheckResult{name, status, detail};
 }
@@ -613,6 +658,479 @@ int commandNotImplemented(const Options& options, const QString& what, const QSt
     return output.flushError(error, kExitNotImplemented);
 }
 
+
+int commandJobsRun(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "jobs run requires a job id"), kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<JobContext> loaded = loadJobContext(store, jobId);
+    if (!loaded) {
+        return output.flushError(loaded.error(),
+                                 loaded.error().code() == ErrorCode::NotFound ? kExitNotFound
+                                                                              : kExitFailure);
+    }
+
+    jobs::RunOptions runOptions;
+    runOptions.dryRun = options.flags.contains(QStringLiteral("dry-run"));
+    runOptions.forceFullTransfer = options.flags.contains(QStringLiteral("force"));
+    if (options.flags.contains(QStringLiteral("retries"))) {
+        bool ok = false;
+        const int retries = options.flags.value(QStringLiteral("retries")).toInt(&ok);
+        if (!ok || retries < 0 || retries > 20) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument, "--retries must be between 0 and 20"),
+                kExitUsage);
+        }
+        runOptions.maxAttempts = retries + 1;
+    }
+
+    config::SettingsStore settings(context.database);
+    const QString rcloneExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kRcloneBinaryPath), QStringLiteral("rclone"))
+            .valueOr(QStringLiteral("rclone"));
+
+    const CancellationToken cancellation;
+    jobs::ArchiveRunner runner(context.database, [quiet = options.quiet, json = options.json](
+                                                       const jobs::RunProgress& progress) {
+        if (!quiet) {
+            printProgressLine(progress, json);
+        }
+    });
+
+    const jobs::RunReport report = runner.run(loaded.value().job, loaded.value().provider, runOptions,
+                                              cancellation, QStringLiteral("cli"), rcloneExecutable);
+
+    QJsonObject summary;
+    summary.insert(QStringLiteral("run_id"), report.runId);
+    summary.insert(QStringLiteral("job"), report.jobName);
+    summary.insert(QStringLiteral("status"), report.status);
+    summary.insert(QStringLiteral("dry_run"), report.dryRun);
+    summary.insert(QStringLiteral("files_total"), report.counters.filesTotal);
+    summary.insert(QStringLiteral("files_transferred"), report.counters.filesTransferred);
+    summary.insert(QStringLiteral("files_skipped"), report.counters.filesSkipped);
+    summary.insert(QStringLiteral("files_failed"), report.counters.filesFailed);
+    summary.insert(QStringLiteral("bytes_transferred"), report.counters.bytesTransferred);
+    QJsonArray errors;
+    for (const QString& error : report.errors) {
+        errors.append(error);
+    }
+    summary.insert(QStringLiteral("errors"), errors);
+
+    output.add(QStringLiteral("ok"), report.succeeded());
+    output.add(QStringLiteral("result"), summary);
+    output.line(QStringLiteral("Job: %1").arg(report.jobName));
+    output.line(QStringLiteral("Status: %1%2")
+                    .arg(report.status, report.dryRun ? QStringLiteral(" (dry run)") : QString()));
+    output.line(QStringLiteral("Transferred: %1 file(s), %2 byte(s)")
+                    .arg(report.counters.filesTransferred)
+                    .arg(report.counters.bytesTransferred));
+    output.line(QStringLiteral("Unchanged: %1 file(s)").arg(report.counters.filesSkipped));
+    output.line(QStringLiteral("Failed: %1 file(s)").arg(report.counters.filesFailed));
+    for (const QString& error : report.errors) {
+        output.line(QStringLiteral("  error: %1").arg(error));
+    }
+
+    if (report.status == QStringLiteral("succeeded")) {
+        return output.flush(stdout, kExitSuccess);
+    }
+    if (report.status == QStringLiteral("cancelled")) {
+        return output.flush(stdout, kExitFailure);
+    }
+    return output.flush(stdout, kExitFailure);
+}
+
+int commandJobsCancel(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "jobs cancel requires a job id"), kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<jobs::ArchiveJob> job = store.getJob(jobId);
+    if (!job) {
+        return output.flushError(job.error(), kExitNotFound);
+    }
+
+    Result<bool> running = store.isJobRunning(jobId);
+    if (!running) {
+        return output.flushError(running.error(), kExitFailure);
+    }
+    if (!running.value()) {
+        return output.flushError(makeErrorValue(ErrorCode::NotFound,
+                                                "no run in progress for this job"),
+                                 kExitNotFound);
+    }
+
+    // A run owned by a live process cannot be cancelled from here; only the
+    // process that started it can do that (the desktop app, or the agent in a
+    // later phase). Runs whose owner is gone are recovered instead.
+    Result<int> recovered = store.recoverStaleRuns();
+    if (!recovered) {
+        return output.flushError(recovered.error(), kExitFailure);
+    }
+    if (recovered.value() > 0) {
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("recovered"), recovered.value());
+        output.line(QStringLiteral("Marked %1 abandoned run(s) of job '%2' as interrupted.")
+                        .arg(recovered.value())
+                        .arg(job.value().name));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    return output.flushError(
+        makeErrorValue(ErrorCode::Unsupported,
+                       "the run is owned by another running process",
+                       "cancel it from the Nesva window that started it"),
+        kExitFailure);
+}
+
+int commandStorageTest(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "storage test requires a storage id"),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 providerId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "storage id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<jobs::StorageProviderRecord> provider = store.getProvider(providerId);
+    if (!provider) {
+        return output.flushError(provider.error(), kExitNotFound);
+    }
+
+    providers::ProviderSelection selection;
+    selection.displayName = provider.value().name;
+    if (provider.value().isRcloneBacked()) {
+        selection.rcloneRemote = provider.value().rcloneRemote;
+        selection.basePath = provider.value().basePath;
+    } else {
+        selection.localRoot = provider.value().basePath;
+    }
+
+    config::SettingsStore settings(context.database);
+    const QString rcloneExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kRcloneBinaryPath), QStringLiteral("rclone"))
+            .valueOr(QStringLiteral("rclone"));
+
+    Result<std::unique_ptr<providers::StorageProvider>> created =
+        providers::createProvider(selection, rcloneExecutable);
+    if (!created) {
+        store.updateProviderStatus(providerId, QStringLiteral("error"),
+                                   QString::fromStdString(created.error().message()));
+        return output.flushError(created.error(), kExitFailure);
+    }
+
+    const Status status = created.value()->testConnection();
+    store.updateProviderStatus(
+        providerId, status.ok() ? QStringLiteral("ok") : QStringLiteral("error"),
+        status.ok() ? QString() : QString::fromStdString(status.error().toDisplayString()));
+
+    output.add(QStringLiteral("ok"), status.ok());
+    output.add(QStringLiteral("provider"), provider.value().name);
+    output.add(QStringLiteral("location"), created.value()->location());
+    if (status.ok()) {
+        output.line(QStringLiteral("Provider '%1' is reachable at %2")
+                        .arg(provider.value().name, created.value()->location()));
+        return output.flush(stdout, kExitSuccess);
+    }
+    output.line(QStringLiteral("Provider '%1' is not usable: %2")
+                    .arg(provider.value().name,
+                         QString::fromStdString(status.error().toDisplayString())));
+    return output.flush(stdout, kExitFailure);
+}
+
+int commandArchiveList(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "archive list requires a job id"),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<JobContext> loaded = loadJobContext(store, jobId);
+    if (!loaded) {
+        return output.flushError(loaded.error(),
+                                 loaded.error().code() == ErrorCode::NotFound ? kExitNotFound
+                                                                              : kExitFailure);
+    }
+
+    config::SettingsStore settings(context.database);
+    const QString rcloneExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kRcloneBinaryPath), QStringLiteral("rclone"))
+            .valueOr(QStringLiteral("rclone"));
+
+    Result<jobs::ResolvedDestination> resolved =
+        jobs::resolveDestination(loaded.value().job, loaded.value().provider, rcloneExecutable);
+    if (!resolved) {
+        return output.flushError(resolved.error(), kExitFailure);
+    }
+    jobs::ResolvedDestination destination = std::move(resolved).take();
+
+    Result<QVector<providers::RemoteEntry>> listing = destination.provider->listFiles(QString(), true);
+    if (!listing) {
+        return output.flushError(listing.error(), kExitFailure);
+    }
+
+    Result<QMap<QString, jobs::ManifestSnapshot>> manifest = store.lastSuccessfulManifest(jobId);
+    const QMap<QString, jobs::ManifestSnapshot> hashes =
+        manifest ? manifest.value() : QMap<QString, jobs::ManifestSnapshot>();
+
+    QList<QStringList> table;
+    for (const providers::RemoteEntry& entry : listing.value()) {
+        if (entry.isDirectory) {
+            continue;
+        }
+        const auto hash = hashes.constFind(entry.relativePath);
+        table.append({entry.relativePath, QString::number(entry.sizeBytes),
+                      hash != hashes.constEnd() ? hash->sha256.left(16) : QStringLiteral("-"),
+                      entry.modifiedUtc.toUTC().toString(Qt::ISODate)});
+    }
+
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("job"), loaded.value().job.name);
+    output.add(QStringLiteral("location"), destination.provider->location());
+    output.add(QStringLiteral("count"), static_cast<int>(table.size()));
+    output.table({QStringLiteral("PATH"), QStringLiteral("BYTES"), QStringLiteral("SHA-256"),
+                  QStringLiteral("MODIFIED")},
+                 table);
+    if (table.isEmpty()) {
+        output.line(QStringLiteral("The archive is empty."));
+    }
+    return output.flush(stdout, kExitSuccess);
+}
+
+int commandVerify(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "verify requires a job id"), kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<JobContext> loaded = loadJobContext(store, jobId);
+    if (!loaded) {
+        return output.flushError(loaded.error(),
+                                 loaded.error().code() == ErrorCode::NotFound ? kExitNotFound
+                                                                              : kExitFailure);
+    }
+    if (loaded.value().job.mode != QStringLiteral("archive")) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::NotImplemented,
+                           "verification of Restic repositories is delivered in Phase 4"),
+            kExitNotImplemented);
+    }
+
+    config::SettingsStore settings(context.database);
+    const QString rcloneExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kRcloneBinaryPath), QStringLiteral("rclone"))
+            .valueOr(QStringLiteral("rclone"));
+
+    Result<jobs::ResolvedDestination> resolved =
+        jobs::resolveDestination(loaded.value().job, loaded.value().provider, rcloneExecutable);
+    if (!resolved) {
+        return output.flushError(resolved.error(), kExitFailure);
+    }
+    jobs::ResolvedDestination destination = std::move(resolved).take();
+
+    Result<QMap<QString, jobs::ManifestSnapshot>> manifest = store.lastSuccessfulManifest(jobId);
+    if (!manifest) {
+        return output.flushError(manifest.error(), kExitFailure);
+    }
+    if (manifest.value().isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::NotFound, "no verified archive entries to check"),
+            kExitNotFound);
+    }
+
+    int verified = 0;
+    int unverifiable = 0;
+    int mismatched = 0;
+    int missing = 0;
+    QStringList problems;
+
+    for (auto it = manifest.value().constBegin(); it != manifest.value().constEnd(); ++it) {
+        if (it->sha256.isEmpty()) {
+            ++unverifiable;
+            continue;
+        }
+        const Result<QString> remoteHash = destination.provider->checksum(it.key());
+        if (!remoteHash) {
+            if (remoteHash.error().code() == ErrorCode::NotFound) {
+                ++missing;
+                problems.append(QStringLiteral("missing: %1").arg(it.key()));
+            } else {
+                ++unverifiable;
+            }
+            continue;
+        }
+        if (remoteHash.value().isEmpty() || remoteHash.value() != it->sha256) {
+            ++mismatched;
+            problems.append(QStringLiteral("checksum mismatch: %1").arg(it.key()));
+            continue;
+        }
+        ++verified;
+    }
+
+    output.add(QStringLiteral("ok"), mismatched == 0 && missing == 0);
+    output.add(QStringLiteral("job"), loaded.value().job.name);
+    output.add(QStringLiteral("verified"), verified);
+    output.add(QStringLiteral("mismatched"), mismatched);
+    output.add(QStringLiteral("missing"), missing);
+    output.add(QStringLiteral("unverifiable"), unverifiable);
+    QJsonArray problemsArray;
+    for (const QString& problem : problems) {
+        problemsArray.append(problem);
+    }
+    output.add(QStringLiteral("problems"), problemsArray);
+    output.line(QStringLiteral("Verified:     %1").arg(verified));
+    output.line(QStringLiteral("Mismatched:   %1").arg(mismatched));
+    output.line(QStringLiteral("Missing:      %1").arg(missing));
+    output.line(QStringLiteral("Unverifiable: %1 (provider or run recorded no hash)").arg(unverifiable));
+    for (const QString& problem : problems) {
+        output.line(QStringLiteral("  %1").arg(problem));
+    }
+    return output.flush(stdout, problems.isEmpty() ? kExitSuccess : kExitFailure);
+}
+
+int commandArchiveRestore(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "archive restore requires a job id"),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+    if (!options.flags.contains(QStringLiteral("to"))) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "archive restore requires --to <directory>"),
+            kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<JobContext> loaded = loadJobContext(store, jobId);
+    if (!loaded) {
+        return output.flushError(loaded.error(),
+                                 loaded.error().code() == ErrorCode::NotFound ? kExitNotFound
+                                                                              : kExitFailure);
+    }
+
+    jobs::ConflictPolicy policy = jobs::ConflictPolicy::Skip;
+    if (options.flags.contains(QStringLiteral("overwrite"))) {
+        policy = jobs::ConflictPolicy::Overwrite;
+    } else if (options.flags.contains(QStringLiteral("rename"))) {
+        policy = jobs::ConflictPolicy::Rename;
+    } else if (options.flags.contains(QStringLiteral("policy"))) {
+        policy = jobs::conflictPolicyFromString(options.flags.value(QStringLiteral("policy")),
+                                                jobs::ConflictPolicy::Ask);
+        if (policy == jobs::ConflictPolicy::Ask) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               "--policy must be skip, overwrite or rename"),
+                kExitUsage);
+        }
+    }
+
+    config::SettingsStore settings(context.database);
+    const QString rcloneExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kRcloneBinaryPath), QStringLiteral("rclone"))
+            .valueOr(QStringLiteral("rclone"));
+
+    jobs::RestoreRequest request;
+    request.job = loaded.value().job;
+    request.providerRecord = loaded.value().provider;
+    request.destinationDirectory = options.flags.value(QStringLiteral("to"));
+    request.policy = policy;
+    request.verify = !options.flags.contains(QStringLiteral("no-verify"));
+
+    const CancellationToken cancellation;
+    jobs::ArchiveRestorer restorer(context.database, [quiet = options.quiet,
+                                                      json = options.json](
+                                                         const jobs::RestoreProgress& progress) {
+        if (quiet) {
+            return;
+        }
+        QString line = QStringLiteral("[%1/%2]").arg(progress.filesDone).arg(progress.filesTotal);
+        if (!progress.currentFile.isEmpty()) {
+            line += QStringLiteral(" ") + progress.currentFile;
+        }
+        if (json) {
+            return;
+        }
+        std::fprintf(stderr, "%s\n", qPrintable(line));
+        std::fflush(stderr);
+    });
+    const jobs::RestoreReport report = restorer.restore(request, cancellation, rcloneExecutable);
+
+    output.add(QStringLiteral("ok"), report.succeeded());
+    output.add(QStringLiteral("status"), report.status);
+    output.add(QStringLiteral("restore_job_id"), report.restoreJobId);
+    output.add(QStringLiteral("restored"), report.restored);
+    output.add(QStringLiteral("skipped"), report.skipped);
+    output.add(QStringLiteral("renamed"), report.renamed);
+    output.add(QStringLiteral("failed"), report.failed);
+    output.add(QStringLiteral("verified"), report.verifiedFiles.size());
+    output.add(QStringLiteral("bytes_restored"), report.bytesRestored);
+    QJsonArray errors;
+    for (const QString& error : report.errors) {
+        errors.append(error);
+    }
+    output.add(QStringLiteral("errors"), errors);
+
+    output.line(QStringLiteral("Status:   %1").arg(report.status));
+    output.line(QStringLiteral("Restored: %1 file(s), %2 byte(s)").arg(report.restored)
+                    .arg(report.bytesRestored));
+    output.line(QStringLiteral("Skipped:  %1, renamed: %2, failed: %3")
+                    .arg(report.skipped)
+                    .arg(report.renamed)
+                    .arg(report.failed));
+    output.line(QStringLiteral("Verified: %1 file(s)").arg(report.verifiedFiles.size()));
+    for (const QString& error : report.errors) {
+        output.line(QStringLiteral("  error: %1").arg(error));
+    }
+    return output.flush(stdout, report.succeeded() ? kExitSuccess : kExitFailure);
+}
+
 } // namespace
 
 int run(int argc, char** argv) {
@@ -680,8 +1198,7 @@ int run(int argc, char** argv) {
             return commandStorageList(context, options);
         }
         if (subcommand == QStringLiteral("test")) {
-            return commandNotImplemented(options, QStringLiteral("storage test"),
-                                         QStringLiteral("Phase 2 (functional archive)"));
+            return commandStorageTest(context, options);
         }
         return commandNotImplemented(options, QStringLiteral("storage %1").arg(subcommand),
                                      QStringLiteral("a later phase"));
@@ -690,16 +1207,27 @@ int run(int argc, char** argv) {
         if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {
             return commandJobsList(context, options);
         }
-        if (subcommand == QStringLiteral("run") || subcommand == QStringLiteral("cancel")) {
-            return commandNotImplemented(options, QStringLiteral("jobs %1").arg(subcommand),
-                                         QStringLiteral("Phase 2 (functional archive)"));
+        if (subcommand == QStringLiteral("run")) {
+            return commandJobsRun(context, options);
+        }
+        if (subcommand == QStringLiteral("cancel")) {
+            return commandJobsCancel(context, options);
         }
         return commandNotImplemented(options, QStringLiteral("jobs %1").arg(subcommand),
                                      QStringLiteral("a later phase"));
     }
+    if (command == QStringLiteral("archive")) {
+        if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {
+            return commandArchiveList(context, options);
+        }
+        if (subcommand == QStringLiteral("restore")) {
+            return commandArchiveRestore(context, options);
+        }
+        return commandNotImplemented(options, QStringLiteral("archive %1").arg(subcommand),
+                                     QStringLiteral("a later phase"));
+    }
     if (command == QStringLiteral("verify")) {
-        return commandNotImplemented(options, QStringLiteral("verify"),
-                                     QStringLiteral("Phase 4 (Restic verification)"));
+        return commandVerify(context, options);
     }
 
     Output output(options.json);

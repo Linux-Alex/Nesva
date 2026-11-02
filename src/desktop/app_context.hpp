@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 
+#include "job_executor.hpp"
 #include "nesva/config/settings_store.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/core/result.hpp"
@@ -41,6 +42,7 @@ public:
 
     db::Database& database() { return database_; }
     config::SettingsStore& settings() { return *settings_; }
+    ui::JobExecutor* executor() { return executor_.get(); }
     const QString& logFilePath() const { return logFilePath_; }
 
     ThemeMode themeMode() const;
@@ -60,6 +62,7 @@ signals:
 private:
     db::Database database_;
     std::unique_ptr<config::SettingsStore> settings_;
+    std::unique_ptr<JobExecutor> executor_;
     QString logFilePath_;
 };
 

@@ -15,6 +15,7 @@ supersedes an earlier one instead of editing it.
 | [0007](0007-backup-safety-copy-semantics.md) | Copy semantics and non-destructive defaults | Accepted |
 | [0008](0008-secrets-and-credential-references.md) | Secrets live in the OS keyring; SQLite stores references | Accepted |
 | [0009](0009-headless-gui-testing.md) | UI compiled as a library and tested headlessly | Accepted |
+| [0010](0010-archive-execution-and-threading.md) | Archive execution on a worker thread with database-enforced single flight | Accepted |
 
 ## Template
 

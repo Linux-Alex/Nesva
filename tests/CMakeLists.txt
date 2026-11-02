@@ -27,6 +27,13 @@ nesva_add_unit_test(tst_paths unit/tst_paths.cpp)
 nesva_add_unit_test(tst_database unit/tst_database.cpp)
 nesva_add_unit_test(tst_settings_store unit/tst_settings_store.cpp)
 nesva_add_unit_test(tst_external_tool unit/tst_external_tool.cpp)
+nesva_add_unit_test(tst_exclusions unit/tst_exclusions.cpp)
+nesva_add_unit_test(tst_file_scanner unit/tst_file_scanner.cpp)
+nesva_add_unit_test(tst_job_store unit/tst_job_store.cpp)
+nesva_add_unit_test(tst_local_provider unit/tst_local_provider.cpp)
+nesva_add_unit_test(tst_rclone_provider unit/tst_rclone_provider.cpp)
+nesva_add_unit_test(tst_archive_runner unit/tst_archive_runner.cpp)
+nesva_add_unit_test(tst_archive_restore unit/tst_archive_restore.cpp)
 
 # GUI smoke test: constructs the real main window and models headlessly.
 nesva_add_unit_test(tst_gui_smoke unit/tst_gui_smoke.cpp)

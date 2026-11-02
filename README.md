@@ -26,10 +26,11 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: Phase 1 (foundation)
+## Current status: Phase 2 (functional archive)
 
-Phase 1 is implemented, built and tested on Linux. What exists today is real, working
-functionality - not mockups:
+Phase 1 (foundation) and Phase 2 (functional archive) are implemented, built and tested on
+Linux. Archive jobs can be created, executed, cancelled, inspected and restored end to end.
+What exists today is real, working functionality - not mockups:
 
 **nesva-core (library, no Qt Widgets dependency)**
 - `Result<T>` / `Status` error model with stable, machine-readable error codes
@@ -45,12 +46,31 @@ functionality - not mockups:
   events, manifests, snapshots, restores and Microsoft 365 mail)
 - Typed settings store (`string`/`integer`/`boolean`, defaults, no silent rewrites)
 
+**Archive engine (Phase 2, in nesva-core)**
+- File scanner with glob/regex/literal exclusions, symlink and depth protection, destination
+  exclusion and an explicit skip reason for everything that is not archived
+- Storage providers with a capability model: local filesystem (atomic writes, size and SHA-256
+  verification, mtime preservation) and Rclone (`copyto`/`lsjson`/`hashsum`, argument arrays,
+  retries, cancellation)
+- Archive runner: incremental runs from the previous manifest, per-file manifest and
+  archive-object records, job events, counters, cancellation, dry-run that writes nothing
+- Restore with conflict policies (skip/rename/overwrite), post-restore hash verification, and a
+  recorded `restore_jobs` row per attempt
+- Job store with database-enforced single flight (one running run per job) and crash recovery of
+  interrupted runs
+
 **nesva (desktop application)**
 - Qt 6 Widgets shell: sidebar navigation, top status bar, page stack, bottom activity dock
 - Eight pages: Dashboard, Backup Jobs, Storage, Archive Explorer, Snapshots, Restore,
   Activity, Settings
 - Dashboard: job counters, last success/failure, next scheduled run, storage count,
   environment warnings (Rclone/Restic detection), recent activity
+- Backup Jobs page: create, edit, delete, run, cancel and inspect history; the run executes
+  on a worker thread with live progress while the window stays responsive
+- Job editor with source picker, local-folder or storage-provider destination, exclusions,
+  bandwidth limit, checksum verification and a dry-run preview
+- Archive Explorer (destination listing joined with manifest hashes) and a Restore wizard
+- Storage connection manager: local folders and Rclone remotes, with an explicit connection test
 - Backup Jobs and Storage pages read the real database through Qt Model/View models
 - Activity page: combined job + application event stream with live text filtering, sortable
   columns, and a shortcut to the log folder
@@ -61,10 +81,12 @@ functionality - not mockups:
 - `--gui-selftest` mode that drives every page and writes PNG screenshots (headless or X11)
 
 **nesva-cli (automation and diagnostics)**
-- `status`, `doctor`, `jobs list`, `storage list`, `history list` implemented against the
-  real database, with `--json` output and documented exit codes
-- `jobs run`, `jobs cancel`, `storage test` and `verify` return exit code 4 with an explicit
-  "not implemented in this build / planned for Phase N; nothing was changed" message
+- `status`, `doctor`, `jobs list`, `jobs run` (`--dry-run`, `--force`, `--retries`),
+  `jobs cancel`, `storage list`, `storage test`, `archive list`, `archive restore`,
+  `history list` and `verify` implemented against the real database, with `--json` output and
+  documented exit codes
+- Commands that belong to later phases return exit code 4 with an explicit
+  "planned for Phase N; nothing was changed" message
 
 Pages and commands that belong to later phases are labelled as such in the UI and in the CLI.
 Nothing pretends to have succeeded.
@@ -148,7 +170,7 @@ next to the executable or into Program Files.
 
 ## Testing
 
-`ctest --preset linux-debug` runs 8 test binaries (69 test functions):
+`ctest --preset linux-debug` runs 15 test binaries (150 test functions):
 
 | Test | Covers |
 |---|---|
@@ -159,7 +181,14 @@ next to the executable or into Program Files.
 | `tst_database` | Migrations, idempotency, FK enforcement, WAL, transactions, savepoints, integrity |
 | `tst_settings_store` | Typed get/set, defaults, persistence, unicode, key validation |
 | `tst_external_tool` | Path resolution, version probing, non-zero exit, no shell interpretation |
-| `tst_gui_smoke` | Headless: real MainWindow, 8 pages, models read seeded rows, theme persistence |
+| `tst_exclusions` | Glob/regex/literal rules, anchoring, invalid patterns |
+| `tst_file_scanner` | Scanning, exclusions, symlinks, depth limit, cancellation, unicode |
+| `tst_job_store` | Job CRUD, source labels, single-flight, stale-run recovery, manifests |
+| `tst_local_provider` | Atomic upload/download, verification, traversal rejection, unicode |
+| `tst_rclone_provider` | Exact argv, no shell, JSON parsing, retries, cancellation, error mapping |
+| `tst_archive_runner` | End-to-end archive, incremental rerun, dry run, recursion guard, failures |
+| `tst_archive_restore` | Conflict policies, verification, corruption detection, restore records |
+| `tst_gui_smoke` | Headless: real MainWindow, 8 pages, models, theme, worker-thread execution |
 
 GUI verification additionally runs in two modes:
 
@@ -204,14 +233,18 @@ nesva/
 
 ## Safety guarantees in this build
 
-- **No source deletion, ever.** No code path in this build deletes, moves or rewrites source
-  files. Archive jobs are copy-semantics only (`copy_semantics` is constrained to `'copy'` in
-  the schema) and the schema defaults `allow_remote_deletions` to `0`.
-- **No destructive cloud operations.** No Rclone or Restic invocation is implemented yet, so
-  nothing can be uploaded, pruned or deleted.
-- **No credentials anywhere.** No credential is stored, logged or transmitted in this phase;
-  logs are redacted by construction, and credential *references* (not secrets) are the only
-  thing the schema can hold.
+- **No source deletion, ever.** Archive jobs are copy-semantics only (`copy_semantics` is
+  constrained to `'copy'` in the schema) and nothing in the codebase deletes, moves or rewrites a
+  source file.
+- **No destructive remote operations.** There is no delete, prune or mirror code path: transfers
+  only copy. `allow_remote_deletions` defaults to `0` and nothing reads it yet.
+- **The destination is excluded from the scan**, so a job can never archive its own output.
+- **Cancellation never reports success**, and a run whose owning process died is marked
+  `interrupted` at next start instead of blocking the job forever.
+- **Restore never overwrites silently.** The default policy is "skip"; "overwrite" requires an
+  explicit choice and a confirmation. Every restored file is verified against the manifest hash.
+- **No credentials anywhere.** No credential is stored, logged or transmitted; logs are redacted
+  by construction, and credential *references* (not secrets) are the only thing the schema holds.
 - **Confirmation first.** The destructive-action confirmation setting defaults to enabled.
 
 ---
@@ -229,8 +262,8 @@ writes a record.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Foundation: build system, core services, SQLite, logging, desktop shell, CLI, tests | **delivered** |
-| 2 | Functional archive: job editor, local + Rclone providers, execution, progress, restore | next |
-| 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | planned |
+| 2 | Functional archive: job editor, local + Rclone providers, execution, progress, restore | **delivered** |
+| 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | next |
 | 4 | Restic: repository setup, snapshots, restore, retention, verification | planned |
 | 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | planned |
 | 6 | Distribution: Windows installer, .deb/AppImage/RPM, CI/CD, user docs | planned |

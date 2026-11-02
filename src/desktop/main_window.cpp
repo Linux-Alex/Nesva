@@ -26,14 +26,17 @@
 
 #include "app_context.hpp"
 #include "icon_factory.hpp"
+#include "job_executor.hpp"
 #include "models/event_list_model.hpp"
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/paths.hpp"
 #include "pages/activity_page.hpp"
+#include "pages/archive_page.hpp"
 #include "pages/dashboard_page.hpp"
 #include "pages/jobs_page.hpp"
 #include "pages/page.hpp"
 #include "pages/placeholder_page.hpp"
+#include "pages/restore_page.hpp"
 #include "pages/settings_page.hpp"
 #include "pages/storage_page.hpp"
 #include "theme.hpp"
@@ -76,6 +79,18 @@ MainWindow::MainWindow(AppContext& context, QWidget* parent)
     refreshTimer_->start();
 
     connect(&context_, &AppContext::themeModeChanged, this, &MainWindow::applyTheme);
+
+    if (JobExecutor* executor = context_.executor()) {
+        connect(executor, &JobExecutor::started, this, [this](qint64, const QString& jobName) {
+            if (statusBadge_ != nullptr) {
+                statusBadge_->setText(QStringLiteral("Running: %1").arg(jobName));
+            }
+        });
+        connect(executor, &JobExecutor::finished, this, [this](qint64, const jobs::RunReport&) {
+            updateStatus();
+            refreshAll();
+        });
+    }
 }
 
 MainWindow::~MainWindow() = default;
@@ -165,24 +180,10 @@ void MainWindow::createPages() {
         {QStringLiteral("Settings"), Glyph::Settings},
     };
 
-    const QString archiveSubtitle = QStringLiteral(
-        "Contents of archive destinations. Archive mode copies normal files so that they stay "
-        "usable directly through the storage provider.");
-
     pages_.append(new DashboardPage(context_, this));
     pages_.append(new JobsPage(context_, this));
     pages_.append(new StoragePage(context_, this));
-    pages_.append(new PlaceholderPage(
-        QStringLiteral("Archive Explorer"), archiveSubtitle,
-        QStringLiteral("Browsing archive contents is not implemented in this build."),
-        {QStringLiteral("Local filesystem destinations with copy-only semantics"),
-         QStringLiteral("Rclone-backed remotes: SFTP, S3-compatible, WebDAV and iCloud Drive"),
-         QStringLiteral("Searchable manifest (file_manifest) with checksum state"),
-         QStringLiteral("Explicit remote verification where the provider supports hashes"),
-         QStringLiteral("Recursion protection for destination and sync folders")},
-        QStringLiteral("Delivered in Phase 2 (functional archive). The database tables backing "
-                       "this view already exist and are migrated with the application."),
-        this));
+    pages_.append(new ArchivePage(context_, this));
     pages_.append(new PlaceholderPage(
         QStringLiteral("Snapshots"),
         QStringLiteral("Versioned, optionally encrypted Restic snapshots."),
@@ -193,17 +194,7 @@ void MainWindow::createPages() {
          QStringLiteral("Integrity verification and repository lock detection")},
         QStringLiteral("Delivered in Phase 4 (Restic). No repository is touched by this build."),
         this));
-    pages_.append(new PlaceholderPage(
-        QStringLiteral("Restore"),
-        QStringLiteral("Restore files from archives or snapshots into a chosen directory."),
-        QStringLiteral("Restore is not implemented in this build."),
-        {QStringLiteral("Source selection: archive object or Restic snapshot"),
-         QStringLiteral("File tree browsing with destination selection"),
-         QStringLiteral("Conflict policies: skip, overwrite, rename \u2014 never silent overwrite"),
-         QStringLiteral("Progress reporting and post-restore verification")},
-        QStringLiteral("Archive restore arrives in Phase 2; snapshot restore in Phase 4. Nothing "
-                       "is written to your filesystem by this build."),
-        this));
+    pages_.append(new RestorePage(context_, this));
     pages_.append(new ActivityPage(context_, this));
     pages_.append(new SettingsPage(context_, this));
 

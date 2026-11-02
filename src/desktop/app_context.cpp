@@ -12,6 +12,7 @@
 
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/paths.hpp"
+#include "nesva/jobs/job_store.hpp"
 
 namespace nesva::ui {
 namespace {
@@ -25,6 +26,10 @@ QString levelName(LogLevel level) {
 AppContext::AppContext(QObject* parent) : QObject(parent) {}
 
 AppContext::~AppContext() {
+    if (executor_) {
+        executor_->waitForFinished();
+        executor_.reset();
+    }
     if (settings_) {
         recordEvent(LogLevel::Info, QStringLiteral("application"),
                     QStringLiteral("application stopped"));
@@ -75,6 +80,18 @@ Status AppContext::initialise(const StartupOptions& options) {
             globalLogger().setMinLevel(*parsed);
         }
     }
+
+    // Recover runs whose owning process died (crash, kill, power loss) before
+    // the UI reports anything as running.
+    jobs::JobStore store(database_);
+    const Result<int> recovered = store.recoverStaleRuns();
+    if (recovered && recovered.value() > 0) {
+        recordEvent(LogLevel::Warn, QStringLiteral("application"),
+                    QStringLiteral("%1 interrupted run(s) recovered after an unclean shutdown")
+                        .arg(recovered.value()));
+    }
+
+    executor_ = std::make_unique<JobExecutor>(*this);
 
     recordEvent(LogLevel::Info, QStringLiteral("application"),
                 QStringLiteral("application started"),

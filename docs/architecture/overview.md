@@ -262,8 +262,30 @@ that would re-enter the source tree.
 | Phase | Deliverable | State |
 |---|---|---|
 | 1 | Build system, core services, SQLite + migrations, logging, desktop shell, CLI, tests | delivered |
-| 2 | Job editor, local + Rclone providers, execution, progress, history, restore | next |
-| 3 | Agent, IPC, scheduling, missed runs, tray, notifications | planned |
+| 2 | Job editor, local + Rclone providers, execution, progress, history, restore | delivered |
+| 3 | Agent, IPC, scheduling, missed runs, tray, notifications | next |
 | 4 | Restic repository, snapshots, restore, retention, verification | planned |
 | 5 | Microsoft 365 OAuth, mailbox selection, EML export, incremental sync | planned |
 | 6 | Windows installer, Linux packages, release CI, user/security documentation | planned |
+
+### 12.1 Phase 2 execution path
+
+```text
+JobEditorDialog ──save──▶ JobStore (backup_jobs / sources / exclusions)
+      │ dry-run                        │
+      ▼                                ▼
+JobExecutor (GUI thread) ──spawn──▶ Worker QThread ── own Database connection
+                                            │
+                                            ▼
+                                   ArchiveRunner
+                                     ├── scanSources (exclusions, recursion guards)
+                                     ├── lastSuccessfulManifest (incremental decision)
+                                     ├── StorageProvider::uploadFile (local | rclone)
+                                     └── file_manifest / archive_objects / job_events / counters
+                                            │
+                                            ▼
+                         main window: progress bar, activity dock, history
+```
+
+Restore reverses the same path: `RestorePage` → `ArchiveRestorer` → provider download →
+post-restore hash comparison against the manifest → `restore_jobs`.

@@ -6,6 +6,8 @@
 #include "page.hpp"
 
 class QLabel;
+class QProgressBar;
+class QPushButton;
 class QTableView;
 
 namespace nesva::ui {
@@ -13,7 +15,7 @@ namespace nesva::ui {
 class AppContext;
 class JobListModel;
 
-/// Lists archive and backup jobs stored in the local database.
+/// Lists archive jobs and drives their execution.
 class JobsPage : public Page {
     Q_OBJECT
 
@@ -23,11 +25,29 @@ public:
     void refresh() override;
 
 private:
+    void createJob();
+    void editJob();
+    void deleteJob();
+    void runJob();
+    void cancelJob();
+    void showHistory();
+    void updateActionState();
+    void setRunBusy(bool busy);
+    qint64 selectedJobId() const;
+
     AppContext& context_;
     JobListModel* model_ = nullptr;
     QTableView* view_ = nullptr;
     QLabel* emptyState_ = nullptr;
     QLabel* errorLabel_ = nullptr;
+    QLabel* runLabel_ = nullptr;
+    QProgressBar* runProgress_ = nullptr;
+    QPushButton* newButton_ = nullptr;
+    QPushButton* editButton_ = nullptr;
+    QPushButton* deleteButton_ = nullptr;
+    QPushButton* runButton_ = nullptr;
+    QPushButton* cancelButton_ = nullptr;
+    QPushButton* historyButton_ = nullptr;
 };
 
 } // namespace nesva::ui

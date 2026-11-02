@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/nesva-project/nesva"
   LANGUAGES CXX)
@@ -53,12 +53,23 @@ add_library(nesva_core STATIC
   src/core/app_info.cpp
   src/core/error.cpp
   src/core/external_tool.cpp
+  src/core/hashing.cpp
   src/core/logging.cpp
   src/core/paths.cpp
+  src/core/process_utils.cpp
   src/core/redactor.cpp
+  src/scan/exclusions.cpp
+  src/scan/file_scanner.cpp
   src/database/database.cpp
   src/database/migrations.cpp
   src/database/settings_store.cpp
+  src/jobs/archive_restore.cpp
+  src/jobs/archive_runner.cpp
+  src/jobs/job_store.cpp
+  src/providers/local_provider.cpp
+  src/providers/provider_factory.cpp
+  src/providers/rclone_provider.cpp
+  src/providers/storage_provider.cpp
 )
 
 add_library(Nesva::Core ALIAS nesva_core)
@@ -94,6 +105,12 @@ qt_add_library(nesva_ui STATIC
   src/desktop/icon_factory.cpp
   src/desktop/gui_selftest.hpp
   src/desktop/gui_selftest.cpp
+  src/desktop/job_executor.hpp
+  src/desktop/job_executor.cpp
+  src/desktop/dialogs/job_editor_dialog.hpp
+  src/desktop/dialogs/job_editor_dialog.cpp
+  src/desktop/dialogs/history_dialog.hpp
+  src/desktop/dialogs/history_dialog.cpp
   src/desktop/models/job_list_model.hpp
   src/desktop/models/job_list_model.cpp
   src/desktop/models/event_list_model.hpp
@@ -106,6 +123,10 @@ qt_add_library(nesva_ui STATIC
   src/desktop/pages/jobs_page.cpp
   src/desktop/pages/storage_page.hpp
   src/desktop/pages/storage_page.cpp
+  src/desktop/pages/archive_page.hpp
+  src/desktop/pages/archive_page.cpp
+  src/desktop/pages/restore_page.hpp
+  src/desktop/pages/restore_page.cpp
   src/desktop/pages/activity_page.hpp
   src/desktop/pages/activity_page.cpp
   src/desktop/pages/settings_page.hpp
@@ -116,7 +137,7 @@ qt_add_library(nesva_ui STATIC
 
 target_include_directories(nesva_ui PUBLIC ${PROJECT_SOURCE_DIR}/src/desktop)
 
-target_link_libraries(nesva_ui PUBLIC Nesva::Core Qt6::Widgets Qt6::Gui)
+target_link_libraries(nesva_ui PUBLIC Nesva::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent)
 
 nesva_set_target_warnings(nesva_ui)
 

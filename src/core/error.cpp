@@ -39,6 +39,8 @@ std::string_view toToken(ErrorCode code) noexcept {
         return "integrity_error";
     case ErrorCode::Internal:
         return "internal_error";
+    case ErrorCode::DestinationUnavailable:
+        return "destination_unavailable";
     }
     return "internal_error";
 }

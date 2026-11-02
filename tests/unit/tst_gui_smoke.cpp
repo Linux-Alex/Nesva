@@ -12,11 +12,27 @@
 
 #include <memory>
 
+#include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtTest/QSignalSpy>
+
 #include "app_context.hpp"
+#include <QtWidgets/QCheckBox>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QPlainTextEdit>
+#include <QtWidgets/QSpinBox>
+#include <QtCore/QTimer>
+
+#include "dialogs/job_editor_dialog.hpp"
+#include "job_executor.hpp"
 #include "main_window.hpp"
 #include "models/event_list_model.hpp"
 #include "models/job_list_model.hpp"
 #include "nesva/core/paths.hpp"
+#include "nesva/jobs/archive_runner.hpp"
+#include "nesva/jobs/job_store.hpp"
+#include "support/test_fixtures.hpp"
 
 using namespace nesva;
 using nesva::ui::AppContext;
@@ -70,6 +86,10 @@ private slots:
     void mainWindowExposesEveryPage();
     void mainWindowSwitchesPages();
     void mainWindowThemeIsApplied();
+    void executorRunsArchiveJobInWorkerThread();
+    void executorRejectsConcurrentRuns();
+    void jobEditorCreatesJobFromForm();
+    void jobEditorRejectsInvalidForm();
 
 private:
     std::unique_ptr<QTemporaryDir> directory_;
@@ -187,6 +207,149 @@ void GuiSmokeTest::mainWindowThemeIsApplied() {
 
     QVERIFY(context_->setThemeMode(ui::ThemeMode::System).ok());
     QCOMPARE(context_->themeMode(), ui::ThemeMode::System);
+}
+
+
+void GuiSmokeTest::executorRunsArchiveJobInWorkerThread() {
+    // A real job, a real source tree and the real worker thread: the GUI must
+    // stay responsive while the transfer runs off the GUI thread.
+    const QString sourceDirectory = directory_->filePath(QStringLiteral("source"));
+    const QString destinationDirectory = directory_->filePath(QStringLiteral("destination"));
+    QVERIFY(QDir().mkpath(sourceDirectory));
+    QVERIFY(QDir().mkpath(destinationDirectory));
+    QVERIFY(test::writeFile(QDir(sourceDirectory).absoluteFilePath(QStringLiteral("a.txt")), "alpha"));
+    QVERIFY(test::writeFile(QDir(sourceDirectory).absoluteFilePath(QStringLiteral("docs/b.txt")),
+                            "bravo"));
+
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("GUI worker job");
+    job.mode = QStringLiteral("archive");
+    job.destinationPath = destinationDirectory;
+    job.sources = {{0, sourceDirectory, QStringLiteral("source")}};
+    const Result<qint64> created = store.createJob(job);
+    QVERIFY(created);
+
+    MainWindow window(*context_);
+    window.show();
+
+    QSignalSpy finishedSpy(context_->executor(), &ui::JobExecutor::finished);
+    const Status started = context_->executor()->startArchive(created.value(), false);
+    QVERIFY2(started.ok(), started.ok() ? "" : started.error().message().c_str());
+    QVERIFY(context_->executor()->isRunning());
+
+    QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 20000);
+    QVERIFY(!context_->executor()->isRunning());
+
+    const auto report = finishedSpy.at(0).at(1).value<jobs::RunReport>();
+    QCOMPARE(report.status, QStringLiteral("succeeded"));
+    QCOMPARE(report.counters.filesTransferred, qint64(2));
+
+    QVERIFY(QFile::exists(QDir(destinationDirectory).absoluteFilePath(QStringLiteral("source/a.txt"))));
+    QVERIFY(QFile::exists(
+        QDir(destinationDirectory).absoluteFilePath(QStringLiteral("source/docs/b.txt"))));
+
+    // The run is visible in history and the jobs model.
+    const Result<QVector<jobs::RunSummary>> runs = store.listRuns(10, created.value());
+    QVERIFY(runs);
+    QCOMPARE(runs.value().size(), 1);
+    QCOMPARE(runs.value().constFirst().status, QStringLiteral("succeeded"));
+
+    JobListModel model(context_->database());
+    QCOMPARE(model.refresh(), QString());
+    QCOMPARE(model.rowCount(), 1);
+}
+
+void GuiSmokeTest::executorRejectsConcurrentRuns() {
+    const QString sourceDirectory = directory_->filePath(QStringLiteral("source2"));
+    const QString destinationDirectory = directory_->filePath(QStringLiteral("destination2"));
+    QVERIFY(QDir().mkpath(sourceDirectory));
+    QVERIFY(QDir().mkpath(destinationDirectory));
+    for (int index = 0; index < 40; ++index) {
+        QVERIFY(test::writeFile(
+            QDir(sourceDirectory).absoluteFilePath(QStringLiteral("file-%1.txt").arg(index)),
+            QByteArray(64 * 1024, 'x')));
+    }
+
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("Concurrent job");
+    job.destinationPath = destinationDirectory;
+    job.sources = {{0, sourceDirectory, QStringLiteral("source")}};
+    const Result<qint64> created = store.createJob(job);
+    QVERIFY(created);
+
+    QSignalSpy finishedSpy(context_->executor(), &ui::JobExecutor::finished);
+    QVERIFY(context_->executor()->startArchive(created.value(), false).ok());
+
+    // A second start while the first runs must be refused, not queued.
+    const Status second = context_->executor()->startArchive(created.value(), false);
+    QVERIFY(!second.ok());
+    QCOMPARE(static_cast<int>(second.error().code()), static_cast<int>(ErrorCode::AlreadyExists));
+
+    QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 30000);
+}
+
+
+void GuiSmokeTest::jobEditorCreatesJobFromForm() {
+    const QString sourceDirectory = directory_->filePath(QStringLiteral("editor-source"));
+    const QString destinationDirectory = directory_->filePath(QStringLiteral("editor-destination"));
+    QVERIFY(QDir().mkpath(sourceDirectory));
+    QVERIFY(QDir().mkpath(destinationDirectory));
+
+    ui::JobEditorDialog dialog(*context_, std::nullopt);
+    auto* nameEdit = dialog.findChild<QLineEdit*>(QStringLiteral("jobName"));
+    auto* sources = dialog.findChild<QListWidget*>(QStringLiteral("jobSources"));
+    auto* destination = dialog.findChild<QLineEdit*>(QStringLiteral("jobDestinationPath"));
+    auto* exclusions = dialog.findChild<QPlainTextEdit*>(QStringLiteral("jobExclusions"));
+    auto* bandwidth = dialog.findChild<QSpinBox*>(QStringLiteral("jobBandwidth"));
+    auto* verify = dialog.findChild<QCheckBox*>(QStringLiteral("jobVerify"));
+    QVERIFY(nameEdit && sources && destination && exclusions && bandwidth && verify);
+
+    nameEdit->setText(QStringLiteral("Editor job"));
+    sources->addItem(sourceDirectory);
+    destination->setText(destinationDirectory);
+    exclusions->setPlainText(QStringLiteral("*.tmp\nbuild/**"));
+    bandwidth->setValue(512);
+    verify->setChecked(false);
+
+    dialog.accept();
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+    QVERIFY(dialog.savedJobId() > 0);
+
+    jobs::JobStore store(context_->database());
+    const Result<jobs::ArchiveJob> saved = store.getJob(dialog.savedJobId());
+    QVERIFY(saved);
+    QCOMPARE(saved.value().name, QStringLiteral("Editor job"));
+    QCOMPARE(saved.value().destinationPath, destinationDirectory);
+    QCOMPARE(saved.value().bandwidthLimitKiB, 512);
+    QVERIFY(!saved.value().verifyChecksum);
+    QCOMPARE(saved.value().sources.size(), 1);
+    QCOMPARE(saved.value().sources.constFirst().path, QDir::cleanPath(sourceDirectory));
+    QCOMPARE(saved.value().exclusions.size(), 2);
+}
+
+void GuiSmokeTest::jobEditorRejectsInvalidForm() {
+    ui::JobEditorDialog dialog(*context_, std::nullopt);
+    auto* nameEdit = dialog.findChild<QLineEdit*>(QStringLiteral("jobName"));
+    QVERIFY(nameEdit != nullptr);
+    nameEdit->setText(QStringLiteral("No sources"));
+
+    // No sources and no destination: the dialog must refuse to save. The warning
+    // box is modal, so accept() is exercised through a queued close of the box.
+    QTimer::singleShot(0, [] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* box = qobject_cast<QMessageBox*>(widget)) {
+                box->accept();
+            }
+        }
+    });
+    dialog.accept();
+    // Rejected: nothing was written.
+    jobs::JobStore store(context_->database());
+    const Result<QVector<jobs::ArchiveJob>> jobs = store.listJobs();
+    QVERIFY(jobs);
+    QCOMPARE(jobs.value().size(), 0);
 }
 
 QTEST_MAIN(GuiSmokeTest)
