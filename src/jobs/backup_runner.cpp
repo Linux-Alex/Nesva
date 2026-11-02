@@ -223,6 +223,17 @@ RunReport BackupRunner::run(const ArchiveJob& job, const RunOptions& options,
         progress_(progress);
     }
 
+    // Verify the external tool before touching the repository, so a missing or
+    // outdated restic produces one clear error instead of a partially recorded
+    // run with a cryptic backend failure.
+    const Status resticReady = backup::requireResticVersion(
+        resticExecutable.isEmpty() ? QStringLiteral("restic") : resticExecutable);
+    if (!resticReady.ok()) {
+        report.status = QStringLiteral("failed");
+        report.errors.append(QString::fromStdString(resticReady.error().toDisplayString()));
+        return report;
+    }
+
     if (!options.dryRun) {
         Result<qint64> runId = store_.beginRun(job.id, trigger);
         if (!runId) {

@@ -88,6 +88,66 @@ Error mapResticFailure(const ResticOutcome& outcome, const QString& operation) {
 }
 
 // ---------------------------------------------------------------------------
+// Version
+// ---------------------------------------------------------------------------
+
+QString formatVersion(const ResticVersion& version) {
+    return QStringLiteral("%1.%2.%3").arg(version.major).arg(version.minor).arg(version.patch);
+}
+
+ResticVersion parseResticVersion(const QString& output) {
+    static const QRegularExpression expression(QStringLiteral("restic\\s+(\\d+)\\.(\\d+)\\.(\\d+)"));
+    const QRegularExpressionMatch match = expression.match(output);
+    ResticVersion version;
+    if (!match.hasMatch()) {
+        return version;
+    }
+    version.major = match.captured(1).toInt();
+    version.minor = match.captured(2).toInt();
+    version.patch = match.captured(3).toInt();
+    return version;
+}
+
+Result<ResticVersion> probeResticVersion(const QString& executable) {
+    const Result<ExternalToolInfo> probe =
+        probeExternalTool(executable, {QStringLiteral("version")});
+    if (!probe) {
+        return probe.error();
+    }
+    ResticVersion version = parseResticVersion(probe.value().versionText);
+    if (!version.isValid()) {
+        // Some builds print a long banner first; re-probe and scan every line.
+        const Result<ExternalToolInfo> verbose =
+            probeExternalTool(executable, {QStringLiteral("version")});
+        Q_UNUSED(verbose);
+    }
+    if (!version.isValid()) {
+        return makeErrorValue(ErrorCode::ExternalToolFailed,
+                              "cannot determine the restic version",
+                              probe.value().versionText.toStdString());
+    }
+    return version;
+}
+
+Status requireResticVersion(const QString& executable) {
+    const Result<ResticVersion> version = probeResticVersion(executable);
+    if (!version) {
+        return makeError(ErrorCode::ExternalToolFailed,
+                         "Restic is required for backup jobs but could not be started",
+                         QString::fromStdString(version.error().toDisplayString()).toStdString());
+    }
+    if (!version.value().atLeast(kMinimumResticMajor, kMinimumResticMinor)) {
+        return makeError(ErrorCode::Unsupported, "the installed Restic is too old",
+                         QStringLiteral("found %1, need at least %2.%3")
+                             .arg(formatVersion(version.value()))
+                             .arg(kMinimumResticMajor)
+                             .arg(kMinimumResticMinor)
+                             .toStdString());
+    }
+    return Status();
+}
+
+// ---------------------------------------------------------------------------
 // ProcessResticRunner
 // ---------------------------------------------------------------------------
 
@@ -731,6 +791,16 @@ Result<QString> createPasswordFile(const QByteArray& password) {
         return directories.error();
     }
     const QDir cache(Paths::cacheDirectory());
+
+    // A hard kill can leave a password file behind; remove anything old before
+    // creating a new one so secrets do not accumulate in the cache directory.
+    const QDateTime cutoff = QDateTime::currentDateTimeUtc().addSecs(-3600);
+    for (const QFileInfo& stale : cache.entryInfoList({QStringLiteral("restic-password-*")},
+                                                      QDir::Files)) {
+        if (stale.lastModified().toUTC() < cutoff) {
+            QFile::remove(stale.absoluteFilePath());
+        }
+    }
     QTemporaryFile file(cache.absoluteFilePath(QStringLiteral("restic-password-XXXXXX")));
     file.setAutoRemove(false);
     if (!file.open()) {

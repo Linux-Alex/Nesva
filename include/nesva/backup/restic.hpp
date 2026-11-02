@@ -129,6 +129,32 @@ struct VerifyResult {
     QStringList messages;
 };
 
+/// Parsed "restic version" output.
+struct ResticVersion {
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+    bool isValid() const { return major > 0 || minor > 0; }
+    bool atLeast(int otherMajor, int otherMinor) const {
+        return major > otherMajor || (major == otherMajor && minor >= otherMinor);
+    }
+};
+
+QString formatVersion(const ResticVersion& version);
+
+/// Parses "restic 0.18.1 compiled with go1.25.1 on linux/amd64".
+ResticVersion parseResticVersion(const QString& output);
+
+/// Probes the configured binary and parses its version.
+Result<ResticVersion> probeResticVersion(const QString& executable = QStringLiteral("restic"));
+
+/// Minimum version this build relies on: --json for ls/forget and check.
+inline constexpr int kMinimumResticMajor = 0;
+inline constexpr int kMinimumResticMinor = 17;
+
+/// Fails with a clear, actionable error when the binary is missing or too old.
+Status requireResticVersion(const QString& executable = QStringLiteral("restic"));
+
 /// Argument builders. Pure functions so the exact argv can be asserted.
 namespace command {
 QStringList base(const QString& repository, const QString& passwordFile);

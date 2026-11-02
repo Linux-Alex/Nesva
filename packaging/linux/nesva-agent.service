@@ -19,6 +19,9 @@ ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=%h/.local/share/nesva
 Environment=QT_QPA_PLATFORM=offscreen
+# A user service starts with a minimal PATH; include ~/.local/bin so a restic or
+# rclone installed there is found (otherwise point the tool path in Settings).
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 [Install]
 WantedBy=default.target

@@ -108,6 +108,11 @@ private slots:
     // ---- password file ----------------------------------------------------
     void createsRestrictedPasswordFile();
 
+    // ---- version gate -----------------------------------------------------
+    void parsesResticVersion();
+    void rejectsOldRestic();
+    void acceptsInstalledRestic();
+
     // ---- real restic integration -----------------------------------------
     void realRepositoryLifecycle();
     void realBackupIsIncremental();
@@ -563,6 +568,51 @@ void ResticTest::realMissingRepositoryMapsToNotFound() {
     QVERIFY(!snapshots);
     QCOMPARE(static_cast<int>(snapshots.error().code()), static_cast<int>(ErrorCode::NotFound));
     QFile::remove(passwordFile);
+}
+
+
+void ResticTest::parsesResticVersion() {
+    const ResticVersion version =
+        parseResticVersion(QStringLiteral("restic 0.18.1 compiled with go1.25.1 on linux/amd64"));
+    QCOMPARE(version.major, 0);
+    QCOMPARE(version.minor, 18);
+    QCOMPARE(version.patch, 1);
+    QVERIFY(version.isValid());
+    QVERIFY(version.atLeast(0, 17));
+    QVERIFY(!version.atLeast(0, 19));
+
+    const ResticVersion unknown = parseResticVersion(QStringLiteral("not a version"));
+    QVERIFY(!unknown.isValid());
+}
+
+void ResticTest::rejectsOldRestic() {
+#ifdef Q_OS_UNIX
+    // A script standing in for an outdated restic proves the gate refuses it
+    // before any repository access happens.
+    const QString script = directory_->filePath(QStringLiteral("restic-old"));
+    QVERIFY(test::writeFile(script, "#!/bin/sh\necho 'restic 0.15.0 compiled with go1.21.0'\n"));
+    QVERIFY(QFile::setPermissions(script, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                              QFileDevice::ExeOwner));
+
+    const Status ready = requireResticVersion(script);
+    QVERIFY(!ready.ok());
+    QCOMPARE(static_cast<int>(ready.error().code()), static_cast<int>(ErrorCode::Unsupported));
+    QVERIFY(ready.error().detail().find("0.15.0") != std::string::npos);
+    QVERIFY(ready.error().detail().find("0.17") != std::string::npos);
+#else
+    QSKIP("POSIX script stubs are used to simulate an old restic");
+#endif
+}
+
+void ResticTest::acceptsInstalledRestic() {
+    if (!resticAvailable()) {
+        QSKIP("restic is not installed");
+    }
+    QVERIFY(requireResticVersion(QStringLiteral("restic")).ok());
+
+    const Status missing = requireResticVersion(directory_->filePath(QStringLiteral("no-restic")));
+    QVERIFY(!missing.ok());
+    QCOMPARE(static_cast<int>(missing.error().code()), static_cast<int>(ErrorCode::ExternalToolFailed));
 }
 
 QTEST_GUILESS_MAIN(ResticTest)

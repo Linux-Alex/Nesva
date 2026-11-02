@@ -353,6 +353,17 @@ int commandStatus(Context& context, const Options& options) {
     return output.flush(stdout, kExitSuccess);
 }
 
+
+/// Verifies that restic is installed and new enough before a repository command.
+bool ensureRestic(Output& output, const QString& executable) {
+    const Status ready = backup::requireResticVersion(executable);
+    if (ready.ok()) {
+        return true;
+    }
+    output.flushError(ready.error(), kExitFailure);
+    return false;
+}
+
 jobs::PasswordOptions passwordOptionsFromFlags(const Options& options, Context& context);
 
 struct CheckResult {
@@ -1415,6 +1426,10 @@ int commandRepository(Context& context, const Options& options) {
         if (!passwordFile) {
             return output.flushError(passwordFile.error(), kExitFailure);
         }
+        if (!ensureRestic(output, resticExecutable)) {
+            QFile::remove(passwordFile.value());
+            return kExitFailure;
+        }
         backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
                                             passwordFile.value());
         const Status initialised = repository.init();
@@ -1428,6 +1443,47 @@ int commandRepository(Context& context, const Options& options) {
         return output.flush(stdout, kExitSuccess);
     }
 
+
+    if (action == QStringLiteral("info")) {
+        const QString account = jobs::repositoryAccount(job.value().destinationPath);
+        QString stored = QStringLiteral("not stored");
+        QString backend = QStringLiteral("keyring");
+        if (passwordOptions.source == jobs::PasswordSource::File) {
+            backend = QStringLiteral("file");
+            stored = QFileInfo::exists(passwordOptions.filePath) ? QStringLiteral("present")
+                                                                 : QStringLiteral("missing");
+        } else {
+            const Result<QByteArray> lookup =
+                jobs::loadRepositoryPassword(job.value().destinationPath, passwordOptions);
+            stored = lookup ? QStringLiteral("present in the keyring")
+                            : QStringLiteral("not found (%1)")
+                                  .arg(QString::fromStdString(lookup.error().message()));
+        }
+
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("job"), job.value().name);
+        output.add(QStringLiteral("repository"), job.value().destinationPath);
+        output.add(QStringLiteral("password_backend"), backend);
+        output.add(QStringLiteral("keyring_service"), passwordOptions.keyringService);
+        output.add(QStringLiteral("keyring_account"), account);
+        if (backend == QStringLiteral("file")) {
+            output.add(QStringLiteral("password_file"), passwordOptions.filePath);
+        }
+        output.add(QStringLiteral("password_state"), stored);
+
+        output.line(QStringLiteral("Job:        %1").arg(job.value().name));
+        output.line(QStringLiteral("Repository: %1").arg(job.value().destinationPath));
+        output.line(QStringLiteral("Backend:    %1").arg(backend));
+        if (backend == QStringLiteral("file")) {
+            output.line(QStringLiteral("Password:   %1 (%2)").arg(passwordOptions.filePath, stored));
+        } else {
+            output.line(QStringLiteral("Keyring:    service=%1 account=%2")
+                            .arg(passwordOptions.keyringService, account));
+            output.line(QStringLiteral("Password:   %1").arg(stored));
+        }
+        return output.flush(stdout, kExitSuccess);
+    }
+
     const Result<QByteArray> password =
         jobs::loadRepositoryPassword(job.value().destinationPath, passwordOptions);
     if (!password) {
@@ -1436,6 +1492,10 @@ int commandRepository(Context& context, const Options& options) {
     const Result<QString> passwordFile = backup::createPasswordFile(password.value());
     if (!passwordFile) {
         return output.flushError(passwordFile.error(), kExitFailure);
+    }
+    if (!ensureRestic(output, resticExecutable)) {
+        QFile::remove(passwordFile.value());
+        return kExitFailure;
     }
     backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
                                         passwordFile.value());
@@ -1533,6 +1593,14 @@ int commandSnapshotsList(Context& context, const Options& options) {
     if (!passwordFile) {
         return output.flushError(passwordFile.error(), kExitFailure);
     }
+    if (!ensureRestic(output, resticExecutable)) {
+        QFile::remove(passwordFile.value());
+        return kExitFailure;
+    }
+    if (!ensureRestic(output, resticExecutable)) {
+        QFile::remove(passwordFile.value());
+        return kExitFailure;
+    }
     backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
                                         passwordFile.value());
     const Result<QVector<backup::SnapshotInfo>> snapshots = repository.snapshots();
@@ -1609,6 +1677,14 @@ int commandRetention(Context& context, const Options& options) {
     const Result<QString> passwordFile = backup::createPasswordFile(password.value());
     if (!passwordFile) {
         return output.flushError(passwordFile.error(), kExitFailure);
+    }
+    if (!ensureRestic(output, resticExecutable)) {
+        QFile::remove(passwordFile.value());
+        return kExitFailure;
+    }
+    if (!ensureRestic(output, resticExecutable)) {
+        QFile::remove(passwordFile.value());
+        return kExitFailure;
     }
     backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
                                         passwordFile.value());

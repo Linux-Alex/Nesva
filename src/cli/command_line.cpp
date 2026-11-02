@@ -77,7 +77,7 @@ Options parseArguments(const QStringList& arguments) {
                                                 "restore", "show",    "help",    "add",
                                                 "status",  "reload",  "stop",    "init",
                                                 "locks",   "unlock",  "apply",   "set-password",
-                                                "check",   "preview"};
+                                                "check",   "preview", "info"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
@@ -125,6 +125,7 @@ QString usageText() {
         "                            options: --to <dir>, --policy skip|overwrite|rename,\n"
         "                                     --overwrite, --rename, --no-verify\n"
         "  history list              List recent job runs (--limit <n>)\n"
+        "  repository info <job>     Show where the repository password is stored\n"
         "  repository init <job>     Store the repository password and run 'restic init'\n"
         "                            (--password-stdin | --password-file <path>)\n"
         "  repository check <job>    Verify repository integrity (--read-data 5%)\n"
