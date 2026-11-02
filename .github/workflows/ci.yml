@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: '6.10.2'
+
+jobs:
+  linux-debug:
+    name: Linux Debug (GCC)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools \
+            libqt6sql6-sqlite libgl1-mesa-dev
+
+      - name: Configure
+        run: cmake --preset linux-debug
+
+      - name: Build
+        run: cmake --build --preset linux-debug
+
+      - name: Test
+        run: ctest --preset linux-debug --output-on-failure
+
+      - name: GUI self-test (headless)
+        run: |
+          QT_QPA_PLATFORM=offscreen ./build/linux-debug/nesva \
+            --data-dir="$RUNNER_TEMP/nesva-data" \
+            --gui-selftest="$RUNNER_TEMP/nesva-shots" --no-console-log
+
+      - name: Upload GUI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-screenshots-linux-debug
+          path: ${{ runner.temp }}/nesva-shots
+          if-no-files-found: warn
+
+  linux-release:
+    name: Linux Release (GCC)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools \
+            libqt6sql6-sqlite libgl1-mesa-dev
+
+      - name: Configure
+        run: cmake --preset linux-release
+
+      - name: Build
+        run: cmake --build --preset linux-release
+
+      - name: Test
+        run: ctest --preset linux-release --output-on-failure
+
+      - name: Install to staging prefix
+        run: cmake --install build/linux-release --prefix "$RUNNER_TEMP/nesva-stage"
+
+      - name: Verify installed layout
+        run: |
+          test -x "$RUNNER_TEMP/nesva-stage/bin/nesva"
+          test -x "$RUNNER_TEMP/nesva-stage/bin/nesva-cli"
+          "$RUNNER_TEMP/nesva-stage/bin/nesva-cli" --version
+
+  windows-msvc:
+    name: Windows x64 (MSVC)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: cmake --preset windows-msvc-release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+
+      - name: Build
+        run: cmake --build --preset windows-msvc-release
+
+      - name: Test
+        run: ctest --preset windows-msvc-release --output-on-failure
+
+      - name: GUI self-test (offscreen)
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          .\build\windows-msvc-release\nesva.exe --data-dir="$env:RUNNER_TEMP\nesva-data" --gui-selftest="$env:RUNNER_TEMP\nesva-shots" --no-console-log

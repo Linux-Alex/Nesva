@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Nesva
+GenericName=Backup and Archive
+Comment=Archive files to remote storage and create versioned encrypted backups
+Exec=nesva
+Icon=nesva
+Terminal=false
+Categories=Utility;Archiving;FileTools;
+Keywords=backup;archive;restore;restic;rclone;icloud;
+StartupNotify=true
+StartupWMClass=nesva

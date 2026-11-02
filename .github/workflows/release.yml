@@ -1,0 +1,90 @@
+name: Release packaging
+
+# Manual or tag-triggered. Produces artifacts and checksums only: publishing is
+# a separate, deliberate step performed after the artifacts have been reviewed.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for the artifacts (for example 0.1.0)'
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package-linux:
+    name: Linux package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools \
+            libqt6sql6-sqlite libgl1-mesa-dev
+
+      - name: Configure (release, embedded commit)
+        run: cmake --preset linux-release -DNESVA_EMBED_GIT_COMMIT=ON
+
+      - name: Build
+        run: cmake --build --preset linux-release
+
+      - name: Test
+        run: ctest --preset linux-release --output-on-failure
+
+      - name: Package
+        run: |
+          cd build/linux-release
+          cpack
+
+      - name: Generate checksums
+        run: |
+          cd build/linux-release
+          sha256sum *.deb > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nesva-linux-x86_64
+          path: |
+            build/linux-release/*.deb
+            build/linux-release/SHA256SUMS.txt
+
+  package-windows:
+    name: Windows package
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.2'
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (release, embedded commit)
+        run: cmake --preset windows-msvc-release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DNESVA_EMBED_GIT_COMMIT=ON
+
+      - name: Build
+        run: cmake --build --preset windows-msvc-release
+
+      - name: Test
+        run: ctest --preset windows-msvc-release --output-on-failure
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: nesva-windows-x86_64
+          path: |
+            build/windows-msvc-release/nesva.exe
+            build/windows-msvc-release/nesva-cli.exe
