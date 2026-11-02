@@ -49,7 +49,6 @@ private:
     bool json_ = false;
     QJsonObject object_;
     QStringList lines_;
-    bool hasTable_ = false;
 };
 
 QString Output::renderTable(const QStringList& headers, const QList<QStringList>& rows) {
@@ -97,7 +96,6 @@ QString Output::renderTable(const QStringList& headers, const QList<QStringList>
 }
 
 void Output::table(const QStringList& headers, const QList<QStringList>& rows) {
-    hasTable_ = true;
     if (json_) {
         QJsonArray array;
         for (const QStringList& row : rows) {
@@ -457,7 +455,8 @@ int commandDoctor(Context& context, const Options& options) {
         entry.insert(QStringLiteral("detail"), check.detail);
         checksArray.append(entry);
         output.line(QStringLiteral("[%1] %2: %3")
-                        .arg(check.status.toUpper(), check.name.leftJustified(18), check.detail));
+                        .arg(check.status.toUpper().leftJustified(7), check.name.leftJustified(18),
+                             check.detail));
     }
 
     output.add(QStringLiteral("ok"), errors == 0);

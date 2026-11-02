@@ -24,8 +24,6 @@
 namespace nesva::ui {
 namespace {
 
-constexpr qint64 kNoValue = -1;
-
 QString formattedTimestamp(const QString& isoTimestamp) {
     if (isoTimestamp.isEmpty()) {
         return QStringLiteral("\u2014");
@@ -271,7 +269,6 @@ void DashboardPage::refresh() {
                                     .arg(QDateTime::currentDateTime().toString(Qt::ISODate)));
 
     recentModel_->refresh();
-    Q_UNUSED(kNoValue);
 }
 
 } // namespace nesva::ui

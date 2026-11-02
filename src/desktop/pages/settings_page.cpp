@@ -208,9 +208,12 @@ void SettingsPage::refresh() {
         QString::fromUtf8(config::keys::kConfirmDestructiveActions), true);
     confirmDestructive_->setChecked(confirm ? confirm.value() : true);
 
+    const Result<int> schemaVersion = context_.database().schemaVersion();
+
     dataRootValue_->setText(Paths::describeResolution());
-    databaseValue_->setText(QStringLiteral("%1 (schema %2)")
+    databaseValue_->setText(QStringLiteral("%1 (schema %2 of %3)")
                                 .arg(context_.database().filePath())
+                                .arg(schemaVersion ? schemaVersion.value() : -1)
                                 .arg(db::Database::latestSchemaVersion()));
     logFileValue_->setText(context_.logFilePath());
 }
