@@ -1119,9 +1119,11 @@ Status JobStore::recordSnapshot(qint64 jobId, qint64 runId, const SnapshotRecord
     QSqlQuery query(database_.handle());
     query.prepare(QStringLiteral(
         "INSERT INTO backup_snapshots (job_id, snapshot_id, hostname, repository_path, created_at, "
-        "tags_json, paths_json, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "tags_json, paths_json, size_bytes, files_processed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(job_id, snapshot_id) DO UPDATE SET hostname = excluded.hostname, "
-        "repository_path = excluded.repository_path, size_bytes = excluded.size_bytes"));
+        "repository_path = excluded.repository_path, size_bytes = excluded.size_bytes, "
+        "files_processed = excluded.files_processed"));
     query.addBindValue(jobId);
     query.addBindValue(snapshot.snapshotId);
     query.addBindValue(snapshot.hostname);
@@ -1131,6 +1133,7 @@ Status JobStore::recordSnapshot(qint64 jobId, qint64 runId, const SnapshotRecord
     query.addBindValue(QStringLiteral("[]"));
     query.addBindValue(QStringLiteral("[]"));
     query.addBindValue(snapshot.sizeBytes);
+    query.addBindValue(snapshot.filesProcessed >= 0 ? snapshot.filesProcessed : QVariant());
     if (!query.exec()) {
         return makeError(ErrorCode::DatabaseError, "cannot record the snapshot",
                          query.lastError().text().toStdString());
@@ -1143,7 +1146,8 @@ Result<QVector<JobStore::SnapshotRecord>> JobStore::listSnapshots(qint64 jobId, 
     Result<QSqlQuery> query = database_.select(
         QStringLiteral(
             "SELECT id, snapshot_id, COALESCE(hostname, ''), COALESCE(repository_path, ''), "
-            "COALESCE(created_at, ''), COALESCE(size_bytes, -1) FROM backup_snapshots "
+            "COALESCE(created_at, ''), COALESCE(size_bytes, -1), "
+            "COALESCE(files_processed, -1) FROM backup_snapshots "
             "WHERE job_id = ? ORDER BY created_at DESC LIMIT ?"),
         {QVariant(jobId), QVariant(limit)});
     if (!query) {
@@ -1159,6 +1163,7 @@ Result<QVector<JobStore::SnapshotRecord>> JobStore::listSnapshots(qint64 jobId, 
         record.repositoryPath = rows.value(3).toString();
         record.createdAt = rows.value(4).toString();
         record.sizeBytes = rows.value(5).toLongLong();
+        record.filesProcessed = rows.value(6).toInt();
         snapshots.append(record);
     }
     return snapshots;
@@ -1168,7 +1173,8 @@ Result<QVector<JobStore::SnapshotRecord>> JobStore::allSnapshots(int limit) cons
     Result<QSqlQuery> query = database_.select(
         QStringLiteral(
             "SELECT id, snapshot_id, COALESCE(hostname, ''), COALESCE(repository_path, ''), "
-            "COALESCE(created_at, ''), COALESCE(size_bytes, -1) FROM backup_snapshots "
+            "COALESCE(created_at, ''), COALESCE(size_bytes, -1), "
+            "COALESCE(files_processed, -1) FROM backup_snapshots "
             "ORDER BY created_at DESC LIMIT ?"),
         {QVariant(limit)});
     if (!query) {
@@ -1184,6 +1190,7 @@ Result<QVector<JobStore::SnapshotRecord>> JobStore::allSnapshots(int limit) cons
         record.repositoryPath = rows.value(3).toString();
         record.createdAt = rows.value(4).toString();
         record.sizeBytes = rows.value(5).toLongLong();
+        record.filesProcessed = rows.value(6).toInt();
         snapshots.append(record);
     }
     return snapshots;

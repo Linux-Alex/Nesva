@@ -87,6 +87,7 @@ private:
 
     std::optional<jobs::StorageProviderRecord> providerFor(const jobs::ArchiveJob& job);
     QString rcloneExecutable() const;
+    QString resticExecutable() const;
 
     AgentOptions options_;
     std::unique_ptr<db::Database> database_;

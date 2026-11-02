@@ -223,7 +223,9 @@ void AgentService::startNextDueJob() {
 
         jobs::RunOptions runOptions;
         const Status started = worker_->start(job.value(), providerFor(job.value()), runOptions,
-                                              rcloneExecutable(), sched::toToken(decision.reason));
+                                              rcloneExecutable(), sched::toToken(decision.reason),
+                                              resticExecutable(),
+                                              jobs::passwordOptionsFromSettings(*database_));
         if (!started) {
             // Another process (for example the desktop application) holds the
             // single-flight guard. Try again on the next tick.
@@ -418,6 +420,19 @@ std::optional<jobs::StorageProviderRecord> AgentService::providerFor(const jobs:
     return provider.value();
 }
 
+QString AgentService::resticExecutable() const {
+    if (!database_) {
+        return QStringLiteral("restic");
+    }
+    config::SettingsStore settings(*database_);
+    const Result<QString> configured =
+        settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath));
+    if (configured && !configured.value().trimmed().isEmpty()) {
+        return configured.value();
+    }
+    return QStringLiteral("restic");
+}
+
 QString AgentService::rcloneExecutable() const {
     if (!database_) {
         return QStringLiteral("rclone");
@@ -496,7 +511,9 @@ void AgentService::handleRequest(QLocalSocket* socket, const QJsonObject& reques
         jobs::RunOptions options;
         options.dryRun = command.dryRun;
         const Status started = worker_->start(job.value(), providerFor(job.value()), options,
-                                              rcloneExecutable(), command.trigger);
+                                              rcloneExecutable(), command.trigger,
+                                              resticExecutable(),
+                                              jobs::passwordOptionsFromSettings(*database_));
         if (!started) {
             sendError(socket, started.error());
             return;

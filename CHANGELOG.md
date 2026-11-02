@@ -8,9 +8,8 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [0.4.0] - 2026-11-02
 
-Phase 4 (in progress): Restic backup engine and credential storage. The desktop UI for snapshot
-browsing and Restic restores is the remaining work; everything below is implemented, tested
-against real Restic repositories, and usable through `nesva-cli`.
+Phase 4: Restic backup engine, credential storage and the matching desktop UI. Everything below
+is implemented and tested against real Restic repositories.
 
 ### Added
 
@@ -30,6 +29,11 @@ against real Restic repositories, and usable through `nesva-cli`.
   supports dry-run (connectivity check), cancellation and optional post-backup `check`.
 - **BackupRestorer**: stages the restore and merges with skip/rename/overwrite policies, moving
   files (no double copy) and stripping the snapshot's common root.
+- Desktop: job editor with Backup mode (repository location, retention policy, post-backup
+  verification, "Set password..." and "Initialise repository..."); Snapshots page with
+  "Refresh from repository", snapshot restore dialog, retention preview/apply (optional prune),
+  repository check and unlock; archive and backup jobs both run through the same worker, so
+  scheduled and manual runs behave identically.
 - CLI: `repository init|check|locks|unlock|set-password`, `snapshots list`, `retention
   preview|apply`, `backup restore`, and `jobs run` now dispatches on the job mode.
 - Tests: `tst_secret_store` (real keyring round-trip, skippable when unavailable),
@@ -45,8 +49,6 @@ against real Restic repositories, and usable through `nesva-cli`.
 
 ### Known limitations
 
-- The desktop UI for Restic snapshots (Snapshots page, restore-from-snapshot, backup job editor)
-  is not wired yet; use `nesva-cli` for now.
 - Windows remains unbuilt/unverified.
 - rclone-backed repositories are supported by construction (`rclone:<remote>:<path>`) but were
   not exercised, because Rclone is not installed in this environment.

@@ -33,8 +33,9 @@ namespace nesva::ui {
 
 RestorePage::RestorePage(AppContext& context, QWidget* parent)
     : Page(QStringLiteral("Restore"),
-           QStringLiteral("Copy archived files back to a directory. Existing files are never "
-                          "overwritten without an explicit choice."),
+           QStringLiteral("Restore archived files. Restic snapshots are restored from the "
+                          "Snapshots page, where the snapshot is the unit of restore. Existing "
+                          "files are never overwritten without an explicit choice."),
            parent),
       context_(context) {
     auto* toolbar = new QHBoxLayout();

@@ -353,6 +353,13 @@ QStringList migrationV3Statements() {
     };
 }
 
+QStringList migrationV4Statements() {
+    return {
+        // The snapshots page shows how many files each snapshot holds.
+        QStringLiteral("ALTER TABLE backup_snapshots ADD COLUMN files_processed INTEGER"),
+    };
+}
+
 } // namespace
 
 const QStringList& bootstrapStatements() {
@@ -388,6 +395,12 @@ const std::vector<Migration>& allMigrations() {
             QStringLiteral("Scheduling: persistent retry state and the next-run index used by "
                            "the background agent."),
             migrationV3Statements(),
+        },
+        Migration{
+            4,
+            QStringLiteral("snapshot-file-counts"),
+            QStringLiteral("Restic snapshots record how many files they contain."),
+            migrationV4Statements(),
         },
     };
     return migrations;

@@ -11,6 +11,7 @@
 
 #include "nesva/core/result.hpp"
 #include "nesva/jobs/archive_runner.hpp"
+#include "nesva/jobs/backup_runner.hpp"
 
 namespace nesva::jobs {
 
@@ -33,10 +34,12 @@ public:
     /// Identifier of the job currently executing, or 0.
     qint64 runningJobId() const { return runningJobId_; }
 
-    /// Starts a run. Fails with AlreadyExists when a run is already active.
+    /// Starts a run. Dispatches on the job mode: archive jobs use the manifest
+    /// runner, backup jobs drive Restic.
     Status start(const ArchiveJob& job, std::optional<StorageProviderRecord> provider,
                  const RunOptions& options, const QString& rcloneExecutable,
-                 const QString& trigger);
+                 const QString& trigger, const QString& resticExecutable = QStringLiteral("restic"),
+                 const PasswordOptions& passwordOptions = {});
 
     void cancel();
     void waitForFinished(int timeoutMs = 30000);

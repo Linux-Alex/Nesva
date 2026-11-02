@@ -19,13 +19,19 @@
 #include "app_context.hpp"
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QComboBox>
 #include <QtWidgets/QLineEdit>
+#include <QtWidgets/QTableView>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPlainTextEdit>
 #include <QtWidgets/QSpinBox>
 #include <QtCore/QTimer>
 
 #include "dialogs/job_editor_dialog.hpp"
+#include "pages/snapshots_page.hpp"
+#include "nesva/backup/restic.hpp"
+#include "nesva/core/external_tool.hpp"
+#include "nesva/jobs/backup_runner.hpp"
 #include "job_executor.hpp"
 #include "main_window.hpp"
 #include "models/event_list_model.hpp"
@@ -93,6 +99,9 @@ private slots:
     void jobEditorCreatesJobFromForm();
     void jobEditorRejectsInvalidForm();
     void statusBarShowsAgentState();
+    void jobEditorCreatesBackupJobFromForm();
+    void snapshotsPageListsRecordedSnapshots();
+    void executorRunsBackupJob();
 
 private:
     std::unique_ptr<QTemporaryDir> directory_;
@@ -237,7 +246,7 @@ void GuiSmokeTest::executorRunsArchiveJobInWorkerThread() {
     window.show();
 
     QSignalSpy finishedSpy(context_->executor(), &ui::JobExecutor::finished);
-    const Status started = context_->executor()->startArchive(created.value(), false);
+    const Status started = context_->executor()->startRun(created.value(), false);
     QVERIFY2(started.ok(), started.ok() ? "" : started.error().message().c_str());
     QVERIFY(context_->executor()->isRunning());
 
@@ -283,10 +292,10 @@ void GuiSmokeTest::executorRejectsConcurrentRuns() {
     QVERIFY(created);
 
     QSignalSpy finishedSpy(context_->executor(), &ui::JobExecutor::finished);
-    QVERIFY(context_->executor()->startArchive(created.value(), false).ok());
+    QVERIFY(context_->executor()->startRun(created.value(), false).ok());
 
     // A second start while the first runs must be refused, not queued.
-    const Status second = context_->executor()->startArchive(created.value(), false);
+    const Status second = context_->executor()->startRun(created.value(), false);
     QVERIFY(!second.ok());
     QCOMPARE(static_cast<int>(second.error().code()), static_cast<int>(ErrorCode::AlreadyExists));
 
@@ -391,6 +400,146 @@ void GuiSmokeTest::statusBarShowsAgentState() {
     QVERIFY2(stored.value()->state.nextRunUtc.has_value(),
              "saving a recurring schedule must produce a concrete next run");
     QVERIFY(stored.value()->state.nextRunUtc->toUTC() > QDateTime::currentDateTimeUtc());
+}
+
+
+void GuiSmokeTest::jobEditorCreatesBackupJobFromForm() {
+    const QString sourceDirectory = directory_->filePath(QStringLiteral("backup-source"));
+    QVERIFY(QDir().mkpath(sourceDirectory));
+    const QString repository = directory_->filePath(QStringLiteral("restic-repo"));
+
+    ui::JobEditorDialog dialog(*context_, std::nullopt);
+    auto* mode = dialog.findChild<QComboBox*>(QStringLiteral("jobMode"));
+    auto* nameEdit = dialog.findChild<QLineEdit*>(QStringLiteral("jobName"));
+    auto* sources = dialog.findChild<QListWidget*>(QStringLiteral("jobSources"));
+    auto* repositoryEdit = dialog.findChild<QLineEdit*>(QStringLiteral("jobRepository"));
+    auto* keepLast = dialog.findChild<QSpinBox*>(QStringLiteral("jobKeepLast"));
+    auto* keepDaily = dialog.findChild<QSpinBox*>(QStringLiteral("jobKeepDaily"));
+    auto* checkAfter = dialog.findChild<QCheckBox*>(QStringLiteral("jobCheckAfterBackup"));
+    QVERIFY(mode && nameEdit && sources && repositoryEdit && keepLast && keepDaily && checkAfter);
+
+    QCOMPARE(mode->count(), 2);
+    QCOMPARE(mode->itemData(1).toString(), QStringLiteral("backup"));
+
+    mode->setCurrentIndex(1);
+    nameEdit->setText(QStringLiteral("Nightly backup"));
+    sources->addItem(sourceDirectory);
+    repositoryEdit->setText(repository);
+    keepLast->setValue(3);
+    keepDaily->setValue(5);
+    checkAfter->setChecked(true);
+
+    dialog.accept();
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+    QVERIFY(dialog.savedJobId() > 0);
+
+    jobs::JobStore store(context_->database());
+    const Result<jobs::ArchiveJob> saved = store.getJob(dialog.savedJobId());
+    QVERIFY(saved);
+    QVERIFY(saved.value().isBackup());
+    QCOMPARE(saved.value().destinationPath, repository);
+    QCOMPARE(saved.value().retention.keepLast, 3);
+    QCOMPARE(saved.value().retention.keepDaily, 5);
+    QVERIFY(saved.value().checkAfterBackup);
+}
+
+void GuiSmokeTest::snapshotsPageListsRecordedSnapshots() {
+    // No backup jobs yet: the page must say so instead of showing an empty table.
+    ui::SnapshotsPage emptyPage(*context_);
+    emptyPage.refresh();
+    auto* emptyCombo = emptyPage.findChild<QComboBox*>(QStringLiteral("snapshotJob"));
+    QVERIFY(emptyCombo != nullptr);
+    QCOMPARE(emptyCombo->count(), 0);
+
+    // Create a backup job and record a snapshot; the page lists it.
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("Backup job");
+    job.mode = QStringLiteral("backup");
+    job.destinationPath = directory_->filePath(QStringLiteral("repo-for-page"));
+    job.sources = {{0, directory_->path(), QStringLiteral("src")}};
+    const Result<qint64> created = store.createJob(job);
+    QVERIFY(created);
+
+    jobs::JobStore::SnapshotRecord record;
+    record.snapshotId = QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    record.createdAt = QStringLiteral("2026-03-10T02:00:00.000Z");
+    record.hostname = QStringLiteral("unit");
+    record.sizeBytes = 4096;
+    record.filesProcessed = 7;
+    QVERIFY(store.recordSnapshot(created.value(), 0, record).ok());
+
+    ui::SnapshotsPage page(*context_);
+    page.refresh();
+    auto* combo = page.findChild<QComboBox*>(QStringLiteral("snapshotJob"));
+    QVERIFY(combo != nullptr);
+    QCOMPARE(combo->count(), 1);
+    QCOMPARE(combo->currentText(), QStringLiteral("Backup job"));
+
+    auto* view = page.findChild<QTableView*>();
+    QVERIFY(view != nullptr);
+    QVERIFY(view->model() != nullptr);
+    QCOMPARE(view->model()->rowCount(), 1);
+    QCOMPARE(view->model()->index(0, 0).data().toString(), QStringLiteral("01234567"));
+    QCOMPARE(view->model()->index(0, 3).data().toString(), QStringLiteral("7"));
+}
+
+void GuiSmokeTest::executorRunsBackupJob() {
+    if (resolveExecutable(QStringLiteral("restic")).isEmpty()) {
+        QSKIP("restic is not installed");
+    }
+
+    // Point the password source at a file so the run does not depend on a keyring.
+    const QString passwordFile = directory_->filePath(QStringLiteral("backup-password"));
+    QVERIFY(test::writeFile(passwordFile, QByteArray("gui-backup-password")));
+    QVERIFY(QFile::setPermissions(passwordFile,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+    QVERIFY(context_->settings()
+                .setString(QString::fromUtf8(config::keys::kBackupPasswordSource),
+                           QStringLiteral("file"))
+                .ok());
+    QVERIFY(context_->settings()
+                .setString(QString::fromUtf8(config::keys::kBackupPasswordFile), passwordFile)
+                .ok());
+
+    const QString sourceDirectory = directory_->filePath(QStringLiteral("exec-source"));
+    const QString repository = directory_->filePath(QStringLiteral("exec-repo"));
+    QVERIFY(QDir().mkpath(sourceDirectory));
+    QVERIFY(test::writeFile(QDir(sourceDirectory).absoluteFilePath(QStringLiteral("a.txt")), "alpha"));
+
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("GUI backup job");
+    job.mode = QStringLiteral("backup");
+    job.destinationPath = repository;
+    job.sources = {{0, sourceDirectory, QStringLiteral("src")}};
+    const Result<qint64> created = store.createJob(job);
+    QVERIFY(created);
+
+    // Initialise the repository with the same password contract the runner uses.
+    const Result<QString> tempPassword = backup::createPasswordFile(QByteArray("gui-backup-password"));
+    QVERIFY(tempPassword);
+    backup::ResticRepository resticRepository(QStringLiteral("restic"), repository,
+                                              tempPassword.value());
+    QVERIFY2(resticRepository.init().ok(), "repository init");
+    QFile::remove(tempPassword.value());
+
+    MainWindow window(*context_);
+    window.show();
+
+    QSignalSpy finishedSpy(context_->executor(), &ui::JobExecutor::finished);
+    const Status started = context_->executor()->startRun(created.value(), false);
+    QVERIFY2(started.ok(), started.ok() ? "" : started.error().message().c_str());
+    QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 60000);
+
+    const auto report = finishedSpy.at(0).at(1).value<jobs::RunReport>();
+    QCOMPARE(report.status, QStringLiteral("succeeded"));
+
+    const Result<QVector<jobs::JobStore::SnapshotRecord>> snapshots =
+        store.listSnapshots(created.value());
+    QVERIFY(snapshots);
+    QCOMPARE(snapshots.value().size(), 1);
+    QVERIFY(!snapshots.value().constFirst().snapshotId.isEmpty());
 }
 
 QTEST_MAIN(GuiSmokeTest)

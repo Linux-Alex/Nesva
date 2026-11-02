@@ -197,6 +197,25 @@ Status storeRepositoryPassword(const QString& repository, const PasswordOptions&
 }
 
 // ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+PasswordOptions passwordOptionsFromSettings(db::Database& database) {
+    config::SettingsStore settings(database);
+    PasswordOptions options;
+    const QString source =
+        settings.getString(QString::fromUtf8(config::keys::kBackupPasswordSource),
+                           QStringLiteral("keyring"))
+            .valueOr(QStringLiteral("keyring"));
+    options.source =
+        source == QStringLiteral("file") ? PasswordSource::File : PasswordSource::Keyring;
+    options.filePath =
+        settings.getString(QString::fromUtf8(config::keys::kBackupPasswordFile), QString())
+            .valueOr(QString());
+    return options;
+}
+
+// ---------------------------------------------------------------------------
 // BackupRunner
 // ---------------------------------------------------------------------------
 

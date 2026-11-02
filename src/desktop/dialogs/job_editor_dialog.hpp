@@ -18,6 +18,7 @@ class QListWidget;
 class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
+class QGroupBox;
 class QSpinBox;
 class QTimeEdit;
 
@@ -52,6 +53,9 @@ private slots:
 private:
     jobs::ArchiveJob buildJob() const;
     sched::ScheduleSpec buildSchedule() const;
+    void updateModeUi();
+    void setRepositoryPassword();
+    void initialiseRepository();
     void updateScheduleSummary();
     std::optional<jobs::StorageProviderRecord> selectedProvider() const;
     bool validate(QString* error) const;
@@ -70,6 +74,15 @@ private:
     QPlainTextEdit* exclusionsEdit_ = nullptr;
     QSpinBox* bandwidthSpin_ = nullptr;
     QCheckBox* verifyCheck_ = nullptr;
+    QWidget* archiveDestinationRow_ = nullptr;
+    QGroupBox* backupGroup_ = nullptr;
+    QLineEdit* repositoryEdit_ = nullptr;
+    QSpinBox* keepLastSpin_ = nullptr;
+    QSpinBox* keepDailySpin_ = nullptr;
+    QSpinBox* keepWeeklySpin_ = nullptr;
+    QSpinBox* keepMonthlySpin_ = nullptr;
+    QSpinBox* keepYearlySpin_ = nullptr;
+    QCheckBox* checkAfterBackupCheck_ = nullptr;
     QCheckBox* enabledCheck_ = nullptr;
     QComboBox* scheduleKind_ = nullptr;
     QTimeEdit* scheduleTime_ = nullptr;

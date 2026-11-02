@@ -47,6 +47,9 @@ Result<QByteArray> loadRepositoryPassword(const QString& repository,
 Status storeRepositoryPassword(const QString& repository, const PasswordOptions& options,
                                const QByteArray& password);
 
+/// Reads the configured source/file from the settings table.
+PasswordOptions passwordOptionsFromSettings(db::Database& database);
+
 /// Keyring account name used for a repository (stable, not secret).
 QString repositoryAccount(const QString& repository);
 

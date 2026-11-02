@@ -10,7 +10,9 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialogButtonBox>
+#include <QtGui/QGuiApplication>
 #include <QtWidgets/QFileDialog>
+#include <QtWidgets/QInputDialog>
 #include <QtWidgets/QFormLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QTimeEdit>
@@ -29,6 +31,9 @@
 
 #include "app_context.hpp"
 #include "nesva/core/logging.hpp"
+#include "nesva/backup/restic.hpp"
+#include "nesva/config/settings_store.hpp"
+#include "nesva/jobs/backup_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/scan/file_scanner.hpp"
 #include "nesva/scheduler/schedule.hpp"
@@ -60,10 +65,8 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
     modeCombo_->addItem(tr("Archive - copy files, no versions"), QStringLiteral("archive"));
     modeCombo_->addItem(tr("Backup - versioned Restic snapshots (Phase 4)"), QStringLiteral("backup"));
     modeCombo_->setItemData(1, QVariant(), Qt::ToolTipRole);
-    // The backup item is visible but not selectable: it is not implemented yet.
-    if (auto* model = modeCombo_->model()) {
-        model->setData(model->index(1, 0), QVariant(0), Qt::UserRole - 1);
-    }
+    modeCombo_->setToolTip(tr("Archive copies files. Backup creates versioned, encrypted Restic "
+                              "snapshots in a repository."));
     form->addRow(tr("Mode"), modeCombo_);
 
     auto* sourceRow = new QWidget(this);
@@ -84,6 +87,7 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
     form->addRow(tr("Sources"), sourceRow);
 
     auto* destinationRow = new QWidget(this);
+    archiveDestinationRow_ = destinationRow;
     auto* destinationLayout = new QVBoxLayout(destinationRow);
     destinationLayout->setContentsMargins(0, 0, 0, 0);
     destinationLayout->setSpacing(6);
@@ -133,6 +137,65 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
 
     rootLayout->addLayout(form);
 
+
+    // ---- Restic backup options -------------------------------------------
+    backupGroup_ = new QGroupBox(tr("Restic repository"), this);
+    auto* backupForm = new QFormLayout(backupGroup_);
+
+    repositoryEdit_ = new QLineEdit(backupGroup_);
+    repositoryEdit_->setObjectName(QStringLiteral("jobRepository"));
+    repositoryEdit_->setPlaceholderText(tr("/mnt/backup/restic  or  rclone:remote:path"));
+    backupForm->addRow(tr("Repository"), repositoryEdit_);
+
+    auto* retentionRow = new QWidget(backupGroup_);
+    auto* retentionLayout = new QHBoxLayout(retentionRow);
+    retentionLayout->setContentsMargins(0, 0, 0, 0);
+    const auto addSpin = [&](const QString& label, int value) {
+        retentionLayout->addWidget(new QLabel(label, retentionRow));
+        auto* spin = new QSpinBox(retentionRow);
+        spin->setRange(0, 999);
+        spin->setValue(value);
+        retentionLayout->addWidget(spin);
+        return spin;
+    };
+    keepLastSpin_ = addSpin(tr("last"), 0);
+    keepDailySpin_ = addSpin(tr("daily"), 7);
+    keepWeeklySpin_ = addSpin(tr("weekly"), 4);
+    keepMonthlySpin_ = addSpin(tr("monthly"), 6);
+    keepYearlySpin_ = addSpin(tr("yearly"), 2);
+    keepLastSpin_->setObjectName(QStringLiteral("jobKeepLast"));
+    keepDailySpin_->setObjectName(QStringLiteral("jobKeepDaily"));
+    keepWeeklySpin_->setObjectName(QStringLiteral("jobKeepWeekly"));
+    keepMonthlySpin_->setObjectName(QStringLiteral("jobKeepMonthly"));
+    keepYearlySpin_->setObjectName(QStringLiteral("jobKeepYearly"));
+    retentionLayout->addStretch(1);
+    backupForm->addRow(tr("Keep"), retentionRow);
+
+    checkAfterBackupCheck_ = new QCheckBox(tr("Verify the repository after each backup"), backupGroup_);
+    checkAfterBackupCheck_->setObjectName(QStringLiteral("jobCheckAfterBackup"));
+    backupForm->addRow(QString(), checkAfterBackupCheck_);
+
+    auto* passwordRow = new QWidget(backupGroup_);
+    auto* passwordLayout = new QHBoxLayout(passwordRow);
+    passwordLayout->setContentsMargins(0, 0, 0, 0);
+    auto* setPasswordButton = new QPushButton(tr("Set password..."), passwordRow);
+    auto* initButton = new QPushButton(tr("Initialise repository..."), passwordRow);
+    passwordLayout->addWidget(setPasswordButton);
+    passwordLayout->addWidget(initButton);
+    passwordLayout->addStretch(1);
+    backupForm->addRow(tr("Access"), passwordRow);
+
+    auto* passwordHint = new QLabel(
+        tr("The password is stored in your system keyring (Secret Service / Credential Manager). "
+           "Nesva never writes it into the database, a config file or a log."),
+        backupGroup_);
+    passwordHint->setObjectName(QStringLiteral("pageSubtitle"));
+    passwordHint->setWordWrap(true);
+    backupForm->addRow(QString(), passwordHint);
+
+    rootLayout->addWidget(backupGroup_);
+    connect(setPasswordButton, &QPushButton::clicked, this, &JobEditorDialog::setRepositoryPassword);
+    connect(initButton, &QPushButton::clicked, this, &JobEditorDialog::initialiseRepository);
 
     // ---- schedule ---------------------------------------------------------
     auto* scheduleGroup = new QGroupBox(tr("Schedule"), this);
@@ -270,6 +333,20 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
     }
     destinationKindChanged();
 
+    // ---- mode and backup values -------------------------------------------
+    if (existing_ && existing_->isBackup()) {
+        modeCombo_->setCurrentIndex(1);
+        repositoryEdit_->setText(existing_->destinationPath);
+        keepLastSpin_->setValue(existing_->retention.keepLast);
+        keepDailySpin_->setValue(existing_->retention.keepDaily);
+        keepWeeklySpin_->setValue(existing_->retention.keepWeekly);
+        keepMonthlySpin_->setValue(existing_->retention.keepMonthly);
+        keepYearlySpin_->setValue(existing_->retention.keepYearly);
+        checkAfterBackupCheck_->setChecked(existing_->checkAfterBackup);
+    }
+    connect(modeCombo_, &QComboBox::currentIndexChanged, this, [this](int) { updateModeUi(); });
+    updateModeUi();
+
     // ---- schedule values ---------------------------------------------------
     jobs::JobStore scheduleStore(context_.database());
     sched::ScheduleSpec spec;
@@ -402,17 +479,29 @@ jobs::ArchiveJob JobEditorDialog::buildJob() const {
     jobs::ArchiveJob job;
     job.id = existing_ ? existing_->id : 0;
     job.name = nameEdit_->text().trimmed();
-    job.mode = QStringLiteral("archive");
+    job.mode = modeCombo_->currentData().toString() == QStringLiteral("backup")
+                   ? QStringLiteral("backup")
+                   : QStringLiteral("archive");
     job.enabled = enabledCheck_->isChecked();
     job.bandwidthLimitKiB = bandwidthSpin_->value();
     job.verifyChecksum = verifyCheck_->isChecked();
 
-    const std::optional<jobs::StorageProviderRecord> provider = selectedProvider();
-    if (provider) {
-        job.storageProviderId = provider->id;
-        job.destinationPath = subPathEdit_->text().trimmed();
+    if (job.isBackup()) {
+        job.destinationPath = repositoryEdit_->text().trimmed();
+        job.retention.keepLast = keepLastSpin_->value();
+        job.retention.keepDaily = keepDailySpin_->value();
+        job.retention.keepWeekly = keepWeeklySpin_->value();
+        job.retention.keepMonthly = keepMonthlySpin_->value();
+        job.retention.keepYearly = keepYearlySpin_->value();
+        job.checkAfterBackup = checkAfterBackupCheck_->isChecked();
     } else {
-        job.destinationPath = QDir::cleanPath(destinationPathEdit_->text().trimmed());
+        const std::optional<jobs::StorageProviderRecord> provider = selectedProvider();
+        if (provider) {
+            job.storageProviderId = provider->id;
+            job.destinationPath = subPathEdit_->text().trimmed();
+        } else {
+            job.destinationPath = QDir::cleanPath(destinationPathEdit_->text().trimmed());
+        }
     }
 
     for (int row = 0; row < sourceList_->count(); ++row) {
@@ -453,6 +542,14 @@ bool JobEditorDialog::validate(QString* error) const {
             *error = tr("Source folder does not exist: %1").arg(path);
             return false;
         }
+    }
+
+    if (modeCombo_->currentData().toString() == QStringLiteral("backup")) {
+        if (repositoryEdit_->text().trimmed().isEmpty()) {
+            *error = tr("A backup job needs a Restic repository location.");
+            return false;
+        }
+        return true;
     }
 
     if (!destinationKind_->currentData().isValid()) {
@@ -577,6 +674,101 @@ void JobEditorDialog::updateScheduleSummary() {
         summary = QObject::tr("Runs only when started manually.");
     }
     scheduleSummary_->setText(summary);
+}
+
+void JobEditorDialog::updateModeUi() {
+    const bool backup = modeCombo_->currentData().toString() == QStringLiteral("backup");
+    if (backupGroup_ != nullptr) {
+        backupGroup_->setVisible(backup);
+    }
+    if (archiveDestinationRow_ != nullptr) {
+        archiveDestinationRow_->setVisible(!backup);
+    }
+    if (verifyCheck_ != nullptr) {
+        verifyCheck_->setVisible(!backup);
+        verifyCheck_->setText(backup ? QString() : tr("Verify checksums after transfer"));
+    }
+}
+
+void JobEditorDialog::setRepositoryPassword() {
+    const QString repository = repositoryEdit_->text().trimmed();
+    if (repository.isEmpty()) {
+        QMessageBox::warning(this, tr("Repository password"),
+                             tr("Enter the repository location first."));
+        return;
+    }
+    bool accepted = false;
+    const QString password =
+        QInputDialog::getText(this, tr("Repository password"),
+                              tr("Restic password for %1").arg(repository), QLineEdit::Password,
+                              QString(), &accepted);
+    if (!accepted || password.isEmpty()) {
+        return;
+    }
+
+    const jobs::PasswordOptions options = jobs::passwordOptionsFromSettings(context_.database());
+    const Status stored = jobs::storeRepositoryPassword(repository, options, password.toUtf8());
+    if (!stored.ok()) {
+        QMessageBox::critical(this, tr("Repository password"),
+                              QString::fromStdString(stored.error().toDisplayString()));
+        return;
+    }
+    QMessageBox::information(
+        this, tr("Repository password"),
+        options.source == jobs::PasswordSource::File
+            ? tr("The password was written to the configured password file.")
+            : tr("The password is now stored in your system keyring."));
+}
+
+void JobEditorDialog::initialiseRepository() {
+    const QString repository = repositoryEdit_->text().trimmed();
+    if (repository.isEmpty()) {
+        QMessageBox::warning(this, tr("Initialise repository"),
+                             tr("Enter the repository location first."));
+        return;
+    }
+    const jobs::PasswordOptions options = jobs::passwordOptionsFromSettings(context_.database());
+    const Result<QByteArray> password = jobs::loadRepositoryPassword(repository, options);
+    if (!password) {
+        QMessageBox::warning(this, tr("Initialise repository"),
+                             tr("Set the repository password first (\"Set password...\")."));
+        return;
+    }
+
+    config::SettingsStore settings(context_.database());
+    const QString resticExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath), QStringLiteral("restic"))
+            .valueOr(QStringLiteral("restic"));
+
+    const Status ready = backup::requireResticVersion(resticExecutable);
+    if (!ready.ok()) {
+        QMessageBox::critical(this, tr("Initialise repository"),
+                              QString::fromStdString(ready.error().toDisplayString()));
+        return;
+    }
+
+    const Result<QString> passwordFile = backup::createPasswordFile(password.value());
+    if (!passwordFile) {
+        QMessageBox::critical(this, tr("Initialise repository"),
+                              QString::fromStdString(passwordFile.error().toDisplayString()));
+        return;
+    }
+
+    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+    backup::ResticRepository resticRepository(resticExecutable, repository, passwordFile.value());
+    const Status initialised = resticRepository.init();
+    QGuiApplication::restoreOverrideCursor();
+    QFile::remove(passwordFile.value());
+
+    if (!initialised.ok()) {
+        QMessageBox::warning(this, tr("Initialise repository"),
+                             QString::fromStdString(initialised.error().toDisplayString()));
+        return;
+    }
+    context_.recordEvent(LogLevel::Info, QStringLiteral("backup"),
+                         QStringLiteral("Restic repository initialised: %1").arg(repository));
+    QMessageBox::information(this, tr("Initialise repository"),
+                             tr("Repository %1 is ready.").arg(repository));
 }
 
 } // namespace nesva::ui

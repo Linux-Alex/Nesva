@@ -133,6 +133,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/job_editor_dialog.cpp
   src/desktop/dialogs/history_dialog.hpp
   src/desktop/dialogs/history_dialog.cpp
+  src/desktop/dialogs/snapshot_restore_dialog.hpp
+  src/desktop/dialogs/snapshot_restore_dialog.cpp
   src/desktop/models/job_list_model.hpp
   src/desktop/models/job_list_model.cpp
   src/desktop/models/event_list_model.hpp
@@ -149,6 +151,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/pages/archive_page.cpp
   src/desktop/pages/restore_page.hpp
   src/desktop/pages/restore_page.cpp
+  src/desktop/pages/snapshots_page.hpp
+  src/desktop/pages/snapshots_page.cpp
   src/desktop/pages/activity_page.hpp
   src/desktop/pages/activity_page.cpp
   src/desktop/pages/settings_page.hpp

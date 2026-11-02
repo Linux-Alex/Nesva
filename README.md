@@ -26,13 +26,12 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: Phase 4 (Restic) - engine complete, UI next
+## Current status: Phase 4 (Restic) delivered
 
-Phases 1-3 are implemented, built and tested on Linux; Phase 4's Restic engine and CLI work
-against real repositories, and the desktop UI for snapshots is the remaining piece. Archive jobs
-run end to end, scheduled jobs run in a background agent without the window, and versioned
-encrypted backups can be created, inspected, verified, pruned and restored through `nesva-cli`.
-What exists today is real, working functionality - not mockups:
+Phases 1-4 are implemented, built and tested on Linux. Archive jobs run end to end, scheduled
+jobs run in a background agent without the window, and versioned encrypted backups can be
+created, browsed, verified, pruned and restored either from the desktop application or through
+`nesva-cli`. What exists today is real, working functionality - not mockups:
 
 **nesva-core (library, no Qt Widgets dependency)**
 - `Result<T>` / `Status` error model with stable, machine-readable error codes
@@ -79,6 +78,9 @@ What exists today is real, working functionality - not mockups:
   the database or a log
 - Restore stages the snapshot and then moves files into place with skip/rename/overwrite
   policies; existing files are never overwritten silently
+- Desktop: backup jobs in the job editor (repository, retention, password, repository
+  initialisation), a Snapshots page with repository refresh, restore, retention preview/apply,
+  integrity check and unlock, and a snapshot restore dialog with progress
 
 **nesva (desktop application)**
 - Qt 6 Widgets shell: sidebar navigation, top status bar, page stack, bottom activity dock
@@ -196,7 +198,7 @@ next to the executable or into Program Files.
 
 ## Testing
 
-`ctest --preset linux-debug` runs 21 test binaries (222 test functions):
+`ctest --preset linux-debug` runs 21 test binaries (228 test functions):
 
 | Test | Covers |
 |---|---|
@@ -300,8 +302,8 @@ writes a record.
 | 1 | Foundation: build system, core services, SQLite, logging, desktop shell, CLI, tests | **delivered** |
 | 2 | Functional archive: job editor, local + Rclone providers, execution, progress, restore | **delivered** |
 | 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | **delivered** |
-| 4 | Restic: repository setup, snapshots, restore, retention, verification | **in progress** - engine + CLI delivered, snapshot UI next |
-| 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | planned |
+| 4 | Restic: repository setup, snapshots, restore, retention, verification | **delivered** |
+| 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | next |
 | 6 | Distribution: Windows installer, .deb/AppImage/RPM, CI/CD, user docs | planned |
 
 ---

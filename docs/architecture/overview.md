@@ -276,7 +276,7 @@ that would re-enter the source tree.
 | 1 | Build system, core services, SQLite + migrations, logging, desktop shell, CLI, tests | delivered |
 | 2 | Job editor, local + Rclone providers, execution, progress, history, restore | delivered |
 | 3 | Agent, IPC, scheduling, missed runs, tray, notifications | delivered |
-| 4 | Restic repository, snapshots, restore, retention, verification | in progress (engine + CLI delivered, snapshot UI next) |
+| 4 | Restic repository, snapshots, restore, retention, verification | delivered |
 | 5 | Microsoft 365 OAuth, mailbox selection, EML export, incremental sync | planned |
 | 6 | Windows installer, Linux packages, release CI, user/security documentation | planned |
 

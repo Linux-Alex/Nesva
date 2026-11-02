@@ -17,13 +17,16 @@ class JobWorker::Thread final : public QThread {
 
 public:
     Thread(QString databasePath, ArchiveJob job, std::optional<StorageProviderRecord> provider,
-           RunOptions options, QString rcloneExecutable, QString trigger)
+           RunOptions options, QString rcloneExecutable, QString trigger,
+           QString resticExecutable, PasswordOptions passwordOptions)
         : databasePath_(std::move(databasePath)),
           job_(std::move(job)),
           provider_(std::move(provider)),
           options_(options),
           rcloneExecutable_(std::move(rcloneExecutable)),
-          trigger_(std::move(trigger)) {}
+          trigger_(std::move(trigger)),
+          resticExecutable_(std::move(resticExecutable)),
+          passwordOptions_(std::move(passwordOptions)) {}
 
     void requestCancel() { cancellation_.cancel(); }
     RunReport report() const { return report_; }
@@ -47,10 +50,19 @@ protected:
             return;
         }
 
-        ArchiveRunner runner(database, [this](const RunProgress& progress) {
+        const auto progressCallback = [this](const RunProgress& progress) {
             emit progressChanged(progress);
-        });
-        report_ = runner.run(job_, provider_, options_, cancellation_, trigger_, rcloneExecutable_);
+        };
+
+        if (job_.isBackup()) {
+            BackupRunner runner(database, progressCallback);
+            report_ = runner.run(job_, options_, cancellation_, trigger_, resticExecutable_,
+                                 passwordOptions_);
+        } else {
+            ArchiveRunner runner(database, progressCallback);
+            report_ = runner.run(job_, provider_, options_, cancellation_, trigger_,
+                                 rcloneExecutable_);
+        }
         emit completed(report_);
     }
 
@@ -61,6 +73,8 @@ private:
     RunOptions options_;
     QString rcloneExecutable_;
     QString trigger_;
+    QString resticExecutable_;
+    PasswordOptions passwordOptions_;
     CancellationToken cancellation_;
     RunReport report_;
 };
@@ -78,13 +92,15 @@ bool JobWorker::isRunning() const {
 
 Status JobWorker::start(const ArchiveJob& job, std::optional<StorageProviderRecord> provider,
                         const RunOptions& options, const QString& rcloneExecutable,
-                        const QString& trigger) {
+                        const QString& trigger, const QString& resticExecutable,
+                        const PasswordOptions& passwordOptions) {
     if (thread_) {
         return makeError(ErrorCode::AlreadyExists, "a job is already running");
     }
 
     thread_ = std::make_unique<Thread>(databasePath_, job, std::move(provider), options,
-                                       rcloneExecutable, trigger);
+                                       rcloneExecutable, trigger, resticExecutable,
+                                       passwordOptions);
     runningJobId_ = job.id;
 
     connect(thread_.get(), &Thread::progressChanged, this, &JobWorker::progressChanged,

@@ -266,7 +266,7 @@ void JobsPage::runJob() {
     if (executor == nullptr) {
         return;
     }
-    const Status started = executor->startArchive(id, /*dryRun=*/false);
+    const Status started = executor->startRun(id, /*dryRun=*/false);
     if (!started.ok()) {
         QMessageBox::warning(this, QStringLiteral("Run job"),
                              QString::fromStdString(started.error().toDisplayString()));

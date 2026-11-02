@@ -39,6 +39,7 @@
 #include "pages/placeholder_page.hpp"
 #include "pages/restore_page.hpp"
 #include "pages/settings_page.hpp"
+#include "pages/snapshots_page.hpp"
 #include "pages/storage_page.hpp"
 #include "theme.hpp"
 
@@ -201,16 +202,7 @@ void MainWindow::createPages() {
     pages_.append(new JobsPage(context_, this));
     pages_.append(new StoragePage(context_, this));
     pages_.append(new ArchivePage(context_, this));
-    pages_.append(new PlaceholderPage(
-        QStringLiteral("Snapshots"),
-        QStringLiteral("Versioned, optionally encrypted Restic snapshots."),
-        QStringLiteral("Restic snapshot history is not implemented in this build."),
-        {QStringLiteral("Repository initialisation and password handling"),
-         QStringLiteral("Snapshot listing, browsing and per-snapshot statistics"),
-         QStringLiteral("Retention preview before any pruning"),
-         QStringLiteral("Integrity verification and repository lock detection")},
-        QStringLiteral("Delivered in Phase 4 (Restic). No repository is touched by this build."),
-        this));
+    pages_.append(new SnapshotsPage(context_, this));
     pages_.append(new RestorePage(context_, this));
     pages_.append(new ActivityPage(context_, this));
     pages_.append(new SettingsPage(context_, this));
