@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 The Nesva Authors
+
+#pragma once
+
+#include <QtCore/QVector>
+#include <QtGui/QIcon>
+#include <QtWidgets/QMainWindow>
+
+class QActionGroup;
+class QDockWidget;
+class QLabel;
+class QListWidget;
+class QListWidgetItem;
+class QStackedWidget;
+class QSystemTrayIcon;
+class QTableView;
+class QTimer;
+
+namespace nesva::ui {
+
+class AppContext;
+class EventListModel;
+class Page;
+
+/// Main application window: navigation sidebar, page stack, status bar,
+/// optional activity dock and system tray integration.
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+
+public:
+    explicit MainWindow(AppContext& context, QWidget* parent = nullptr);
+    ~MainWindow() override;
+
+    int pageCount() const { return static_cast<int>(pages_.size()); }
+    QString pageTitleAt(int index) const;
+    void selectPage(int index);
+
+public slots:
+    void refreshCurrentPage();
+    void refreshAll();
+    void applyTheme();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+
+private:
+    void buildUi();
+    void createPages();
+    void buildMenus();
+    void buildStatusBar();
+    void buildActivityPanel();
+    void buildTray();
+    void updateStatus();
+    void updateNavigationIcons();
+    void restoreWindowState();
+    void saveWindowState();
+
+    AppContext& context_;
+    QListWidget* navigation_ = nullptr;
+    QStackedWidget* stack_ = nullptr;
+    QLabel* applicationTitle_ = nullptr;
+    QLabel* statusBadge_ = nullptr;
+    QLabel* databaseStatus_ = nullptr;
+    QLabel* schemaStatus_ = nullptr;
+    QDockWidget* activityDock_ = nullptr;
+    QTableView* activityView_ = nullptr;
+    EventListModel* activityModel_ = nullptr;
+    QSystemTrayIcon* trayIcon_ = nullptr;
+    QTimer* refreshTimer_ = nullptr;
+    QActionGroup* themeGroup_ = nullptr;
+    QVector<Page*> pages_;
+    QVector<QListWidgetItem*> navigationItems_;
+};
+
+} // namespace nesva::ui

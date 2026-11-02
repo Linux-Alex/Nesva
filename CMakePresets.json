@@ -1,0 +1,133 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/stage/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NESVA_BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Linux Debug (GCC)",
+      "description": "Debug build with tests; the primary developer configuration on Linux.",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "NESVA_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Release (GCC)",
+      "description": "Optimized release build with tests.",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "NESVA_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "linux-clang-debug",
+      "displayName": "Linux Debug (Clang)",
+      "description": "Debug build using Clang; requires clang and lld on PATH.",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "NESVA_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "linux-asan",
+      "displayName": "Linux Debug (ASan + UBSan)",
+      "description": "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer enabled.",
+      "inherits": "linux-debug",
+      "cacheVariables": {
+        "NESVA_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Windows Debug (MSVC, Ninja)",
+      "description": "Run from a Visual Studio developer prompt so MSVC is on PATH.",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "NESVA_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows Release (MSVC, Ninja)",
+      "description": "Run from a Visual Studio developer prompt so MSVC is on PATH.",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "NESVA_WARNINGS_AS_ERRORS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux-debug", "configurePreset": "linux-debug" },
+    { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
+    { "name": "linux-asan", "configurePreset": "linux-asan" },
+    { "name": "windows-msvc-debug", "configurePreset": "windows-msvc-debug" },
+    { "name": "windows-msvc-release", "configurePreset": "windows-msvc-release" }
+  ],
+  "testPresets": [
+    {
+      "name": "base-test",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    { "name": "linux-debug", "inherits": "base-test", "configurePreset": "linux-debug" },
+    { "name": "linux-release", "inherits": "base-test", "configurePreset": "linux-release" },
+    { "name": "linux-clang-debug", "inherits": "base-test", "configurePreset": "linux-clang-debug" },
+    { "name": "linux-asan", "inherits": "base-test", "configurePreset": "linux-asan" },
+    { "name": "windows-msvc-debug", "inherits": "base-test", "configurePreset": "windows-msvc-debug" },
+    { "name": "windows-msvc-release", "inherits": "base-test", "configurePreset": "windows-msvc-release" }
+  ]
+}

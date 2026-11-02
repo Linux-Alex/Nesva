@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Nesva">
+  <defs>
+    <linearGradient id="nesva-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2b6ce8"/>
+      <stop offset="100%" stop-color="#1a3f8f"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" ry="56" fill="url(#nesva-gradient)"/>
+  <path d="M78 178V78h17l66 76V78h17v100h-17l-66-76v76z" fill="#ffffff"/>
+</svg>

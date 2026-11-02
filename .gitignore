@@ -1,0 +1,81 @@
+# Build directories
+build/
+build-*/
+out/
+cmake-build-*/
+install/
+stage/
+_install/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+compile_commands.json
+*.cmake.stamp
+
+# Compiled objects and binaries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.dSYM/
+
+# Qt
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+.qmake.stash
+
+# Test and coverage artifacts
+Testing/
+*.gcno
+*.gcda
+*.gcov
+coverage/
+*.log
+
+# Packaging output
+*.deb
+*.rpm
+*.AppImage
+*.msi
+*.msix
+*.wixpdb
+*.appx
+dist/
+artifacts/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+.clangd/
+
+# Local runtime data that must never be committed
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.env
+.env.*
+secrets/
+credentials/
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
