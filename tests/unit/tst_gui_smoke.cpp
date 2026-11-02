@@ -28,6 +28,7 @@
 #include <QtCore/QTimer>
 
 #include "dialogs/job_editor_dialog.hpp"
+#include "dialogs/snapshot_browser_dialog.hpp"
 #include "pages/snapshots_page.hpp"
 #include "nesva/backup/restic.hpp"
 #include "nesva/core/external_tool.hpp"
@@ -540,6 +541,15 @@ void GuiSmokeTest::executorRunsBackupJob() {
     QVERIFY(snapshots);
     QCOMPARE(snapshots.value().size(), 1);
     QVERIFY(!snapshots.value().constFirst().snapshotId.isEmpty());
+
+    // Browse the snapshot through the real dialog: it reads the repository off
+    // the GUI thread and reports what it found.
+    ui::SnapshotBrowserDialog browser(*context_, store.getJob(created.value()).value(),
+                                      snapshots.value().constFirst().snapshotId);
+    QSignalSpy loadedSpy(&browser, &ui::SnapshotBrowserDialog::loaded);
+    QTRY_VERIFY_WITH_TIMEOUT(loadedSpy.count() == 1, 60000);
+    QVERIFY(browser.fileCount() >= 1);
+    QCOMPARE(browser.loadError(), QString());
 }
 
 QTEST_MAIN(GuiSmokeTest)

@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "app_context.hpp"
+#include "dialogs/snapshot_browser_dialog.hpp"
 #include "dialogs/snapshot_restore_dialog.hpp"
 #include "nesva/backup/restic.hpp"
 #include "nesva/config/settings_store.hpp"
@@ -56,8 +57,10 @@ SnapshotsPage::SnapshotsPage(AppContext& context, QWidget* parent)
     toolbar->addWidget(jobCombo_);
 
     refreshButton_ = new QPushButton(QStringLiteral("Refresh from repository"), this);
+    browseButton_ = new QPushButton(QStringLiteral("Browse files..."), this);
     restoreButton_ = new QPushButton(QStringLiteral("Restore snapshot..."), this);
     toolbar->addWidget(refreshButton_);
+    toolbar->addWidget(browseButton_);
     toolbar->addWidget(restoreButton_);
     toolbar->addStretch(1);
 
@@ -104,6 +107,7 @@ SnapshotsPage::SnapshotsPage(AppContext& context, QWidget* parent)
 
     connect(jobCombo_, &QComboBox::currentIndexChanged, this, [this](int) { loadSnapshots(); });
     connect(refreshButton_, &QPushButton::clicked, this, &SnapshotsPage::refreshFromRepository);
+    connect(browseButton_, &QPushButton::clicked, this, &SnapshotsPage::browseSelected);
     connect(restoreButton_, &QPushButton::clicked, this, &SnapshotsPage::restoreSelected);
     connect(retentionPreviewButton_, &QPushButton::clicked, this, &SnapshotsPage::previewRetention);
     connect(retentionApplyButton_, &QPushButton::clicked, this, &SnapshotsPage::applyRetention);
@@ -235,6 +239,7 @@ void SnapshotsPage::updateActionState() {
     const bool hasJob = selectedJobId() > 0;
     const bool hasSnapshot = !selectedSnapshotId().isEmpty();
     refreshButton_->setEnabled(hasJob && !busy_);
+    browseButton_->setEnabled(hasJob && hasSnapshot && !busy_);
     restoreButton_->setEnabled(hasJob && hasSnapshot && !busy_);
     retentionPreviewButton_->setEnabled(hasJob && !busy_);
     retentionApplyButton_->setEnabled(hasJob && !busy_);
@@ -307,6 +312,16 @@ void SnapshotsPage::refreshFromRepository() {
                                  "that Restic is installed."));
         loadSnapshots();
     });
+}
+
+void SnapshotsPage::browseSelected() {
+    const std::optional<jobs::ArchiveJob> job = selectedJob();
+    const QString snapshotId = selectedSnapshotId();
+    if (!job.has_value() || snapshotId.isEmpty()) {
+        return;
+    }
+    SnapshotBrowserDialog dialog(context_, job.value(), snapshotId, this);
+    dialog.exec();
 }
 
 void SnapshotsPage::restoreSelected() {

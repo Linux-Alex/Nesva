@@ -55,6 +55,7 @@ private:
     void reloadJobs();
     void loadSnapshots();
     void refreshFromRepository();
+    void browseSelected();
     void restoreSelected();
     void previewRetention();
     void applyRetention();
@@ -74,6 +75,7 @@ private:
     QLabel* emptyState_ = nullptr;
     QProgressBar* busyBar_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
+    QPushButton* browseButton_ = nullptr;
     QPushButton* restoreButton_ = nullptr;
     QPushButton* retentionPreviewButton_ = nullptr;
     QPushButton* retentionApplyButton_ = nullptr;

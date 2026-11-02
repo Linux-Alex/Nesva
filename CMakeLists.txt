@@ -133,6 +133,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/job_editor_dialog.cpp
   src/desktop/dialogs/history_dialog.hpp
   src/desktop/dialogs/history_dialog.cpp
+  src/desktop/dialogs/snapshot_browser_dialog.hpp
+  src/desktop/dialogs/snapshot_browser_dialog.cpp
   src/desktop/dialogs/snapshot_restore_dialog.hpp
   src/desktop/dialogs/snapshot_restore_dialog.cpp
   src/desktop/models/job_list_model.hpp
