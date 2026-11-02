@@ -892,4 +892,208 @@ Status JobStore::recordArchiveObject(qint64 jobId, qint64 runId, const QString& 
     return Status();
 }
 
+// ---------------------------------------------------------------------------
+// Schedules
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QString timeToText(const QTime& time) {
+    return time.toString(QStringLiteral("HH:mm"));
+}
+
+QTime timeFromText(const QString& text) {
+    const QTime parsed = QTime::fromString(text, QStringLiteral("HH:mm"));
+    return parsed.isValid() ? parsed : QTime(2, 30);
+}
+
+std::optional<QDateTime> optionalUtc(const QVariant& value) {
+    if (value.isNull()) {
+        return std::nullopt;
+    }
+    const QString text = value.toString();
+    if (text.isEmpty()) {
+        return std::nullopt;
+    }
+    const QDateTime parsed = QDateTime::fromString(text, Qt::ISODateWithMs);
+    return parsed.isValid() ? std::optional<QDateTime>(parsed.toUTC()) : std::nullopt;
+}
+
+QVariant utcVariant(const std::optional<QDateTime>& value) {
+    if (!value.has_value()) {
+        return QVariant();
+    }
+    return value->toUTC().toString(Qt::ISODateWithMs);
+}
+
+} // namespace
+
+Result<std::optional<ScheduleRecord>> JobStore::getSchedule(qint64 jobId) const {
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral(
+            "SELECT trigger_kind, COALESCE(time_of_day, '02:30'), COALESCE(day_of_week, 1), "
+            "COALESCE(day_of_month, 1), timezone, COALESCE(max_duration_seconds, 0), "
+            "retry_max_attempts, retry_backoff_seconds, catch_up_missed, next_run_at, last_run_at, "
+            "COALESCE(retry_attempt_count, 0), retry_next_at "
+            "FROM job_schedules WHERE job_id = ?"),
+        {QVariant(jobId)});
+    if (!query) {
+        return query.error();
+    }
+
+    QSqlQuery rows = std::move(query).take();
+    if (!rows.next()) {
+        return std::optional<ScheduleRecord>{};
+    }
+
+    ScheduleRecord record;
+    record.spec.kind = sched::triggerKindFromString(rows.value(0).toString())
+                           .value_or(sched::TriggerKind::Manual);
+    record.spec.timeOfDay = timeFromText(rows.value(1).toString());
+    record.spec.dayOfWeek = rows.value(2).toInt();
+    record.spec.dayOfMonth = rows.value(3).toInt();
+    record.spec.timezone = rows.value(4).toString().toLatin1();
+    record.spec.maxDurationSeconds = rows.value(5).toInt();
+    record.spec.retryMaxAttempts = rows.value(6).toInt();
+    record.spec.retryBackoffSeconds = rows.value(7).toInt();
+    record.spec.catchUpMissed = rows.value(8).toBool();
+    record.state.nextRunUtc = optionalUtc(rows.value(9));
+    record.state.lastRunUtc = optionalUtc(rows.value(10));
+    record.state.retryAttemptCount = rows.value(11).toInt();
+    record.state.retryNextUtc = optionalUtc(rows.value(12));
+    return std::optional<ScheduleRecord>(record);
+}
+
+Status JobStore::upsertSchedule(qint64 jobId, const sched::ScheduleSpec& spec) {
+    if (const auto invalid = spec.validate()) {
+        return makeError(ErrorCode::InvalidArgument, invalid->toStdString());
+    }
+
+    const QString timestamp = db::Database::currentTimestampUtc();
+    QSqlQuery query(database_.handle());
+    query.prepare(QStringLiteral(
+        "INSERT INTO job_schedules (job_id, trigger_kind, time_of_day, day_of_week, day_of_month, "
+        "timezone, max_duration_seconds, retry_max_attempts, retry_backoff_seconds, catch_up_missed, "
+        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(job_id) DO UPDATE SET trigger_kind = excluded.trigger_kind, "
+        "time_of_day = excluded.time_of_day, day_of_week = excluded.day_of_week, "
+        "day_of_month = excluded.day_of_month, timezone = excluded.timezone, "
+        "max_duration_seconds = excluded.max_duration_seconds, "
+        "retry_max_attempts = excluded.retry_max_attempts, "
+        "retry_backoff_seconds = excluded.retry_backoff_seconds, "
+        "catch_up_missed = excluded.catch_up_missed, updated_at = excluded.updated_at"));
+    query.addBindValue(jobId);
+    query.addBindValue(sched::toToken(spec.kind));
+    query.addBindValue(timeToText(spec.timeOfDay));
+    query.addBindValue(spec.dayOfWeek);
+    query.addBindValue(spec.dayOfMonth);
+    query.addBindValue(QString::fromLatin1(spec.timezone));
+    query.addBindValue(spec.maxDurationSeconds > 0 ? spec.maxDurationSeconds : QVariant());
+    query.addBindValue(spec.retryMaxAttempts);
+    query.addBindValue(spec.retryBackoffSeconds);
+    query.addBindValue(spec.catchUpMissed ? 1 : 0);
+    query.addBindValue(timestamp);
+    query.addBindValue(timestamp);
+    if (!query.exec()) {
+        return makeError(ErrorCode::DatabaseError, "cannot store the schedule",
+                         query.lastError().text().toStdString());
+    }
+
+    // Give the schedule a concrete next slot immediately, so the dashboard and
+    // the CLI show a real time even before the agent has run a tick.
+    Result<std::optional<ScheduleRecord>> stored = getSchedule(jobId);
+    if (stored && stored.value().has_value() && spec.isRecurring() &&
+        !stored.value()->state.nextRunUtc.has_value()) {
+        sched::ScheduleState state = stored.value()->state;
+        state.nextRunUtc = sched::computeNextRun(spec, QDateTime::currentDateTimeUtc());
+        return updateScheduleState(jobId, state);
+    }
+    return Status();
+}
+
+Status JobStore::deleteSchedule(qint64 jobId) {
+    QSqlQuery query(database_.handle());
+    query.prepare(QStringLiteral("DELETE FROM job_schedules WHERE job_id = ?"));
+    query.addBindValue(jobId);
+    if (!query.exec()) {
+        return makeError(ErrorCode::DatabaseError, "cannot delete the schedule",
+                         query.lastError().text().toStdString());
+    }
+    return Status();
+}
+
+Status JobStore::updateScheduleState(qint64 jobId, const sched::ScheduleState& state) {
+    QSqlQuery query(database_.handle());
+    query.prepare(QStringLiteral(
+        "UPDATE job_schedules SET next_run_at = ?, last_run_at = ?, retry_attempt_count = ?, "
+        "retry_next_at = ?, updated_at = ? WHERE job_id = ?"));
+    query.addBindValue(utcVariant(state.nextRunUtc));
+    query.addBindValue(utcVariant(state.lastRunUtc));
+    query.addBindValue(state.retryAttemptCount);
+    query.addBindValue(utcVariant(state.retryNextUtc));
+    query.addBindValue(db::Database::currentTimestampUtc());
+    query.addBindValue(jobId);
+    if (!query.exec()) {
+        return makeError(ErrorCode::DatabaseError, "cannot update the schedule state",
+                         query.lastError().text().toStdString());
+    }
+    return Status();
+}
+
+Result<QVector<QPair<qint64, ScheduleRecord>>> JobStore::listSchedules() const {
+    Result<QSqlQuery> query = database_.select(QStringLiteral(
+        "SELECT s.job_id, s.trigger_kind, COALESCE(s.time_of_day, '02:30'), "
+        "COALESCE(s.day_of_week, 1), COALESCE(s.day_of_month, 1), s.timezone, "
+        "COALESCE(s.max_duration_seconds, 0), s.retry_max_attempts, s.retry_backoff_seconds, "
+        "s.catch_up_missed, s.next_run_at, s.last_run_at, COALESCE(s.retry_attempt_count, 0), "
+        "s.retry_next_at "
+        "FROM job_schedules s JOIN backup_jobs j ON j.id = s.job_id "
+        "WHERE j.enabled = 1 ORDER BY s.job_id"));
+    if (!query) {
+        return query.error();
+    }
+
+    QSqlQuery rows = std::move(query).take();
+    QVector<QPair<qint64, ScheduleRecord>> schedules;
+    while (rows.next()) {
+        ScheduleRecord record;
+        record.spec.kind = sched::triggerKindFromString(rows.value(1).toString())
+                               .value_or(sched::TriggerKind::Manual);
+        record.spec.timeOfDay = timeFromText(rows.value(2).toString());
+        record.spec.dayOfWeek = rows.value(3).toInt();
+        record.spec.dayOfMonth = rows.value(4).toInt();
+        record.spec.timezone = rows.value(5).toString().toLatin1();
+        record.spec.maxDurationSeconds = rows.value(6).toInt();
+        record.spec.retryMaxAttempts = rows.value(7).toInt();
+        record.spec.retryBackoffSeconds = rows.value(8).toInt();
+        record.spec.catchUpMissed = rows.value(9).toBool();
+        record.state.nextRunUtc = optionalUtc(rows.value(10));
+        record.state.lastRunUtc = optionalUtc(rows.value(11));
+        record.state.retryAttemptCount = rows.value(12).toInt();
+        record.state.retryNextUtc = optionalUtc(rows.value(13));
+        schedules.append({rows.value(0).toLongLong(), record});
+    }
+    return schedules;
+}
+
+Result<QVector<QPair<qint64, QDateTime>>> JobStore::upcomingRuns(int limit) const {
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral("SELECT job_id, next_run_at FROM job_schedules "
+                       "WHERE next_run_at IS NOT NULL ORDER BY next_run_at LIMIT ?"),
+        {QVariant(limit)});
+    if (!query) {
+        return query.error();
+    }
+
+    QSqlQuery rows = std::move(query).take();
+    QVector<QPair<qint64, QDateTime>> upcoming;
+    while (rows.next()) {
+        const std::optional<QDateTime> slot = optionalUtc(rows.value(1));
+        if (slot) {
+            upcoming.append({rows.value(0).toLongLong(), *slot});
+        }
+    }
+    return upcoming;
+}
+
 } // namespace nesva::jobs

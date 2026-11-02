@@ -47,6 +47,10 @@ protected:
 private:
     void buildUi();
     void createPages();
+    void updateAgentIndicator();
+    void notify(const QString& title, const QString& message);
+    bool notificationsEnabled() const;
+    bool minimizeToTrayEnabled() const;
     void buildMenus();
     void buildStatusBar();
     void buildActivityPanel();
@@ -63,6 +67,7 @@ private:
     QLabel* statusBadge_ = nullptr;
     QLabel* databaseStatus_ = nullptr;
     QLabel* schemaStatus_ = nullptr;
+    QLabel* agentStatus_ = nullptr;
     QDockWidget* activityDock_ = nullptr;
     QTableView* activityView_ = nullptr;
     EventListModel* activityModel_ = nullptr;

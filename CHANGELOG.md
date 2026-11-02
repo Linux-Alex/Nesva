@@ -6,6 +6,50 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-02
+
+Phase 3: background execution. Scheduled jobs run without the desktop window.
+
+### Added
+
+- **`nesva-agent`** executable: schedule loop (default 20 s tick), one job at a time,
+  missed-run catch-up (once, with an age limit), persistent retries with geometric backoff,
+  per-job maximum duration, graceful SIGINT/SIGTERM/SIGHUP handling, single-instance lock file
+  and a heartbeat file (`agent.state.json`).
+- Schedule model (`nesva::sched`): daily/weekly/monthly/on-login/on-startup triggers,
+  timezone-aware next-run computation that survives DST gaps, due/missed/retry evaluation and
+  outcome planning — all pure functions, unit-tested without a clock or database.
+- Local IPC: line-oriented JSON over `QLocalServer` (`status`, `run`, `cancel`, `reload`,
+  `shutdown`), namespaced per data directory, with a shared `AgentClient` used by the desktop
+  application and the CLI.
+- Schema migration v3: persistent retry state and the next-run index.
+- Desktop integration: agent indicator in the status bar, agent card on the Settings page
+  (status, refresh, stop), "Run now" delegated to the agent when it is reachable, schedule
+  editor in the job dialog with a live next-run preview, "Next run" column in the jobs table,
+  optional minimise-to-tray, desktop notifications for finished runs.
+- CLI: `agent status|run|cancel|reload|stop` and `schedule list`.
+- Packaging: systemd **user** unit (`packaging/linux/nesva-agent.service`), installer script,
+  and a per-user Windows scheduled-task script (`LogonType Interactive`, `RunLevel Limited` —
+  never SYSTEM).
+- Documentation: `docs/developer-guide/agent.md` (operation, IPC protocol, troubleshooting).
+- Tests: schedule logic, agent protocol/heartbeat, and an integration test that starts the real
+  `nesva-agent` binary, talks to it over its socket and verifies a scheduled run — 18 binaries,
+  187 test functions.
+
+### Fixed
+
+- The agent's socket handler now drains data that arrived before `readyRead` was connected; a
+  local client writes immediately, which previously left the request unread (found by the
+  integration test).
+- `AgentClient` without an explicit socket name now resolves the name from the current data
+  directory instead of using an empty (invalid) name.
+
+### Known limitations
+
+- Windows has not been built or tested; the scheduled-task script is unverified.
+- Network-availability checks before a run are not implemented yet.
+- Cloud (Rclone) transfers are still only covered by unit tests with a scripted runner.
+
 ## [0.2.0] - 2026-11-02
 
 Phase 2: functional archive. Archive jobs can be created, executed, inspected and restored.

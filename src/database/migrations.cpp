@@ -340,6 +340,19 @@ QStringList migrationV2Statements() {
     };
 }
 
+QStringList migrationV3Statements() {
+    return {
+        // Persistent retry state: a failed run may be retried after a backoff,
+        // and that intent must survive an agent restart.
+        QStringLiteral("ALTER TABLE job_schedules ADD COLUMN retry_attempt_count INTEGER NOT NULL "
+                       "DEFAULT 0"),
+        QStringLiteral("ALTER TABLE job_schedules ADD COLUMN retry_next_at TEXT"),
+
+        // The scheduler asks for the earliest due schedule on every tick.
+        QStringLiteral("CREATE INDEX idx_job_schedules_next_run ON job_schedules(next_run_at)"),
+    };
+}
+
 } // namespace
 
 const QStringList& bootstrapStatements() {
@@ -368,6 +381,13 @@ const std::vector<Migration>& allMigrations() {
             QStringLiteral("Execution support: run ownership, source labels, skip reasons, "
                            "single-running-run guard and lookup indexes."),
             migrationV2Statements(),
+        },
+        Migration{
+            3,
+            QStringLiteral("scheduling-state"),
+            QStringLiteral("Scheduling: persistent retry state and the next-run index used by "
+                           "the background agent."),
+            migrationV3Statements(),
         },
     };
     return migrations;

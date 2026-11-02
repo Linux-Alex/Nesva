@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/scheduler/schedule.hpp"
 
 class QCheckBox;
 class QComboBox;
@@ -18,6 +19,7 @@ class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
+class QTimeEdit;
 
 namespace nesva::ui {
 
@@ -49,6 +51,8 @@ private slots:
 
 private:
     jobs::ArchiveJob buildJob() const;
+    sched::ScheduleSpec buildSchedule() const;
+    void updateScheduleSummary();
     std::optional<jobs::StorageProviderRecord> selectedProvider() const;
     bool validate(QString* error) const;
 
@@ -67,6 +71,16 @@ private:
     QSpinBox* bandwidthSpin_ = nullptr;
     QCheckBox* verifyCheck_ = nullptr;
     QCheckBox* enabledCheck_ = nullptr;
+    QComboBox* scheduleKind_ = nullptr;
+    QTimeEdit* scheduleTime_ = nullptr;
+    QComboBox* scheduleWeekday_ = nullptr;
+    QSpinBox* scheduleMonthDay_ = nullptr;
+    QComboBox* scheduleTimezone_ = nullptr;
+    QCheckBox* scheduleCatchUp_ = nullptr;
+    QSpinBox* scheduleRetries_ = nullptr;
+    QSpinBox* scheduleBackoff_ = nullptr;
+    QSpinBox* scheduleMaxDuration_ = nullptr;
+    QLabel* scheduleSummary_ = nullptr;
     QPushButton* previewButton_ = nullptr;
     QProgressBar* previewProgress_ = nullptr;
     QLabel* previewLabel_ = nullptr;

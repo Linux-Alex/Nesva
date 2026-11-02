@@ -18,6 +18,7 @@
 
 #include "app_context.hpp"
 #include <QtWidgets/QCheckBox>
+#include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPlainTextEdit>
@@ -32,6 +33,7 @@
 #include "nesva/core/paths.hpp"
 #include "nesva/jobs/archive_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/scheduler/schedule.hpp"
 #include "support/test_fixtures.hpp"
 
 using namespace nesva;
@@ -90,6 +92,7 @@ private slots:
     void executorRejectsConcurrentRuns();
     void jobEditorCreatesJobFromForm();
     void jobEditorRejectsInvalidForm();
+    void statusBarShowsAgentState();
 
 private:
     std::unique_ptr<QTemporaryDir> directory_;
@@ -350,6 +353,44 @@ void GuiSmokeTest::jobEditorRejectsInvalidForm() {
     const Result<QVector<jobs::ArchiveJob>> jobs = store.listJobs();
     QVERIFY(jobs);
     QCOMPARE(jobs.value().size(), 0);
+}
+
+
+void GuiSmokeTest::statusBarShowsAgentState() {
+    MainWindow window(*context_);
+    window.show();
+
+    auto* agentLabel = window.findChild<QLabel*>(QStringLiteral("agentStatus"));
+    QVERIFY2(agentLabel != nullptr, "the status bar must show agent state");
+
+    // No agent is running for this data directory, so the label must say so -
+    // never claim a background service that does not exist.
+    QTRY_VERIFY_WITH_TIMEOUT(agentLabel->text().contains(QStringLiteral("Agent")), 5000);
+    QVERIFY(agentLabel->text().contains(QStringLiteral("not running")) ||
+            agentLabel->text().contains(QStringLiteral("Agent: ")));
+
+    // A job with a schedule stores a concrete next run, so the dashboard and CLI
+    // do not have to wait for the agent's first tick.
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("Scheduled job");
+    job.destinationPath = directory_->filePath(QStringLiteral("sched-dest"));
+    job.sources = {{0, directory_->path(), QStringLiteral("src")}};
+    const Result<qint64> created = store.createJob(job);
+    QVERIFY(created);
+
+    sched::ScheduleSpec spec;
+    spec.kind = sched::TriggerKind::Daily;
+    spec.timeOfDay = QTime(3, 0);
+    spec.timezone = QByteArrayLiteral("UTC");
+    QVERIFY(store.upsertSchedule(created.value(), spec).ok());
+
+    const Result<std::optional<jobs::ScheduleRecord>> stored = store.getSchedule(created.value());
+    QVERIFY(stored);
+    QVERIFY(stored.value().has_value());
+    QVERIFY2(stored.value()->state.nextRunUtc.has_value(),
+             "saving a recurring schedule must produce a concrete next run");
+    QVERIFY(stored.value()->state.nextRunUtc->toUTC() > QDateTime::currentDateTimeUtc());
 }
 
 QTEST_MAIN(GuiSmokeTest)

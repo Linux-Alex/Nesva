@@ -1,0 +1,24 @@
+[Unit]
+Description=Nesva background backup agent
+Documentation=https://github.com/nesva-project/nesva
+# User-level unit: it runs inside the user's session so cloud credentials and
+# the keyring stay available. Never install this as a system-wide service.
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/nesva-agent
+Restart=on-failure
+RestartSec=30
+# SIGTERM stops the agent gracefully: the file in flight is completed first.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+# Keep the agent away from anything it does not need.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/nesva
+Environment=QT_QPA_PLATFORM=offscreen
+
+[Install]
+WantedBy=default.target

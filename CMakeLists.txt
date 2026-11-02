@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.2.0
+  VERSION 0.3.0
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/nesva-project/nesva"
   LANGUAGES CXX)
@@ -63,12 +63,17 @@ add_library(nesva_core STATIC
   src/database/database.cpp
   src/database/migrations.cpp
   src/database/settings_store.cpp
+  src/agent/client.cpp
+  src/agent/protocol.cpp
   src/jobs/archive_restore.cpp
   src/jobs/archive_runner.cpp
   src/jobs/job_store.cpp
+  src/jobs/job_worker.cpp
+  include/nesva/jobs/job_worker.hpp
   src/providers/local_provider.cpp
   src/providers/provider_factory.cpp
   src/providers/rclone_provider.cpp
+  src/scheduler/schedule.cpp
   src/providers/storage_provider.cpp
 )
 
@@ -85,6 +90,8 @@ target_link_libraries(nesva_core
   PUBLIC
     Qt6::Core
     Qt6::Sql
+    # Qt Network is used for the local agent socket (QLocalSocket/QLocalServer).
+    Qt6::Network
 )
 
 nesva_set_target_warnings(nesva_core)
@@ -167,6 +174,23 @@ target_link_libraries(nesva-cli PRIVATE Nesva::Core)
 nesva_set_target_warnings(nesva-cli)
 
 set_target_properties(nesva-cli PROPERTIES OUTPUT_NAME "nesva-cli")
+
+# ---------------------------------------------------------------------------
+# nesva-agent  (background scheduler and runner, executable "nesva-agent")
+# ---------------------------------------------------------------------------
+add_executable(nesva-agent
+  src/agent/main.cpp
+  src/agent/agent_service.hpp
+  src/agent/agent_service.cpp
+)
+
+target_link_libraries(nesva-agent PRIVATE Nesva::Core Qt6::Network)
+
+nesva_set_target_warnings(nesva-agent)
+
+set_target_properties(nesva-agent PROPERTIES OUTPUT_NAME "nesva-agent")
+
+install(TARGETS nesva-agent RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # ---------------------------------------------------------------------------
 # Tests

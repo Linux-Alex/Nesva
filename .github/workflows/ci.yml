@@ -42,6 +42,11 @@ jobs:
             --data-dir="$RUNNER_TEMP/nesva-data" \
             --gui-selftest="$RUNNER_TEMP/nesva-shots" --no-console-log
 
+      - name: Agent smoke test
+        run: |
+          ./build/linux-debug/nesva-agent --data-dir "$RUNNER_TEMP/nesva-agent-data" --once
+          ./build/linux-debug/nesva-cli --json --help > /dev/null
+
       - name: Upload GUI screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,6 +84,7 @@ jobs:
         run: |
           test -x "$RUNNER_TEMP/nesva-stage/bin/nesva"
           test -x "$RUNNER_TEMP/nesva-stage/bin/nesva-cli"
+          test -x "$RUNNER_TEMP/nesva-stage/bin/nesva-agent"
           "$RUNNER_TEMP/nesva-stage/bin/nesva-cli" --version
 
   windows-msvc:

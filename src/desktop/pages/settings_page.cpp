@@ -14,9 +14,11 @@
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QMessageBox>
 #include <QtWidgets/QVBoxLayout>
 
 #include "app_context.hpp"
+#include "nesva/agent/client.hpp"
 #include "nesva/core/paths.hpp"
 
 namespace nesva::ui {
@@ -46,6 +48,8 @@ SettingsPage::SettingsPage(AppContext& context, QWidget* parent)
     buildAppearanceSection();
     buildLoggingSection();
     buildSafetySection();
+    buildBehaviourSection();
+    buildAgentSection();
     buildLocationsSection();
 
     savedLabel_ = new QLabel(this);
@@ -190,6 +194,8 @@ void SettingsPage::refresh() {
     const QSignalBlocker themeBlocker(themeCombo_);
     const QSignalBlocker levelBlocker(logLevelCombo_);
     const QSignalBlocker confirmBlocker(confirmDestructive_);
+    const QSignalBlocker minimizeBlocker(minimizeToTrayCheck_);
+    const QSignalBlocker notificationsBlocker(notificationsCheck_);
 
     const Result<QString> theme =
         context_.settings().getString(QString::fromUtf8(config::keys::kThemeMode),
@@ -210,6 +216,14 @@ void SettingsPage::refresh() {
 
     const Result<int> schemaVersion = context_.database().schemaVersion();
 
+    const Result<bool> minimize = context_.settings().getBoolean(
+        QString::fromUtf8(config::keys::kMinimizeToTray), false);
+    minimizeToTrayCheck_->setChecked(minimize && minimize.value());
+    const Result<bool> notifications = context_.settings().getBoolean(
+        QString::fromUtf8(config::keys::kNotificationsEnabled), true);
+    notificationsCheck_->setChecked(notifications && notifications.value());
+    refreshAgentStatus();
+
     dataRootValue_->setText(Paths::describeResolution());
     databaseValue_->setText(QStringLiteral("%1 (schema %2 of %3)")
                                 .arg(context_.database().filePath())
@@ -217,5 +231,112 @@ void SettingsPage::refresh() {
                                 .arg(db::Database::latestSchemaVersion()));
     logFileValue_->setText(context_.logFilePath());
 }
+
+
+void SettingsPage::buildBehaviourSection() {
+    QVBoxLayout* cardLayout = nullptr;
+    QFrame* card = makeCard(this, QStringLiteral("Window behaviour"), cardLayout);
+
+    minimizeToTrayCheck_ = new QCheckBox(
+        QStringLiteral("Keep running in the tray when the window is closed"), card);
+    notificationsCheck_ = new QCheckBox(QStringLiteral("Show desktop notifications for runs"), card);
+    cardLayout->addWidget(minimizeToTrayCheck_);
+    cardLayout->addWidget(notificationsCheck_);
+
+    auto* hint = new QLabel(
+        QStringLiteral("Scheduled runs are executed by the background agent, not by this window. "
+                       "Closing the window or the tray icon does not stop scheduled backups."),
+        card);
+    hint->setObjectName(QStringLiteral("pageSubtitle"));
+    hint->setWordWrap(true);
+    cardLayout->addWidget(hint);
+
+    connect(minimizeToTrayCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        if (context_.settings()
+                .setBoolean(QString::fromUtf8(config::keys::kMinimizeToTray), checked)
+                .ok()) {
+            showSaved();
+        }
+    });
+    connect(notificationsCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        if (context_.settings()
+                .setBoolean(QString::fromUtf8(config::keys::kNotificationsEnabled), checked)
+                .ok()) {
+            showSaved();
+        }
+    });
+
+    body()->addWidget(card);
+}
+
+void SettingsPage::buildAgentSection() {
+    QVBoxLayout* cardLayout = nullptr;
+    QFrame* card = makeCard(this, QStringLiteral("Background agent"), cardLayout);
+
+    agentStatusValue_ = new QLabel(card);
+    agentStatusValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    agentStatusValue_->setWordWrap(true);
+    cardLayout->addWidget(agentStatusValue_);
+
+    auto* hint = new QLabel(
+        QStringLiteral("The agent (<code>nesva-agent</code>) runs scheduled jobs without this "
+                       "window. Install it as a systemd user service, or start it from a terminal "
+                       "with <code>nesva-agent</code>. See docs/developer-guide/agent.md."),
+        card);
+    hint->setObjectName(QStringLiteral("pageSubtitle"));
+    hint->setWordWrap(true);
+    hint->setTextFormat(Qt::RichText);
+    cardLayout->addWidget(hint);
+
+    auto* buttons = new QHBoxLayout();
+    auto* refreshButton = new QPushButton(QStringLiteral("Refresh status"), card);
+    auto* stopButton = new QPushButton(QStringLiteral("Stop agent"), card);
+    buttons->addWidget(refreshButton);
+    buttons->addWidget(stopButton);
+    buttons->addStretch(1);
+    cardLayout->addLayout(buttons);
+
+    connect(refreshButton, &QPushButton::clicked, this, [this] { refreshAgentStatus(); });
+    connect(stopButton, &QPushButton::clicked, this, [this] {
+        agent::AgentClient client;
+        const Status stopped = client.shutdown();
+        if (!stopped.ok()) {
+            QMessageBox::information(this, QStringLiteral("Background agent"),
+                                     QString::fromStdString(stopped.error().toDisplayString()));
+        } else {
+            QMessageBox::information(this, QStringLiteral("Background agent"),
+                                     QStringLiteral("The agent is shutting down."));
+        }
+        refreshAgentStatus();
+    });
+
+    body()->addWidget(card);
+}
+
+void SettingsPage::refreshAgentStatus() {
+    if (agentStatusValue_ == nullptr) {
+        return;
+    }
+    agent::AgentClient client;
+    Result<agent::AgentStatus> status = client.status(600);
+    if (status) {
+        const agent::AgentStatus& state = status.value();
+        agentStatusValue_->setText(
+            QStringLiteral("Running (PID %1, %2) - %3 scheduled job(s), next run %4")
+                .arg(state.pid)
+                .arg(state.state)
+                .arg(state.scheduledJobs)
+                .arg(state.nextRunUtc.isValid()
+                         ? state.nextRunUtc.toLocalTime().toString(Qt::ISODate)
+                         : QStringLiteral("-")));
+    } else {
+        const agent::AgentStatus heartbeat = agent::AgentClient::lastKnownStatus();
+        agentStatusValue_->setText(
+            QStringLiteral("Not running. Last known state: %1 (%2). Start it with "
+                           "nesva-agent or the systemd user service.")
+                .arg(heartbeat.state, heartbeat.updatedAtUtc.toLocalTime().toString(Qt::ISODate)));
+    }
+}
+
 
 } // namespace nesva::ui

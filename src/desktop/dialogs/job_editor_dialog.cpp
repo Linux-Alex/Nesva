@@ -4,12 +4,16 @@
 #include "job_editor_dialog.hpp"
 
 #include <QtCore/QDir>
+#include <QtCore/QLocale>
+#include <QtCore/QTimeZone>
 #include <QtCore/QFileInfo>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QFormLayout>
+#include <QtWidgets/QGroupBox>
+#include <QtWidgets/QTimeEdit>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
@@ -25,7 +29,9 @@
 
 #include "app_context.hpp"
 #include "nesva/core/logging.hpp"
+#include "nesva/jobs/job_store.hpp"
 #include "nesva/scan/file_scanner.hpp"
+#include "nesva/scheduler/schedule.hpp"
 
 namespace nesva::ui {
 namespace {
@@ -127,6 +133,77 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
 
     rootLayout->addLayout(form);
 
+
+    // ---- schedule ---------------------------------------------------------
+    auto* scheduleGroup = new QGroupBox(tr("Schedule"), this);
+    auto* scheduleForm = new QFormLayout(scheduleGroup);
+
+    scheduleKind_ = new QComboBox(scheduleGroup);
+    scheduleKind_->addItem(tr("Manual only"), QStringLiteral("manual"));
+    scheduleKind_->addItem(tr("Daily"), QStringLiteral("daily"));
+    scheduleKind_->addItem(tr("Weekly"), QStringLiteral("weekly"));
+    scheduleKind_->addItem(tr("Monthly"), QStringLiteral("monthly"));
+    scheduleKind_->addItem(tr("When the user logs in"), QStringLiteral("on_login"));
+    scheduleKind_->addItem(tr("When the agent starts"), QStringLiteral("on_startup"));
+    scheduleForm->addRow(tr("Repeat"), scheduleKind_);
+
+    scheduleTime_ = new QTimeEdit(scheduleGroup);
+    scheduleTime_->setDisplayFormat(QStringLiteral("HH:mm"));
+    scheduleForm->addRow(tr("Time of day"), scheduleTime_);
+
+    scheduleWeekday_ = new QComboBox(scheduleGroup);
+    for (int day = 1; day <= 7; ++day) {
+        scheduleWeekday_->addItem(QLocale().dayName(day, QLocale::LongFormat), day);
+    }
+    scheduleForm->addRow(tr("Day of week"), scheduleWeekday_);
+
+    scheduleMonthDay_ = new QSpinBox(scheduleGroup);
+    scheduleMonthDay_->setRange(1, 28);
+    scheduleForm->addRow(tr("Day of month"), scheduleMonthDay_);
+
+    scheduleTimezone_ = new QComboBox(scheduleGroup);
+    scheduleTimezone_->setEditable(true);
+    {
+        const QByteArray systemId = QTimeZone::systemTimeZoneId();
+        scheduleTimezone_->addItem(QString::fromLatin1(systemId));
+        scheduleTimezone_->addItem(QStringLiteral("UTC"));
+        for (const QByteArray& id : QTimeZone::availableTimeZoneIds()) {
+            const QString name = QString::fromLatin1(id);
+            if (name != QString::fromLatin1(systemId) && name != QStringLiteral("UTC")) {
+                scheduleTimezone_->addItem(name);
+            }
+        }
+        scheduleTimezone_->setCurrentIndex(0);
+    }
+    scheduleForm->addRow(tr("Timezone"), scheduleTimezone_);
+
+    scheduleCatchUp_ = new QCheckBox(tr("Run a missed slot when the agent starts"), scheduleGroup);
+    scheduleCatchUp_->setChecked(true);
+    scheduleForm->addRow(QString(), scheduleCatchUp_);
+
+    scheduleRetries_ = new QSpinBox(scheduleGroup);
+    scheduleRetries_->setRange(0, 10);
+    scheduleForm->addRow(tr("Retries after failure"), scheduleRetries_);
+
+    scheduleBackoff_ = new QSpinBox(scheduleGroup);
+    scheduleBackoff_->setRange(0, 3600);
+    scheduleBackoff_->setSuffix(tr(" s"));
+    scheduleBackoff_->setValue(60);
+    scheduleForm->addRow(tr("Retry backoff"), scheduleBackoff_);
+
+    scheduleMaxDuration_ = new QSpinBox(scheduleGroup);
+    scheduleMaxDuration_->setRange(0, 24 * 3600);
+    scheduleMaxDuration_->setSuffix(tr(" s"));
+    scheduleMaxDuration_->setSpecialValueText(tr("Unlimited"));
+    scheduleForm->addRow(tr("Maximum duration"), scheduleMaxDuration_);
+
+    scheduleSummary_ = new QLabel(scheduleGroup);
+    scheduleSummary_->setObjectName(QStringLiteral("pageSubtitle"));
+    scheduleSummary_->setWordWrap(true);
+    scheduleForm->addRow(QString(), scheduleSummary_);
+
+    rootLayout->addWidget(scheduleGroup);
+
     auto* hint = new QLabel(
         tr("Archive mode always copies. Source files are never deleted, moved or modified, and "
            "the destination is excluded from scanning so a job cannot archive its own output."),
@@ -192,6 +269,45 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
         destinationKind_->setCurrentIndex(0);
     }
     destinationKindChanged();
+
+    // ---- schedule values ---------------------------------------------------
+    jobs::JobStore scheduleStore(context_.database());
+    sched::ScheduleSpec spec;
+    if (existing_ && existing_->id > 0) {
+        Result<std::optional<jobs::ScheduleRecord>> stored = scheduleStore.getSchedule(existing_->id);
+        if (stored && stored.value().has_value()) {
+            spec = stored.value()->spec;
+        }
+    } else {
+        spec.timezone = QTimeZone::systemTimeZoneId();
+    }
+    const int kindIndex = scheduleKind_->findData(sched::toToken(spec.kind));
+    scheduleKind_->setCurrentIndex(kindIndex >= 0 ? kindIndex : 0);
+    scheduleTime_->setTime(spec.timeOfDay.isValid() ? spec.timeOfDay : QTime(2, 30));
+    scheduleWeekday_->setCurrentIndex(qBound(0, spec.dayOfWeek - 1, 6));
+    scheduleMonthDay_->setValue(qBound(1, spec.dayOfMonth, 28));
+    scheduleCatchUp_->setChecked(spec.catchUpMissed);
+    scheduleRetries_->setValue(qBound(0, spec.retryMaxAttempts, 10));
+    scheduleBackoff_->setValue(qBound(0, spec.retryBackoffSeconds, 3600));
+    scheduleMaxDuration_->setValue(qBound(0, spec.maxDurationSeconds, 24 * 3600));
+
+    const QString zoneName = QString::fromLatin1(spec.timezone.isEmpty()
+                                                     ? QTimeZone::systemTimeZoneId()
+                                                     : spec.timezone);
+    const int zoneIndex = scheduleTimezone_->findText(zoneName);
+    if (zoneIndex >= 0) {
+        scheduleTimezone_->setCurrentIndex(zoneIndex);
+    } else {
+        scheduleTimezone_->setEditText(zoneName);
+    }
+
+    connect(scheduleKind_, &QComboBox::currentIndexChanged, this,
+            [this](int) { updateScheduleSummary(); });
+    connect(scheduleWeekday_, &QComboBox::currentIndexChanged, this,
+            [this](int) { updateScheduleSummary(); });
+    connect(scheduleTime_, &QTimeEdit::timeChanged, this,
+            [this](const QTime&) { updateScheduleSummary(); });
+    updateScheduleSummary();
 
     connect(addButton, &QPushButton::clicked, this, &JobEditorDialog::addSource);
     connect(removeButton, &QPushButton::clicked, this, &JobEditorDialog::removeSource);
@@ -383,6 +499,22 @@ void JobEditorDialog::accept() {
         context_.recordEvent(LogLevel::Info, QStringLiteral("jobs"),
                              QStringLiteral("Job created: %1").arg(job.name));
     }
+
+    const sched::ScheduleSpec spec = buildSchedule();
+    if (const auto invalid = spec.validate()) {
+        QMessageBox::warning(this, tr("Schedule is not valid"), *invalid);
+        return;
+    }
+    const Status stored = store.upsertSchedule(savedJobId_, spec);
+    if (!stored.ok()) {
+        QMessageBox::critical(this, tr("Could not save the schedule"),
+                              QString::fromStdString(stored.error().toDisplayString()));
+        return;
+    }
+    context_.recordEvent(LogLevel::Info, QStringLiteral("schedule"),
+                         QStringLiteral("Schedule for '%1': %2")
+                             .arg(job.name, sched::describe(spec)));
+
     QDialog::accept();
 }
 
@@ -407,6 +539,44 @@ void JobEditorDialog::previewRun() {
     previewProgress_->setVisible(true);
     previewProgress_->setRange(0, 0);
     previewLabel_->setText(tr("Scanning..."));
+}
+
+sched::ScheduleSpec JobEditorDialog::buildSchedule() const {
+    sched::ScheduleSpec spec;
+    spec.kind = sched::triggerKindFromString(scheduleKind_->currentData().toString())
+                    .value_or(sched::TriggerKind::Manual);
+    spec.timeOfDay = scheduleTime_->time();
+    spec.dayOfWeek = scheduleWeekday_->currentData().toInt();
+    spec.dayOfMonth = scheduleMonthDay_->value();
+    spec.timezone = scheduleTimezone_->currentText().trimmed().toLatin1();
+    spec.catchUpMissed = scheduleCatchUp_->isChecked();
+    spec.retryMaxAttempts = scheduleRetries_->value();
+    spec.retryBackoffSeconds = scheduleBackoff_->value();
+    spec.maxDurationSeconds = scheduleMaxDuration_->value();
+    return spec;
+}
+
+void JobEditorDialog::updateScheduleSummary() {
+    const bool recurring = scheduleKind_->currentData().toString() == QStringLiteral("daily") ||
+                           scheduleKind_->currentData().toString() == QStringLiteral("weekly") ||
+                           scheduleKind_->currentData().toString() == QStringLiteral("monthly");
+    scheduleTime_->setEnabled(recurring);
+    scheduleWeekday_->setEnabled(scheduleKind_->currentData().toString() == QStringLiteral("weekly"));
+    scheduleMonthDay_->setEnabled(scheduleKind_->currentData().toString() == QStringLiteral("monthly"));
+
+    const sched::ScheduleSpec spec = buildSchedule();
+    QString summary = sched::describe(spec);
+    if (spec.isRecurring() && !spec.validate().has_value()) {
+        const QDateTime next = sched::computeNextRun(spec, QDateTime::currentDateTimeUtc());
+        if (next.isValid()) {
+            summary += QStringLiteral(" \u2014 next run %1")
+                           .arg(next.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        }
+    }
+    if (spec.kind == sched::TriggerKind::Manual) {
+        summary = QObject::tr("Runs only when started manually.");
+    }
+    scheduleSummary_->setText(summary);
 }
 
 } // namespace nesva::ui

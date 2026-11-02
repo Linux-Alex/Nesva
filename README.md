@@ -8,7 +8,7 @@ SQLite. Rclone and Restic are used as external, user-supplied tools - never bund
 never invoked through a shell.
 
 - Licence: Apache-2.0 (NESVA's own code, subject to dependency-licence review)
-- Executables: `nesva` (desktop), `nesva-cli` (automation), `nesva-agent` (planned, Phase 3)
+- Executables: `nesva` (desktop), `nesva-cli` (automation), `nesva-agent` (scheduler/runner)
 
 ---
 
@@ -26,11 +26,11 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: Phase 2 (functional archive)
+## Current status: Phase 3 (background execution)
 
-Phase 1 (foundation) and Phase 2 (functional archive) are implemented, built and tested on
-Linux. Archive jobs can be created, executed, cancelled, inspected and restored end to end.
-What exists today is real, working functionality - not mockups:
+Phases 1-3 are implemented, built and tested on Linux. Archive jobs can be created, executed,
+cancelled, inspected and restored end to end, and scheduled jobs run in a background agent
+without the window being open. What exists today is real, working functionality - not mockups:
 
 **nesva-core (library, no Qt Widgets dependency)**
 - `Result<T>` / `Status` error model with stable, machine-readable error codes
@@ -59,6 +59,15 @@ What exists today is real, working functionality - not mockups:
 - Job store with database-enforced single flight (one running run per job) and crash recovery of
   interrupted runs
 
+**Background agent (Phase 3)**
+- `nesva-agent` schedules and executes jobs without the desktop window: daily/weekly/monthly,
+  on-login and on-startup triggers, timezone-aware next-run computation, missed-run catch-up,
+  persistent retries with backoff, maximum run duration, graceful shutdown
+- Local JSON socket for `status`/`run`/`cancel`/`reload`/`shutdown`, plus a heartbeat file so the
+  UI always knows the agent state; single-instance lock per data directory
+- Duplicate runs remain impossible thanks to the database guard, whichever component starts them
+- systemd **user** unit and a per-user Windows scheduled task (never SYSTEM)
+
 **nesva (desktop application)**
 - Qt 6 Widgets shell: sidebar navigation, top status bar, page stack, bottom activity dock
 - Eight pages: Dashboard, Backup Jobs, Storage, Archive Explorer, Snapshots, Restore,
@@ -71,6 +80,9 @@ What exists today is real, working functionality - not mockups:
   bandwidth limit, checksum verification and a dry-run preview
 - Archive Explorer (destination listing joined with manifest hashes) and a Restore wizard
 - Storage connection manager: local folders and Rclone remotes, with an explicit connection test
+- Schedule editor with a live next-run preview; "Run now" is delegated to the background agent
+  when it is running, and the status bar shows agent state
+- Optional minimise-to-tray and desktop notifications for finished runs
 - Backup Jobs and Storage pages read the real database through Qt Model/View models
 - Activity page: combined job + application event stream with live text filtering, sortable
   columns, and a shortcut to the log folder
@@ -83,8 +95,9 @@ What exists today is real, working functionality - not mockups:
 **nesva-cli (automation and diagnostics)**
 - `status`, `doctor`, `jobs list`, `jobs run` (`--dry-run`, `--force`, `--retries`),
   `jobs cancel`, `storage list`, `storage test`, `archive list`, `archive restore`,
-  `history list` and `verify` implemented against the real database, with `--json` output and
-  documented exit codes
+  `history list`, `verify`, `schedule list` and `agent status|run|cancel|reload|stop`
+  implemented against the real database and agent socket, with `--json` output and documented
+  exit codes
 - Commands that belong to later phases return exit code 4 with an explicit
   "planned for Phase N; nothing was changed" message
 
@@ -170,7 +183,7 @@ next to the executable or into Program Files.
 
 ## Testing
 
-`ctest --preset linux-debug` runs 15 test binaries (150 test functions):
+`ctest --preset linux-debug` runs 18 test binaries (187 test functions):
 
 | Test | Covers |
 |---|---|
@@ -188,6 +201,9 @@ next to the executable or into Program Files.
 | `tst_rclone_provider` | Exact argv, no shell, JSON parsing, retries, cancellation, error mapping |
 | `tst_archive_runner` | End-to-end archive, incremental rerun, dry run, recursion guard, failures |
 | `tst_archive_restore` | Conflict policies, verification, corruption detection, restore records |
+| `tst_schedule` | Next-run computation, DST, missed runs, retries, due decisions |
+| `tst_agent_protocol` | Request/status JSON, heartbeat round-trip, socket naming |
+| `tst_agent_integration` | Starts the real `nesva-agent`, runs a scheduled job, drives IPC |
 | `tst_gui_smoke` | Headless: real MainWindow, 8 pages, models, theme, worker-thread execution |
 
 GUI verification additionally runs in two modes:
@@ -217,9 +233,11 @@ nesva/
 │   ├── desktop/                 Qt 6 Widgets application (library + main.cpp)
 │   ├── database/                SQLite access, migrations, settings store
 │   ├── cli/                     nesva-cli
-│   ├── agent/                   reserved for Phase 3
-│   ├── providers/               reserved for Phase 2 storage providers
-│   ├── scheduler/               reserved for Phase 3 scheduling
+│   ├── jobs/                    job store, archive runner, archive restore
+│   ├── providers/               storage provider interface, local + Rclone providers
+│   ├── scan/                    file scanner and exclusion rules
+│   ├── agent/                   agent service, IPC protocol and client
+│   ├── scheduler/               schedule model (next run, missed runs, retries)
 │   └── mail/                    reserved for Phase 5 Microsoft 365
 ├── tests/unit/                  Qt Test suites registered with CTest
 ├── docs/architecture/           overview + ADRs
@@ -263,8 +281,8 @@ writes a record.
 |---|---|---|
 | 1 | Foundation: build system, core services, SQLite, logging, desktop shell, CLI, tests | **delivered** |
 | 2 | Functional archive: job editor, local + Rclone providers, execution, progress, restore | **delivered** |
-| 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | next |
-| 4 | Restic: repository setup, snapshots, restore, retention, verification | planned |
+| 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | **delivered** |
+| 4 | Restic: repository setup, snapshots, restore, retention, verification | next |
 | 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | planned |
 | 6 | Distribution: Windows installer, .deb/AppImage/RPM, CI/CD, user docs | planned |
 

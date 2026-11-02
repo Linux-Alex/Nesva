@@ -104,13 +104,25 @@ Rules enforced by the build:
   `4` not implemented.
 - Commands that are not part of this phase fail loudly instead of silently doing nothing.
 
-### 3.4 nesva-agent (Phase 3)
+### 3.4 nesva-agent
 
-Planned: an independent process for scheduled runs with an OS-level registration (systemd user
-unit on Linux, Task Scheduler on Windows), duplicate-run prevention, persistent execution state,
-graceful shutdown and IPC with the desktop application. It is deliberately absent from this
-build rather than stubbed: scheduling must survive GUI closure, so an in-process timer is not an
-acceptable substitute.
+An independent `QCoreApplication` process that schedules and runs archive jobs without the
+desktop window:
+
+- tick loop (default 20 s) that evaluates schedules and starts at most one job at a time;
+- missed-run catch-up (once, with a 7-day age limit) and persistent retries with geometric
+  backoff;
+- per-job maximum duration enforced by cancelling the worker;
+- graceful SIGINT/SIGTERM shutdown that finishes the file in flight; SIGHUP reloads schedules;
+- single-instance lock file and a heartbeat file (`agent.state.json`);
+- a local JSON socket (Unix socket / named pipe) for `status`, `run`, `cancel`, `reload` and
+  `shutdown`, shared by the desktop application and `nesva-cli`;
+- OS registration: systemd **user** unit on Linux, per-user scheduled task on Windows
+  (`LogonType Interactive`, `RunLevel Limited`) - never a SYSTEM service, because SYSTEM cannot
+  see a user's cloud credentials or keyring.
+
+Schedule arithmetic lives in `nesva::sched` as pure functions (unit-tested without a clock or a
+database); see ADR 0011.
 
 ---
 
@@ -263,8 +275,8 @@ that would re-enter the source tree.
 |---|---|---|
 | 1 | Build system, core services, SQLite + migrations, logging, desktop shell, CLI, tests | delivered |
 | 2 | Job editor, local + Rclone providers, execution, progress, history, restore | delivered |
-| 3 | Agent, IPC, scheduling, missed runs, tray, notifications | next |
-| 4 | Restic repository, snapshots, restore, retention, verification | planned |
+| 3 | Agent, IPC, scheduling, missed runs, tray, notifications | delivered |
+| 4 | Restic repository, snapshots, restore, retention, verification | next |
 | 5 | Microsoft 365 OAuth, mailbox selection, EML export, incremental sync | planned |
 | 6 | Windows installer, Linux packages, release CI, user/security documentation | planned |
 

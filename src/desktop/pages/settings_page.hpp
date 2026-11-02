@@ -27,6 +27,9 @@ private:
     void buildAppearanceSection();
     void buildLoggingSection();
     void buildSafetySection();
+    void buildBehaviourSection();
+    void buildAgentSection();
+    void refreshAgentStatus();
     void buildLocationsSection();
     void showSaved();
 
@@ -34,6 +37,9 @@ private:
     QComboBox* themeCombo_ = nullptr;
     QComboBox* logLevelCombo_ = nullptr;
     QCheckBox* confirmDestructive_ = nullptr;
+    QCheckBox* minimizeToTrayCheck_ = nullptr;
+    QCheckBox* notificationsCheck_ = nullptr;
+    QLabel* agentStatusValue_ = nullptr;
     QLabel* savedLabel_ = nullptr;
     QLabel* dataRootValue_ = nullptr;
     QLabel* databaseValue_ = nullptr;

@@ -56,6 +56,8 @@ inline constexpr const char* kConfirmDestructiveActions = "safety.confirm_destru
 inline constexpr const char* kRcloneBinaryPath = "tools.rclone_path";
 inline constexpr const char* kResticBinaryPath = "tools.restic_path";
 inline constexpr const char* kNetworkChecksEnabled = "scheduling.network_checks";
+inline constexpr const char* kMinimizeToTray = "ui.minimize_to_tray";
+inline constexpr const char* kNotificationsEnabled = "ui.notifications";
 } // namespace keys
 
 } // namespace nesva::config

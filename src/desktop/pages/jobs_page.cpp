@@ -12,6 +12,7 @@
 #include <QtWidgets/QTableView>
 
 #include "app_context.hpp"
+#include "nesva/agent/client.hpp"
 #include "dialogs/history_dialog.hpp"
 #include "dialogs/job_editor_dialog.hpp"
 #include "job_executor.hpp"
@@ -150,9 +151,13 @@ void JobsPage::refresh() {
             "and a destination folder or storage provider."));
     }
 
-    setSubtitle(QStringLiteral("Archive jobs copy files to a destination. Backup jobs with Restic "
-                               "snapshots arrive in Phase 4. Database: %1")
-                    .arg(context_.database().filePath()));
+    agent::AgentClient client;
+    const bool agentRunning = client.isReachable(200);
+    setSubtitle(QStringLiteral("Archive jobs copy files to a destination. Runs start in the %1. "
+                               "Backup jobs with Restic snapshots arrive in Phase 4. Database: %2")
+                    .arg(agentRunning ? QStringLiteral("background agent")
+                                      : QStringLiteral("application"),
+                         context_.database().filePath()));
     updateActionState();
 }
 
@@ -241,6 +246,22 @@ void JobsPage::runJob() {
     if (id <= 0) {
         return;
     }
+    // Prefer the background agent: its run survives closing this window and is
+    // the same path a scheduled run takes. Fall back to an in-process run when
+    // the agent is not running.
+    agent::AgentClient client;
+    if (client.isReachable(400)) {
+        const Result<QString> accepted = client.runJob(id, false, QStringLiteral("desktop"));
+        if (accepted) {
+            runLabel_->setText(
+                QStringLiteral("The background agent accepted the job and is running it."));
+            return;
+        }
+        QMessageBox::warning(this, QStringLiteral("Run job"),
+                             QString::fromStdString(accepted.error().toDisplayString()));
+        return;
+    }
+
     JobExecutor* executor = context_.executor();
     if (executor == nullptr) {
         return;

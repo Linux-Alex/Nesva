@@ -27,7 +27,9 @@
 #include "nesva/db/database.hpp"
 #include "nesva/jobs/archive_restore.hpp"
 #include "nesva/jobs/archive_runner.hpp"
+#include "nesva/agent/client.hpp"
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/scheduler/schedule.hpp"
 #include "nesva/providers/provider_factory.hpp"
 
 namespace nesva::cli {
@@ -1131,6 +1133,163 @@ int commandArchiveRestore(Context& context, const Options& options) {
     return output.flush(stdout, report.succeeded() ? kExitSuccess : kExitFailure);
 }
 
+
+int commandAgent(Context& context, const Options& options) {
+    // The agent talks over its own socket; the database connection is only kept
+    // alive so the log file and path overrides stay identical to other commands.
+    Q_UNUSED(context);
+    Output output(options.json);
+    agent::AgentClient client;
+
+    const QString& subcommand = options.subcommand;
+    const bool wantsStatus = subcommand.isEmpty() || subcommand == QStringLiteral("status");
+
+    if (wantsStatus) {
+        Result<agent::AgentStatus> status = client.status(1500);
+        agent::AgentStatus state;
+        bool connected = true;
+        if (status) {
+            state = status.value();
+        } else {
+            // Fall back to the heartbeat so the answer is still useful when the
+            // agent is not running.
+            connected = false;
+            state = agent::AgentClient::lastKnownStatus();
+            state.running = false;
+        }
+
+        QJsonObject payload = agent::statusToJson(state);
+        payload.insert(QStringLiteral("connected"), connected);
+        output.add(QStringLiteral("ok"), connected);
+        output.add(QStringLiteral("agent"), payload);
+        output.line(QStringLiteral("Agent:       %1").arg(connected ? QStringLiteral("running")
+                                                                   : QStringLiteral("not running")));
+        if (connected) {
+            output.line(QStringLiteral("State:       %1").arg(state.state));
+            output.line(QStringLiteral("PID:         %1").arg(state.pid));
+            output.line(QStringLiteral("Scheduled:   %1 job(s)").arg(state.scheduledJobs));
+            if (!state.lastMessage.isEmpty()) {
+                output.line(QStringLiteral("Last:        %1").arg(state.lastMessage));
+            }
+        } else {
+            output.line(QStringLiteral("Last known:  %1 (%2)")
+                            .arg(state.state,
+                                 state.updatedAtUtc.toString(Qt::ISODate)));
+            output.line(QStringLiteral("Start it with: nesva-agent  (or the systemd user service)"));
+        }
+        return output.flush(stdout, connected ? kExitSuccess : kExitNotFound);
+    }
+
+    if (subcommand == QStringLiteral("run") || subcommand == QStringLiteral("cancel")) {
+        if (options.positional.isEmpty()) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               QStringLiteral("agent %1 requires a job id")
+                                   .arg(subcommand)
+                                   .toStdString()),
+                kExitUsage);
+        }
+        bool valid = false;
+        const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+        if (!valid) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+        }
+
+        if (subcommand == QStringLiteral("run")) {
+            const Result<QString> sent =
+                client.runJob(jobId, options.flags.contains(QStringLiteral("dry-run")),
+                              QStringLiteral("cli"));
+            if (!sent) {
+                return output.flushError(sent.error(),
+                                         sent.error().code() == ErrorCode::NotFound ? kExitNotFound
+                                                                                    : kExitFailure);
+            }
+            output.add(QStringLiteral("ok"), true);
+            output.add(QStringLiteral("accepted"), jobId);
+            output.line(QStringLiteral("The agent accepted job %1 and will run it in the background.")
+                            .arg(jobId));
+            return output.flush(stdout, kExitSuccess);
+        }
+
+        const Status cancelled = client.cancelJob(jobId);
+        if (!cancelled.ok()) {
+            return output.flushError(cancelled.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.line(QStringLiteral("Cancellation requested for job %1.").arg(jobId));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (subcommand == QStringLiteral("reload")) {
+        const Status reloaded = client.reload();
+        if (!reloaded.ok()) {
+            return output.flushError(reloaded.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.line(QStringLiteral("Schedules reloaded."));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (subcommand == QStringLiteral("stop")) {
+        const Status stopped = client.shutdown();
+        if (!stopped.ok()) {
+            return output.flushError(stopped.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.line(QStringLiteral("The agent is shutting down gracefully."));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    return output.flushError(
+        makeErrorValue(ErrorCode::InvalidArgument,
+                       QStringLiteral("unknown agent subcommand: %1").arg(subcommand).toStdString()),
+        kExitUsage);
+}
+
+int commandScheduleList(Context& context, const Options& options) {
+    Output output(options.json);
+    jobs::JobStore store(context.database);
+
+    Result<QVector<QPair<qint64, jobs::ScheduleRecord>>> schedules = store.listSchedules();
+    if (!schedules) {
+        return output.flushError(schedules.error(), kExitFailure);
+    }
+
+    QList<QStringList> table;
+    QJsonArray items;
+    for (const auto& entry : schedules.value()) {
+        Result<jobs::ArchiveJob> job = store.getJob(entry.first);
+        const QString name = job ? job.value().name : QString::number(entry.first);
+        const QString nextRun = entry.second.state.nextRunUtc.has_value()
+                                    ? entry.second.state.nextRunUtc->toString(Qt::ISODate)
+                                    : QStringLiteral("-");
+
+        table.append({QString::number(entry.first), name, sched::describe(entry.second.spec),
+                      nextRun, QString::number(entry.second.spec.retryMaxAttempts)});
+
+        QJsonObject item;
+        item.insert(QStringLiteral("job_id"), entry.first);
+        item.insert(QStringLiteral("job"), name);
+        item.insert(QStringLiteral("trigger"), sched::toToken(entry.second.spec.kind));
+        item.insert(QStringLiteral("description"), sched::describe(entry.second.spec));
+        item.insert(QStringLiteral("next_run_at"), nextRun);
+        item.insert(QStringLiteral("retry_max_attempts"), entry.second.spec.retryMaxAttempts);
+        item.insert(QStringLiteral("catch_up_missed"), entry.second.spec.catchUpMissed);
+        items.append(item);
+    }
+
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("count"), static_cast<int>(table.size()));
+    output.table({QStringLiteral("ID"), QStringLiteral("JOB"), QStringLiteral("SCHEDULE"),
+                  QStringLiteral("NEXT RUN (UTC)"), QStringLiteral("RETRIES")},
+                 table);
+    if (table.isEmpty()) {
+        output.line(QStringLiteral("No schedules configured yet."));
+    }
+    return output.flush(stdout, kExitSuccess);
+}
+
 } // namespace
 
 int run(int argc, char** argv) {
@@ -1215,6 +1374,16 @@ int run(int argc, char** argv) {
         }
         return commandNotImplemented(options, QStringLiteral("jobs %1").arg(subcommand),
                                      QStringLiteral("a later phase"));
+    }
+    if (command == QStringLiteral("agent")) {
+        return commandAgent(context, options);
+    }
+    if (command == QStringLiteral("schedule")) {
+        if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {
+            return commandScheduleList(context, options);
+        }
+        return commandNotImplemented(options, QStringLiteral("schedule %1").arg(subcommand),
+                                     QStringLiteral("the schedule editor is in the desktop app"));
     }
     if (command == QStringLiteral("archive")) {
         if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {

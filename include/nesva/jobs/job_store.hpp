@@ -14,6 +14,7 @@
 #include "nesva/core/logging.hpp"
 #include "nesva/core/result.hpp"
 #include "nesva/scan/exclusions.hpp"
+#include "nesva/scheduler/schedule.hpp"
 
 namespace nesva::db {
 class Database;
@@ -59,6 +60,12 @@ struct ArchiveJob {
     QVector<scan::ExclusionRule> exclusions;
 
     bool isValid() const { return !name.trimmed().isEmpty() && !sources.isEmpty(); }
+};
+
+/// A stored schedule together with its scheduler bookkeeping.
+struct ScheduleRecord {
+    sched::ScheduleSpec spec;
+    sched::ScheduleState state;
 };
 
 /// Counters persisted on a job run.
@@ -164,6 +171,23 @@ public:
     Status recordManifestEntry(qint64 jobId, qint64 runId, const ManifestRecord& record);
     Status recordArchiveObject(qint64 jobId, qint64 runId, const QString& remotePath,
                                qint64 sizeBytes, const QString& sha256, const QString& state);
+
+    // ---- schedules ---------------------------------------------------------
+    /// Stored schedule for a job; std::nullopt when the job has none.
+    Result<std::optional<ScheduleRecord>> getSchedule(qint64 jobId) const;
+
+    /// Creates or replaces the schedule of a job.
+    Status upsertSchedule(qint64 jobId, const sched::ScheduleSpec& spec);
+    Status deleteSchedule(qint64 jobId);
+
+    /// Persists the scheduler's bookkeeping (next slot, retry state, last run).
+    Status updateScheduleState(qint64 jobId, const sched::ScheduleState& state);
+
+    /// Every job with a recurring schedule, for the agent's tick.
+    Result<QVector<QPair<qint64, ScheduleRecord>>> listSchedules() const;
+
+    /// Jobs ordered by their next run, for the dashboard.
+    Result<QVector<QPair<qint64, QDateTime>>> upcomingRuns(int limit) const;
 
     // ---- events ------------------------------------------------------------
     Status appendJobEvent(qint64 jobId, std::optional<qint64> runId, LogLevel level,

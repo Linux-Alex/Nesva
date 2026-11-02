@@ -50,6 +50,8 @@ QVariant JobListModel::data(const QModelIndex& index, int role) const {
         return row.destination.isEmpty() ? row.provider : row.destination;
     case LastRunColumn:
         return row.lastStatus.isEmpty() ? QStringLiteral("never") : row.lastStatus;
+    case NextRunColumn:
+        return row.nextRun.isEmpty() ? QStringLiteral("manual") : row.nextRun;
     case FinishedColumn:
         return row.lastFinished;
     default:
@@ -76,6 +78,8 @@ QVariant JobListModel::headerData(int section, Qt::Orientation orientation, int 
         return QStringLiteral("Destination");
     case LastRunColumn:
         return QStringLiteral("Last run");
+    case NextRunColumn:
+        return QStringLiteral("Next run");
     case FinishedColumn:
         return QStringLiteral("Finished");
     default:
@@ -89,7 +93,8 @@ QString JobListModel::refresh() {
         "COALESCE(j.destination_path, ''), "
         "(SELECT COUNT(*) FROM backup_sources s WHERE s.job_id = j.id), "
         "COALESCE((SELECT r.status FROM job_runs r WHERE r.job_id = j.id ORDER BY r.id DESC LIMIT 1), ''), "
-        "COALESCE((SELECT r.finished_at FROM job_runs r WHERE r.job_id = j.id ORDER BY r.id DESC LIMIT 1), '') "
+        "COALESCE((SELECT r.finished_at FROM job_runs r WHERE r.job_id = j.id ORDER BY r.id DESC LIMIT 1), ''), "
+        "COALESCE((SELECT s.next_run_at FROM job_schedules s WHERE s.job_id = j.id), '') "
         "FROM backup_jobs j LEFT JOIN storage_providers sp ON sp.id = j.storage_provider_id "
         "ORDER BY j.name"));
     if (!query) {
@@ -109,6 +114,7 @@ QString JobListModel::refresh() {
         row.sourceCount = rows.value(6).toInt();
         row.lastStatus = rows.value(7).toString();
         row.lastFinished = rows.value(8).toString();
+        row.nextRun = rows.value(9).toString();
         loaded.append(row);
     }
 

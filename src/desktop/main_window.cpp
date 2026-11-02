@@ -27,6 +27,7 @@
 #include "app_context.hpp"
 #include "icon_factory.hpp"
 #include "job_executor.hpp"
+#include "nesva/agent/client.hpp"
 #include "models/event_list_model.hpp"
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/paths.hpp"
@@ -86,10 +87,26 @@ MainWindow::MainWindow(AppContext& context, QWidget* parent)
                 statusBadge_->setText(QStringLiteral("Running: %1").arg(jobName));
             }
         });
-        connect(executor, &JobExecutor::finished, this, [this](qint64, const jobs::RunReport&) {
-            updateStatus();
-            refreshAll();
-        });
+        connect(executor, &JobExecutor::finished, this,
+                [this](qint64, const jobs::RunReport& report) {
+                    updateStatus();
+                    refreshAll();
+                    if (report.dryRun) {
+                        return;
+                    }
+                    if (report.succeeded()) {
+                        notify(QStringLiteral("Nesva: archive finished"),
+                               QStringLiteral("%1: %2 file(s), %3 transferred")
+                                   .arg(report.jobName)
+                                   .arg(report.counters.filesTotal)
+                                   .arg(report.counters.filesTransferred));
+                    } else {
+                        notify(QStringLiteral("Nesva: archive needs attention"),
+                               QStringLiteral("%1 ended as %2 (%3 file(s) failed)")
+                                   .arg(report.jobName, report.status)
+                                   .arg(report.counters.filesFailed));
+                    }
+                });
     }
 }
 
@@ -306,6 +323,13 @@ void MainWindow::buildStatusBar() {
 
     schemaStatus_ = new QLabel(this);
     statusBar()->addPermanentWidget(schemaStatus_);
+
+    agentStatus_ = new QLabel(this);
+    agentStatus_->setObjectName(QStringLiteral("agentStatus"));
+    agentStatus_->setToolTip(QStringLiteral(
+        "Background agent state. Start it with \"nesva-agent\" or enable the systemd user service."));
+    statusBar()->addPermanentWidget(agentStatus_);
+
     updateStatus();
 }
 
@@ -339,10 +363,66 @@ void MainWindow::buildTray() {
     trayIcon_->show();
 }
 
+bool MainWindow::notificationsEnabled() const {
+    const Result<bool> enabled =
+        context_.settings().getBoolean(QString::fromUtf8(config::keys::kNotificationsEnabled), true);
+    return enabled && enabled.value();
+}
+
+bool MainWindow::minimizeToTrayEnabled() const {
+    const Result<bool> enabled =
+        context_.settings().getBoolean(QString::fromUtf8(config::keys::kMinimizeToTray), false);
+    return enabled && enabled.value();
+}
+
+void MainWindow::notify(const QString& title, const QString& message) {
+    if (!notificationsEnabled() || trayIcon_ == nullptr || !trayIcon_->isVisible()) {
+        return;
+    }
+    trayIcon_->showMessage(title, message, QSystemTrayIcon::Information, 6000);
+}
+
+void MainWindow::updateAgentIndicator() {
+    if (agentStatus_ == nullptr) {
+        return;
+    }
+    // The heartbeat file is cheap; only talk to the socket when it claims that
+    // an agent is running, so a stopped agent never costs a timeout.
+    agent::AgentStatus heartbeat = agent::AgentClient::lastKnownStatus();
+    agent::AgentStatus status = heartbeat;
+    bool connected = false;
+    if (heartbeat.running) {
+        agent::AgentClient client;
+        Result<agent::AgentStatus> live = client.status(600);
+        if (live) {
+            status = live.value();
+            connected = true;
+        }
+    }
+
+    if (connected) {
+        QString text = QStringLiteral("Agent: %1").arg(status.state);
+        if (status.runningJobId > 0 && !status.runningJobName.isEmpty()) {
+            text += QStringLiteral(" (%1)").arg(status.runningJobName);
+        }
+        agentStatus_->setText(text);
+        agentStatus_->setToolTip(QStringLiteral(
+            "Scheduled jobs: %1\nNext run: %2\nLast: %3")
+                                     .arg(status.scheduledJobs)
+                                     .arg(status.nextRunUtc.isValid()
+                                              ? status.nextRunUtc.toLocalTime().toString(Qt::ISODate)
+                                              : QStringLiteral("-"),
+                                          status.lastMessage));
+    } else {
+        agentStatus_->setText(QStringLiteral("Agent: not running"));
+    }
+}
+
 void MainWindow::updateStatus() {
     if (statusBadge_ != nullptr) {
         statusBadge_->setText(context_.healthSummary());
     }
+    updateAgentIndicator();
     if (schemaStatus_ != nullptr) {
         const Result<int> schema = context_.database().schemaVersion();
         schemaStatus_->setText(QStringLiteral("Schema %1 / %2")
@@ -424,6 +504,19 @@ QString MainWindow::pageTitleAt(int index) const {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    // Minimising to the tray keeps the window (and its in-process runs) alive;
+    // the background agent is what guarantees unattended scheduling.
+    if (minimizeToTrayEnabled() && trayIcon_ != nullptr && trayIcon_->isVisible() &&
+        !context_.executor()->isRunning()) {
+        hide();
+        event->ignore();
+        notify(QStringLiteral("Nesva is still running"),
+               QStringLiteral("Nesva continues in the tray. Quit from the tray menu to exit."));
+        context_.recordEvent(LogLevel::Info, QStringLiteral("application"),
+                            QStringLiteral("main window hidden to the tray"));
+        return;
+    }
+
     saveWindowState();
     context_.recordEvent(LogLevel::Info, QStringLiteral("application"),
                          QStringLiteral("main window closed"));

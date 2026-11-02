@@ -14,7 +14,8 @@ const QStringList& knownCommands() {
     static const QStringList commands = {
         QStringLiteral("status"),  QStringLiteral("doctor"),  QStringLiteral("jobs"),
         QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("archive"),
-        QStringLiteral("verify"),  QStringLiteral("version"), QStringLiteral("help"),
+        QStringLiteral("verify"),  QStringLiteral("agent"),   QStringLiteral("schedule"),
+        QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
 }
@@ -71,8 +72,9 @@ Options parseArguments(const QStringList& arguments) {
     }
     if (!remaining.isEmpty() && !remaining.constFirst().startsWith(QLatin1Char('-'))) {
         const QString candidate = remaining.constFirst();
-        static const QStringList subcommands = {"list",    "run",  "cancel", "test",
-                                                "restore", "show", "help",   "add"};
+        static const QStringList subcommands = {"list",    "run",    "cancel", "test",
+                                                "restore", "show",   "help",   "add",
+                                                "status",  "reload", "stop"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
@@ -120,6 +122,12 @@ QString usageText() {
         "                            options: --to <dir>, --policy skip|overwrite|rename,\n"
         "                                     --overwrite, --rename, --no-verify\n"
         "  history list              List recent job runs (--limit <n>)\n"
+        "  schedule list             List job schedules and their next run\n"
+        "  agent status              Background agent state (exit 3 when stopped)\n"
+        "  agent run <job-id>        Ask the agent to run a job now\n"
+        "  agent cancel <job-id>     Ask the agent to cancel the running job\n"
+        "  agent reload              Reload schedules in the agent\n"
+        "  agent stop                Stop the agent gracefully\n"
         "  verify <job-id>           Re-check archived objects against the manifest\n"
         "  version                   Show version information\n"
         "  help                      Show this help\n"

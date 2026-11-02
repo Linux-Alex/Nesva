@@ -110,6 +110,7 @@ ctest --preset windows-msvc-debug --output-on-failure
 build/linux-debug/
 ├── nesva            # desktop application
 ├── nesva-cli        # automation and diagnostics
+├── nesva-agent      # background scheduler and runner
 ├── libnesva_core.a  # core library
 ├── libnesva_ui.a    # widget library used by the app and the GUI tests
 ├── tests/tst_*      # test binaries

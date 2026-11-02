@@ -24,6 +24,7 @@ public:
         SourcesColumn,
         DestinationColumn,
         LastRunColumn,
+        NextRunColumn,
         FinishedColumn,
         ColumnCount,
     };
@@ -51,6 +52,7 @@ private:
         QString destination;
         QString lastStatus;
         QString lastFinished;
+        QString nextRun;
     };
 
     db::Database& database_;
