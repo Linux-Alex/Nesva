@@ -34,7 +34,7 @@ Phase 3: background execution. Scheduled jobs run without the desktop window.
 - Documentation: `docs/developer-guide/agent.md` (operation, IPC protocol, troubleshooting).
 - Tests: schedule logic, agent protocol/heartbeat, and an integration test that starts the real
   `nesva-agent` binary, talks to it over its socket and verifies a scheduled run — 18 binaries,
-  187 test functions.
+  188 test functions.
 
 ### Fixed
 

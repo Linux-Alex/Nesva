@@ -183,7 +183,7 @@ next to the executable or into Program Files.
 
 ## Testing
 
-`ctest --preset linux-debug` runs 18 test binaries (187 test functions):
+`ctest --preset linux-debug` runs 18 test binaries (188 test functions):
 
 | Test | Covers |
 |---|---|
