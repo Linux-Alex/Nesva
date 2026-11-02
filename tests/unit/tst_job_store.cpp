@@ -34,7 +34,8 @@ private slots:
     void updatesJobAndReplacesSources();
     void deletesJobAndCascades();
     void rejectsInvalidJobs();
-    void rejectsBackupModeForNow();
+    void acceptsBackupJobsWithRepository();
+    void rejectsBackupJobWithoutRepository();
     void storesLocalProvider();
     void preventsDuplicateRunningRuns();
     void finishesRunWithCounters();
@@ -174,15 +175,37 @@ void JobStoreTest::rejectsInvalidJobs() {
     QCOMPARE(static_cast<int>(created.error().code()), static_cast<int>(ErrorCode::InvalidArgument));
 }
 
-void JobStoreTest::rejectsBackupModeForNow() {
+void JobStoreTest::acceptsBackupJobsWithRepository() {
     ArchiveJob job;
     job.name = QStringLiteral("Backup mode");
     job.mode = QStringLiteral("backup");
     job.destinationPath = directory_->filePath(QStringLiteral("repo"));
     job.sources = {{0, QStringLiteral("/tmp/x"), QString()}};
+    job.retention.keepDaily = 7;
+    job.retention.keepWeekly = 4;
+    job.checkAfterBackup = true;
+
+    const Result<qint64> created = store_->createJob(job);
+    QVERIFY2(created.hasValue(), created.hasValue() ? "" : created.error().toDisplayString().c_str());
+
+    const Result<ArchiveJob> loaded = store_->getJob(created.value());
+    QVERIFY(loaded);
+    QCOMPARE(loaded.value().mode, QStringLiteral("backup"));
+    QVERIFY(loaded.value().isBackup());
+    QCOMPARE(loaded.value().destinationPath, directory_->filePath(QStringLiteral("repo")));
+    QCOMPARE(loaded.value().retention.keepDaily, 7);
+    QCOMPARE(loaded.value().retention.keepWeekly, 4);
+    QVERIFY(loaded.value().checkAfterBackup);
+}
+
+void JobStoreTest::rejectsBackupJobWithoutRepository() {
+    ArchiveJob job;
+    job.name = QStringLiteral("Backup without repository");
+    job.mode = QStringLiteral("backup");
+    job.sources = {{0, QStringLiteral("/tmp/x"), QString()}};
     const Result<qint64> created = store_->createJob(job);
     QVERIFY(!created);
-    QCOMPARE(static_cast<int>(created.error().code()), static_cast<int>(ErrorCode::NotImplemented));
+    QCOMPARE(static_cast<int>(created.error().code()), static_cast<int>(ErrorCode::InvalidArgument));
 }
 
 void JobStoreTest::storesLocalProvider() {

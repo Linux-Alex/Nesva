@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.3.0
+  VERSION 0.4.0
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/nesva-project/nesva"
   LANGUAGES CXX)
@@ -44,6 +44,12 @@ nesva_configure_version_header()
 # Dependencies
 # ---------------------------------------------------------------------------
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Sql Network Concurrent)
+
+# The Linux credential backend talks to the freedesktop.org Secret Service over
+# D-Bus; Windows uses the Credential Manager API instead.
+if(UNIX AND NOT APPLE)
+  find_package(Qt6 REQUIRED COMPONENTS DBus)
+endif()
 qt_standard_project_setup(REQUIRES 6.5)
 
 # ---------------------------------------------------------------------------
@@ -65,8 +71,13 @@ add_library(nesva_core STATIC
   src/database/settings_store.cpp
   src/agent/client.cpp
   src/agent/protocol.cpp
+  src/backup/restic.cpp
+  src/security/credential_manager_windows.cpp
+  src/security/secret_service_linux.cpp
+  src/security/secret_store.cpp
   src/jobs/archive_restore.cpp
   src/jobs/archive_runner.cpp
+  src/jobs/backup_runner.cpp
   src/jobs/job_store.cpp
   src/jobs/job_worker.cpp
   include/nesva/jobs/job_worker.hpp
@@ -93,6 +104,10 @@ target_link_libraries(nesva_core
     # Qt Network is used for the local agent socket (QLocalSocket/QLocalServer).
     Qt6::Network
 )
+
+if(UNIX AND NOT APPLE)
+  target_link_libraries(nesva_core PUBLIC Qt6::DBus)
+endif()
 
 nesva_set_target_warnings(nesva_core)
 

@@ -268,7 +268,7 @@ Status JobStore::deleteProvider(qint64 id) {
 Result<QVector<ArchiveJob>> JobStore::listJobs() const {
     Result<QSqlQuery> query = database_.select(QStringLiteral(
         "SELECT id, name, mode, storage_provider_id, COALESCE(destination_path, ''), enabled, "
-        "COALESCE(bandwidth_limit_kib, 0), verification_options_json "
+        "COALESCE(bandwidth_limit_kib, 0), verification_options_json, retention_policy_json "
         "FROM backup_jobs ORDER BY name"));
     if (!query) {
         return query.error();
@@ -290,6 +290,10 @@ Result<QVector<ArchiveJob>> JobStore::listJobs() const {
         const QJsonObject verification =
             QJsonDocument::fromJson(rows.value(7).toString().toUtf8()).object();
         job.verifyChecksum = verification.value(QStringLiteral("checksum")).toBool(true);
+        job.checkAfterBackup =
+            verification.value(QStringLiteral("check_after_backup")).toBool(false);
+        job.retention = backup::retentionFromJson(
+            QJsonDocument::fromJson(rows.value(8).toString().toUtf8()).object());
         jobs.append(job);
     }
 
@@ -344,9 +348,12 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
     if (!job.isValid()) {
         return makeErrorValue(ErrorCode::InvalidArgument, "job needs a name and at least one source");
     }
-    if (job.mode != QStringLiteral("archive")) {
-        return makeErrorValue(ErrorCode::NotImplemented,
-                              "only archive jobs are supported in this phase");
+    if (job.mode != QStringLiteral("archive") && job.mode != QStringLiteral("backup")) {
+        return makeErrorValue(ErrorCode::InvalidArgument, "unknown job mode: " + job.mode.toStdString());
+    }
+    if (job.mode == QStringLiteral("backup") && job.destinationPath.trimmed().isEmpty()) {
+        return makeErrorValue(ErrorCode::InvalidArgument,
+                              "a backup job needs a Restic repository location");
     }
 
     const QString timestamp = db::Database::currentTimestampUtc();
@@ -354,12 +361,13 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
 
     QJsonObject verification;
     verification.insert(QStringLiteral("checksum"), job.verifyChecksum);
+    verification.insert(QStringLiteral("check_after_backup"), job.checkAfterBackup);
 
     QSqlQuery insert(database_.handle());
     insert.prepare(QStringLiteral(
         "INSERT INTO backup_jobs (name, mode, storage_provider_id, destination_path, enabled, "
-        "bandwidth_limit_kib, verification_options_json, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "bandwidth_limit_kib, verification_options_json, retention_policy_json, created_at, "
+        "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     insert.addBindValue(job.name.trimmed());
     insert.addBindValue(job.mode);
     if (job.storageProviderId) {
@@ -371,6 +379,8 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
     insert.addBindValue(job.enabled ? 1 : 0);
     insert.addBindValue(job.bandwidthLimitKiB > 0 ? job.bandwidthLimitKiB : QVariant());
     insert.addBindValue(QString::fromUtf8(QJsonDocument(verification).toJson(QJsonDocument::Compact)));
+    insert.addBindValue(QString::fromUtf8(
+        QJsonDocument(backup::retentionToJson(job.retention)).toJson(QJsonDocument::Compact)));
     insert.addBindValue(timestamp);
     insert.addBindValue(timestamp);
     if (!insert.exec()) {
@@ -426,9 +436,8 @@ Status JobStore::updateJob(const ArchiveJob& job) {
     if (!job.isValid()) {
         return makeError(ErrorCode::InvalidArgument, "job needs a name and at least one source");
     }
-    if (job.mode != QStringLiteral("archive")) {
-        return makeError(ErrorCode::NotImplemented,
-                         "only archive jobs are supported in this phase");
+    if (job.mode != QStringLiteral("archive") && job.mode != QStringLiteral("backup")) {
+        return makeError(ErrorCode::InvalidArgument, "unknown job mode: " + job.mode.toStdString());
     }
 
     const QString timestamp = db::Database::currentTimestampUtc();
@@ -436,12 +445,13 @@ Status JobStore::updateJob(const ArchiveJob& job) {
 
     QJsonObject verification;
     verification.insert(QStringLiteral("checksum"), job.verifyChecksum);
+    verification.insert(QStringLiteral("check_after_backup"), job.checkAfterBackup);
 
     QSqlQuery update(database_.handle());
     update.prepare(QStringLiteral(
         "UPDATE backup_jobs SET name = ?, mode = ?, storage_provider_id = ?, "
         "destination_path = ?, enabled = ?, bandwidth_limit_kib = ?, "
-        "verification_options_json = ?, updated_at = ? WHERE id = ?"));
+        "verification_options_json = ?, retention_policy_json = ?, updated_at = ? WHERE id = ?"));
     update.addBindValue(job.name.trimmed());
     update.addBindValue(job.mode);
     if (job.storageProviderId) {
@@ -453,6 +463,8 @@ Status JobStore::updateJob(const ArchiveJob& job) {
     update.addBindValue(job.enabled ? 1 : 0);
     update.addBindValue(job.bandwidthLimitKiB > 0 ? job.bandwidthLimitKiB : QVariant());
     update.addBindValue(QString::fromUtf8(QJsonDocument(verification).toJson(QJsonDocument::Compact)));
+    update.addBindValue(QString::fromUtf8(
+        QJsonDocument(backup::retentionToJson(job.retention)).toJson(QJsonDocument::Compact)));
     update.addBindValue(timestamp);
     update.addBindValue(job.id);
     if (!update.exec()) {
@@ -1094,6 +1106,87 @@ Result<QVector<QPair<qint64, QDateTime>>> JobStore::upcomingRuns(int limit) cons
         }
     }
     return upcoming;
+}
+
+// ---------------------------------------------------------------------------
+// Restic snapshots
+// ---------------------------------------------------------------------------
+
+Status JobStore::recordSnapshot(qint64 jobId, qint64 runId, const SnapshotRecord& snapshot) {
+    if (snapshot.snapshotId.trimmed().isEmpty()) {
+        return makeError(ErrorCode::InvalidArgument, "snapshot id must not be empty");
+    }
+    QSqlQuery query(database_.handle());
+    query.prepare(QStringLiteral(
+        "INSERT INTO backup_snapshots (job_id, snapshot_id, hostname, repository_path, created_at, "
+        "tags_json, paths_json, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(job_id, snapshot_id) DO UPDATE SET hostname = excluded.hostname, "
+        "repository_path = excluded.repository_path, size_bytes = excluded.size_bytes"));
+    query.addBindValue(jobId);
+    query.addBindValue(snapshot.snapshotId);
+    query.addBindValue(snapshot.hostname);
+    query.addBindValue(snapshot.repositoryPath);
+    query.addBindValue(snapshot.createdAt.isEmpty() ? db::Database::currentTimestampUtc()
+                                                    : snapshot.createdAt);
+    query.addBindValue(QStringLiteral("[]"));
+    query.addBindValue(QStringLiteral("[]"));
+    query.addBindValue(snapshot.sizeBytes);
+    if (!query.exec()) {
+        return makeError(ErrorCode::DatabaseError, "cannot record the snapshot",
+                         query.lastError().text().toStdString());
+    }
+    Q_UNUSED(runId);
+    return Status();
+}
+
+Result<QVector<JobStore::SnapshotRecord>> JobStore::listSnapshots(qint64 jobId, int limit) const {
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral(
+            "SELECT id, snapshot_id, COALESCE(hostname, ''), COALESCE(repository_path, ''), "
+            "COALESCE(created_at, ''), COALESCE(size_bytes, -1) FROM backup_snapshots "
+            "WHERE job_id = ? ORDER BY created_at DESC LIMIT ?"),
+        {QVariant(jobId), QVariant(limit)});
+    if (!query) {
+        return query.error();
+    }
+    QSqlQuery rows = std::move(query).take();
+    QVector<SnapshotRecord> snapshots;
+    while (rows.next()) {
+        SnapshotRecord record;
+        record.id = rows.value(0).toLongLong();
+        record.snapshotId = rows.value(1).toString();
+        record.hostname = rows.value(2).toString();
+        record.repositoryPath = rows.value(3).toString();
+        record.createdAt = rows.value(4).toString();
+        record.sizeBytes = rows.value(5).toLongLong();
+        snapshots.append(record);
+    }
+    return snapshots;
+}
+
+Result<QVector<JobStore::SnapshotRecord>> JobStore::allSnapshots(int limit) const {
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral(
+            "SELECT id, snapshot_id, COALESCE(hostname, ''), COALESCE(repository_path, ''), "
+            "COALESCE(created_at, ''), COALESCE(size_bytes, -1) FROM backup_snapshots "
+            "ORDER BY created_at DESC LIMIT ?"),
+        {QVariant(limit)});
+    if (!query) {
+        return query.error();
+    }
+    QSqlQuery rows = std::move(query).take();
+    QVector<SnapshotRecord> snapshots;
+    while (rows.next()) {
+        SnapshotRecord record;
+        record.id = rows.value(0).toLongLong();
+        record.snapshotId = rows.value(1).toString();
+        record.hostname = rows.value(2).toString();
+        record.repositoryPath = rows.value(3).toString();
+        record.createdAt = rows.value(4).toString();
+        record.sizeBytes = rows.value(5).toLongLong();
+        snapshots.append(record);
+    }
+    return snapshots;
 }
 
 } // namespace nesva::jobs

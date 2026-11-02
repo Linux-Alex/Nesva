@@ -15,6 +15,8 @@
 #include <QtSql/QSqlQuery>
 
 #include <cstdio>
+#include <iostream>
+#include <string>
 #include <algorithm>
 #include <utility>
 
@@ -28,6 +30,8 @@
 #include "nesva/jobs/archive_restore.hpp"
 #include "nesva/jobs/archive_runner.hpp"
 #include "nesva/agent/client.hpp"
+#include "nesva/backup/restic.hpp"
+#include "nesva/jobs/backup_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/scheduler/schedule.hpp"
 #include "nesva/providers/provider_factory.hpp"
@@ -348,6 +352,8 @@ int commandStatus(Context& context, const Options& options) {
     }
     return output.flush(stdout, kExitSuccess);
 }
+
+jobs::PasswordOptions passwordOptionsFromFlags(const Options& options, Context& context);
 
 struct CheckResult {
     QString name;
@@ -702,15 +708,28 @@ int commandJobsRun(Context& context, const Options& options) {
             .valueOr(QStringLiteral("rclone"));
 
     const CancellationToken cancellation;
-    jobs::ArchiveRunner runner(context.database, [quiet = options.quiet, json = options.json](
-                                                       const jobs::RunProgress& progress) {
+    const auto progressCallback = [quiet = options.quiet, json = options.json](
+                                      const jobs::RunProgress& progress) {
         if (!quiet) {
             printProgressLine(progress, json);
         }
-    });
+    };
 
-    const jobs::RunReport report = runner.run(loaded.value().job, loaded.value().provider, runOptions,
-                                              cancellation, QStringLiteral("cli"), rcloneExecutable);
+    jobs::RunReport report;
+    if (loaded.value().job.isBackup()) {
+        const QString resticExecutable =
+            settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath),
+                               QStringLiteral("restic"))
+                .valueOr(QStringLiteral("restic"));
+        jobs::BackupRunner backupRunner(context.database, progressCallback);
+        report = backupRunner.run(loaded.value().job, runOptions, cancellation,
+                                  QStringLiteral("cli"), resticExecutable,
+                                  passwordOptionsFromFlags(options, context));
+    } else {
+        jobs::ArchiveRunner runner(context.database, progressCallback);
+        report = runner.run(loaded.value().job, loaded.value().provider, runOptions, cancellation,
+                            QStringLiteral("cli"), rcloneExecutable);
+    }
 
     QJsonObject summary;
     summary.insert(QStringLiteral("run_id"), report.runId);
@@ -1290,6 +1309,428 @@ int commandScheduleList(Context& context, const Options& options) {
     return output.flush(stdout, kExitSuccess);
 }
 
+
+// ---------------------------------------------------------------------------
+// Restic repository commands
+// ---------------------------------------------------------------------------
+
+jobs::PasswordOptions passwordOptionsFromFlags(const Options& options, Context& context) {
+    jobs::PasswordOptions settings;
+    config::SettingsStore store(context.database);
+    const QString source = store
+                               .getString(QString::fromUtf8(config::keys::kBackupPasswordSource),
+                                          QStringLiteral("keyring"))
+                               .valueOr(QStringLiteral("keyring"));
+    settings.source = source == QStringLiteral("file") ? jobs::PasswordSource::File
+                                                       : jobs::PasswordSource::Keyring;
+    settings.filePath =
+        store.getString(QString::fromUtf8(config::keys::kBackupPasswordFile), QString()).valueOr(QString());
+
+    if (options.flags.contains(QStringLiteral("password-file"))) {
+        settings.source = jobs::PasswordSource::File;
+        settings.filePath = options.flags.value(QStringLiteral("password-file"));
+    }
+    return settings;
+}
+
+/// Reads a password from stdin when --password-stdin is used (no echo handling:
+/// the CLI is meant for automation, the GUI prompts in its own dialog).
+Result<QByteArray> readPasswordFromStdin(const Options& options) {
+    if (!options.flags.contains(QStringLiteral("password-stdin"))) {
+        return makeErrorValue(ErrorCode::InvalidArgument, "no password source given");
+    }
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+        return makeErrorValue(ErrorCode::InvalidArgument, "no password was read from stdin");
+    }
+    return QByteArray::fromStdString(line);
+}
+
+int commandRepository(Context& context, const Options& options) {
+    Output output(options.json);
+    const QString& sub = options.subcommand;
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument,
+                           QStringLiteral("repository %1 requires a job id")
+                               .arg(sub.isEmpty() ? QStringLiteral("init") : sub)
+                               .toStdString()),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<jobs::ArchiveJob> job = store.getJob(jobId);
+    if (!job) {
+        return output.flushError(job.error(), kExitNotFound);
+    }
+    if (!job.value().isBackup()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "this job is not a Restic backup job"),
+            kExitUsage);
+    }
+    jobs::PasswordOptions passwordOptions = passwordOptionsFromFlags(options, context);
+
+    config::SettingsStore settings(context.database);
+    const QString resticExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath), QStringLiteral("restic"))
+            .valueOr(QStringLiteral("restic"));
+
+    const QString& action = sub.isEmpty() ? QStringLiteral("init") : sub;
+
+    if (action == QStringLiteral("init") || action == QStringLiteral("set-password")) {
+        Result<QByteArray> password = readPasswordFromStdin(options);
+        if (!password && passwordOptions.source == jobs::PasswordSource::File &&
+            !passwordOptions.filePath.isEmpty()) {
+            QFile file(passwordOptions.filePath);
+            if (file.open(QIODevice::ReadOnly)) {
+                password = file.readAll().trimmed();
+            }
+        }
+        if (!password) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               "provide the repository password with --password-stdin or "
+                               "--password-file"),
+                kExitUsage);
+        }
+
+        const Status stored =
+            jobs::storeRepositoryPassword(job.value().destinationPath, passwordOptions, password.value());
+        if (!stored.ok()) {
+            return output.flushError(stored.error(), kExitFailure);
+        }
+        if (action == QStringLiteral("set-password")) {
+            output.add(QStringLiteral("ok"), true);
+            output.line(QStringLiteral("Repository password stored for '%1'.").arg(job.value().name));
+            return output.flush(stdout, kExitSuccess);
+        }
+
+        const Result<QString> passwordFile = backup::createPasswordFile(password.value());
+        if (!passwordFile) {
+            return output.flushError(passwordFile.error(), kExitFailure);
+        }
+        backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
+                                            passwordFile.value());
+        const Status initialised = repository.init();
+        QFile::remove(passwordFile.value());
+        if (!initialised.ok()) {
+            return output.flushError(initialised.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("repository"), job.value().destinationPath);
+        output.line(QStringLiteral("Repository initialised at %1").arg(job.value().destinationPath));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    const Result<QByteArray> password =
+        jobs::loadRepositoryPassword(job.value().destinationPath, passwordOptions);
+    if (!password) {
+        return output.flushError(password.error(), kExitFailure);
+    }
+    const Result<QString> passwordFile = backup::createPasswordFile(password.value());
+    if (!passwordFile) {
+        return output.flushError(passwordFile.error(), kExitFailure);
+    }
+    backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
+                                        passwordFile.value());
+
+    if (action == QStringLiteral("locks")) {
+        const Result<QVector<backup::LockInfo>> locks = repository.listLocks();
+        QFile::remove(passwordFile.value());
+        if (!locks) {
+            return output.flushError(locks.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("count"), static_cast<int>(locks.value().size()));
+        if (locks.value().isEmpty()) {
+            output.line(QStringLiteral("No repository locks."));
+        } else {
+            for (const backup::LockInfo& lock : locks.value()) {
+                output.line(QStringLiteral("lock %1").arg(lock.id));
+            }
+        }
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (action == QStringLiteral("unlock")) {
+        const Status unlocked = repository.unlock();
+        QFile::remove(passwordFile.value());
+        if (!unlocked.ok()) {
+            return output.flushError(unlocked.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.line(QStringLiteral("Stale locks removed."));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (action == QStringLiteral("check")) {
+        const QString subset = options.flags.value(QStringLiteral("read-data"), QStringLiteral("5%"));
+        const Result<backup::VerifyResult> result = repository.check(subset);
+        QFile::remove(passwordFile.value());
+        if (!result) {
+            return output.flushError(result.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), result.value().ok);
+        output.add(QStringLiteral("errors"), result.value().errors);
+        output.line(QStringLiteral("Repository check %1 (%2 error(s))")
+                        .arg(result.value().ok ? QStringLiteral("passed") : QStringLiteral("FAILED"))
+                        .arg(result.value().errors));
+        for (const QString& message : result.value().messages) {
+            output.line(QStringLiteral("  %1").arg(message));
+        }
+        return output.flush(stdout, result.value().ok ? kExitSuccess : kExitFailure);
+    }
+
+    QFile::remove(passwordFile.value());
+    return output.flushError(
+        makeErrorValue(ErrorCode::InvalidArgument,
+                       QStringLiteral("unknown repository command: %1").arg(action).toStdString()),
+        kExitUsage);
+}
+
+int commandSnapshotsList(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "snapshots list requires a job id"),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<jobs::ArchiveJob> job = store.getJob(jobId);
+    if (!job) {
+        return output.flushError(job.error(), kExitNotFound);
+    }
+    if (!job.value().isBackup()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "this job is not a Restic backup job"),
+            kExitUsage);
+    }
+
+    jobs::PasswordOptions passwordOptions = passwordOptionsFromFlags(options, context);
+    config::SettingsStore settings(context.database);
+    const QString resticExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath), QStringLiteral("restic"))
+            .valueOr(QStringLiteral("restic"));
+    const Result<QByteArray> password =
+        jobs::loadRepositoryPassword(job.value().destinationPath, passwordOptions);
+    if (!password) {
+        return output.flushError(password.error(), kExitFailure);
+    }
+    const Result<QString> passwordFile = backup::createPasswordFile(password.value());
+    if (!passwordFile) {
+        return output.flushError(passwordFile.error(), kExitFailure);
+    }
+    backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
+                                        passwordFile.value());
+    const Result<QVector<backup::SnapshotInfo>> snapshots = repository.snapshots();
+    QFile::remove(passwordFile.value());
+    if (!snapshots) {
+        return output.flushError(snapshots.error(), kExitFailure);
+    }
+
+    QList<QStringList> table;
+    QJsonArray items;
+    for (const backup::SnapshotInfo& snapshot : snapshots.value()) {
+        table.append({snapshot.shortId, snapshot.time.toLocalTime().toString(Qt::ISODate),
+                      snapshot.hostname, snapshot.paths.join(QStringLiteral(", ")),
+                      snapshot.totalBytes >= 0 ? QString::number(snapshot.totalBytes)
+                                               : QStringLiteral("-")});
+        QJsonObject item;
+        item.insert(QStringLiteral("id"), snapshot.id);
+        item.insert(QStringLiteral("short_id"), snapshot.shortId);
+        item.insert(QStringLiteral("time"), snapshot.time.toUTC().toString(Qt::ISODate));
+        item.insert(QStringLiteral("hostname"), snapshot.hostname);
+        item.insert(QStringLiteral("bytes"), snapshot.totalBytes);
+        items.append(item);
+    }
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("job"), job.value().name);
+    output.add(QStringLiteral("count"), static_cast<int>(table.size()));
+    output.add(QStringLiteral("snapshots"), items);
+    output.table({QStringLiteral("ID"), QStringLiteral("TIME"), QStringLiteral("HOST"),
+                  QStringLiteral("PATHS"), QStringLiteral("BYTES")},
+                 table);
+    if (table.isEmpty()) {
+        output.line(QStringLiteral("No snapshots yet."));
+    }
+    return output.flush(stdout, kExitSuccess);
+}
+
+int commandRetention(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "retention requires a job id"), kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<jobs::ArchiveJob> job = store.getJob(jobId);
+    if (!job) {
+        return output.flushError(job.error(), kExitNotFound);
+    }
+    if (!job.value().isBackup()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "retention applies to Restic backup jobs only"),
+            kExitUsage);
+    }
+
+    const bool apply = options.subcommand == QStringLiteral("apply");
+    const bool prune = options.flags.contains(QStringLiteral("prune"));
+    jobs::PasswordOptions passwordOptions = passwordOptionsFromFlags(options, context);
+    config::SettingsStore settings(context.database);
+    const QString resticExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath), QStringLiteral("restic"))
+            .valueOr(QStringLiteral("restic"));
+
+    const Result<QByteArray> password =
+        jobs::loadRepositoryPassword(job.value().destinationPath, passwordOptions);
+    if (!password) {
+        return output.flushError(password.error(), kExitFailure);
+    }
+    const Result<QString> passwordFile = backup::createPasswordFile(password.value());
+    if (!passwordFile) {
+        return output.flushError(passwordFile.error(), kExitFailure);
+    }
+    backup::ResticRepository repository(resticExecutable, job.value().destinationPath,
+                                        passwordFile.value());
+    const Result<QVector<backup::ForgetGroup>> groups =
+        repository.forget(job.value().retention, !apply, prune);
+    QFile::remove(passwordFile.value());
+    if (!groups) {
+        return output.flushError(groups.error(), kExitFailure);
+    }
+
+    int kept = 0;
+    int removed = 0;
+    QStringList removedIds;
+    for (const backup::ForgetGroup& group : groups.value()) {
+        kept += group.keptIds.size();
+        removed += group.removedIds.size();
+        removedIds.append(group.removedIds);
+    }
+
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("dry_run"), !apply);
+    output.add(QStringLiteral("kept"), kept);
+    output.add(QStringLiteral("removed"), removed);
+    output.add(QStringLiteral("prune"), apply && prune);
+    output.line(QStringLiteral("%1: keep %2 snapshot(s), %3 %4")
+                    .arg(apply ? QStringLiteral("Retention applied") : QStringLiteral("Retention preview"))
+                    .arg(kept)
+                    .arg(apply ? QStringLiteral("removed") : QStringLiteral("would remove"))
+                    .arg(removed));
+    for (const QString& id : removedIds) {
+        output.line(QStringLiteral("  %1").arg(id));
+    }
+    if (!apply) {
+        output.line(QStringLiteral("Nothing was deleted. Re-run with 'retention apply' to execute."));
+    }
+    return output.flush(stdout, kExitSuccess);
+}
+
+int commandBackupRestore(Context& context, const Options& options) {
+    Output output(options.json);
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "backup restore requires a job id"),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+    }
+    if (!options.flags.contains(QStringLiteral("to"))) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "backup restore requires --to <directory>"),
+            kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<jobs::ArchiveJob> job = store.getJob(jobId);
+    if (!job) {
+        return output.flushError(job.error(), kExitNotFound);
+    }
+    if (!job.value().isBackup()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "this job is not a Restic backup job"),
+            kExitUsage);
+    }
+
+    jobs::BackupRestorer::Request request;
+    request.job = job.value();
+    request.snapshotId = options.flags.value(QStringLiteral("snapshot"), QStringLiteral("latest"));
+    request.destinationDirectory = options.flags.value(QStringLiteral("to"));
+    request.policy = jobs::conflictPolicyFromString(
+        options.flags.value(QStringLiteral("policy"),
+                            options.flags.contains(QStringLiteral("overwrite"))
+                                ? QStringLiteral("overwrite")
+                                : (options.flags.contains(QStringLiteral("rename"))
+                                       ? QStringLiteral("rename")
+                                       : QStringLiteral("skip"))),
+        jobs::ConflictPolicy::Ask);
+    if (request.policy == jobs::ConflictPolicy::Ask) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument,
+                           "--policy must be skip, overwrite or rename"),
+            kExitUsage);
+    }
+    request.passwordOptions = passwordOptionsFromFlags(options, context);
+    config::SettingsStore settings(context.database);
+    request.resticExecutable =
+        settings.getString(QString::fromUtf8(config::keys::kResticBinaryPath), QStringLiteral("restic"))
+            .valueOr(QStringLiteral("restic"));
+
+    const CancellationToken cancellation;
+    jobs::BackupRestorer restorer(context.database);
+    const jobs::BackupRestorer::Report report = restorer.restore(request, cancellation);
+
+    output.add(QStringLiteral("ok"), report.succeeded());
+    output.add(QStringLiteral("status"), report.status);
+    output.add(QStringLiteral("restored"), report.restored);
+    output.add(QStringLiteral("skipped"), report.skipped);
+    output.add(QStringLiteral("renamed"), report.renamed);
+    output.add(QStringLiteral("failed"), report.failed);
+    output.add(QStringLiteral("bytes"), report.bytesRestored);
+    QJsonArray errors;
+    for (const QString& error : report.errors) {
+        errors.append(error);
+    }
+    output.add(QStringLiteral("errors"), errors);
+
+    output.line(QStringLiteral("Status:   %1").arg(report.status));
+    output.line(QStringLiteral("Restored: %1 file(s), %2 byte(s)").arg(report.restored)
+                    .arg(report.bytesRestored));
+    output.line(QStringLiteral("Skipped:  %1, renamed: %2, failed: %3")
+                    .arg(report.skipped)
+                    .arg(report.renamed)
+                    .arg(report.failed));
+    for (const QString& error : report.errors) {
+        output.line(QStringLiteral("  error: %1").arg(error));
+    }
+    return output.flush(stdout, report.succeeded() ? kExitSuccess : kExitFailure);
+}
+
 } // namespace
 
 int run(int argc, char** argv) {
@@ -1373,6 +1814,22 @@ int run(int argc, char** argv) {
             return commandJobsCancel(context, options);
         }
         return commandNotImplemented(options, QStringLiteral("jobs %1").arg(subcommand),
+                                     QStringLiteral("a later phase"));
+    }
+    if (command == QStringLiteral("repository")) {
+        return commandRepository(context, options);
+    }
+    if (command == QStringLiteral("snapshots")) {
+        return commandSnapshotsList(context, options);
+    }
+    if (command == QStringLiteral("retention")) {
+        return commandRetention(context, options);
+    }
+    if (command == QStringLiteral("backup")) {
+        if (subcommand == QStringLiteral("restore")) {
+            return commandBackupRestore(context, options);
+        }
+        return commandNotImplemented(options, QStringLiteral("backup %1").arg(subcommand),
                                      QStringLiteral("a later phase"));
     }
     if (command == QStringLiteral("agent")) {

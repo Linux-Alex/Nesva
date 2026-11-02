@@ -6,6 +6,51 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-02
+
+Phase 4 (in progress): Restic backup engine and credential storage. The desktop UI for snapshot
+browsing and Restic restores is the remaining work; everything below is implemented, tested
+against real Restic repositories, and usable through `nesva-cli`.
+
+### Added
+
+- **Restic integration** (`nesva::backup`): repository init, backup with live JSON progress,
+  snapshot listing, snapshot file listing, restore, retention preview/apply (with optional
+  prune), repository check with `--read-data-subset`, lock listing and unlock. Restic exit codes
+  10/11/12 map to NotFound/AlreadyExists/PermissionDenied.
+- **Credential store** (`nesva::security`): freedesktop Secret Service backend over D-Bus for
+  Linux, Windows Credential Manager backend, and an explicit "unavailable" backend that reports
+  why instead of silently storing plaintext.
+- **Repository passwords** are passed to restic through a 0600 temporary file created in the
+  cache directory and removed immediately; the keyring account is derived from the repository
+  location.
+- **Backup jobs** in the job store: mode `backup` with a repository location, retention policy
+  and post-backup verification flag, plus snapshot records in `backup_snapshots`.
+- **BackupRunner**: resolves the password, runs restic, records run counters/snapshot/events,
+  supports dry-run (connectivity check), cancellation and optional post-backup `check`.
+- **BackupRestorer**: stages the restore and merges with skip/rename/overwrite policies, moving
+  files (no double copy) and stripping the snapshot's common root.
+- CLI: `repository init|check|locks|unlock|set-password`, `snapshots list`, `retention
+  preview|apply`, `backup restore`, and `jobs run` now dispatches on the job mode.
+- Tests: `tst_secret_store` (real keyring round-trip, skippable when unavailable),
+  `tst_restic` (argv + parsers + real repository lifecycle/retention/check/restore) and
+  `tst_backup_runner` (job-level backup, incremental, cancellation, dry-run, conflict policies).
+  21 binaries, 222 test functions.
+
+### Fixed
+
+- The streaming restic runner consumed stdout for line callbacks and left the buffer empty for
+  parsers; it now accumulates output as well.
+- Restore no longer leaves files under the snapshot's original absolute path inside the target.
+
+### Known limitations
+
+- The desktop UI for Restic snapshots (Snapshots page, restore-from-snapshot, backup job editor)
+  is not wired yet; use `nesva-cli` for now.
+- Windows remains unbuilt/unverified.
+- rclone-backed repositories are supported by construction (`rclone:<remote>:<path>`) but were
+  not exercised, because Rclone is not installed in this environment.
+
 ## [0.3.0] - 2026-11-02
 
 Phase 3: background execution. Scheduled jobs run without the desktop window.

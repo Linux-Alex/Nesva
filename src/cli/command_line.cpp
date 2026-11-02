@@ -15,7 +15,8 @@ const QStringList& knownCommands() {
         QStringLiteral("status"),  QStringLiteral("doctor"),  QStringLiteral("jobs"),
         QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("archive"),
         QStringLiteral("verify"),  QStringLiteral("agent"),   QStringLiteral("schedule"),
-        QStringLiteral("version"), QStringLiteral("help"),
+        QStringLiteral("repository"), QStringLiteral("snapshots"), QStringLiteral("retention"),
+        QStringLiteral("backup"),  QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
 }
@@ -72,9 +73,11 @@ Options parseArguments(const QStringList& arguments) {
     }
     if (!remaining.isEmpty() && !remaining.constFirst().startsWith(QLatin1Char('-'))) {
         const QString candidate = remaining.constFirst();
-        static const QStringList subcommands = {"list",    "run",    "cancel", "test",
-                                                "restore", "show",   "help",   "add",
-                                                "status",  "reload", "stop"};
+        static const QStringList subcommands = {"list",    "run",     "cancel",  "test",
+                                                "restore", "show",    "help",    "add",
+                                                "status",  "reload",  "stop",    "init",
+                                                "locks",   "unlock",  "apply",   "set-password",
+                                                "check",   "preview"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
@@ -122,6 +125,16 @@ QString usageText() {
         "                            options: --to <dir>, --policy skip|overwrite|rename,\n"
         "                                     --overwrite, --rename, --no-verify\n"
         "  history list              List recent job runs (--limit <n>)\n"
+        "  repository init <job>     Store the repository password and run 'restic init'\n"
+        "                            (--password-stdin | --password-file <path>)\n"
+        "  repository check <job>    Verify repository integrity (--read-data 5%)\n"
+        "  repository locks <job>    List repository locks\n"
+        "  repository unlock <job>   Remove stale locks\n"
+        "  snapshots list <job>      List Restic snapshots of a backup job\n"
+        "  retention preview <job>   Show what the retention policy would remove\n"
+        "  retention apply <job>     Apply retention (--prune to reclaim space)\n"
+        "  backup restore <job>      Restore a snapshot\n"
+        "                            (--snapshot <id|latest>, --to <dir>, --policy ...)\n"
         "  schedule list             List job schedules and their next run\n"
         "  agent status              Background agent state (exit 3 when stopped)\n"
         "  agent run <job-id>        Ask the agent to run a job now\n"

@@ -26,11 +26,13 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: Phase 3 (background execution)
+## Current status: Phase 4 (Restic) - engine complete, UI next
 
-Phases 1-3 are implemented, built and tested on Linux. Archive jobs can be created, executed,
-cancelled, inspected and restored end to end, and scheduled jobs run in a background agent
-without the window being open. What exists today is real, working functionality - not mockups:
+Phases 1-3 are implemented, built and tested on Linux; Phase 4's Restic engine and CLI work
+against real repositories, and the desktop UI for snapshots is the remaining piece. Archive jobs
+run end to end, scheduled jobs run in a background agent without the window, and versioned
+encrypted backups can be created, inspected, verified, pruned and restored through `nesva-cli`.
+What exists today is real, working functionality - not mockups:
 
 **nesva-core (library, no Qt Widgets dependency)**
 - `Result<T>` / `Status` error model with stable, machine-readable error codes
@@ -68,6 +70,16 @@ without the window being open. What exists today is real, working functionality 
 - Duplicate runs remain impossible thanks to the database guard, whichever component starts them
 - systemd **user** unit and a per-user Windows scheduled task (never SYSTEM)
 
+**Restic backups (Phase 4, engine + CLI)**
+- Repository initialisation, backup with live progress, snapshot listing and file browsing,
+  restore, retention preview/apply (optional prune), integrity check (`--read-data-subset`), lock
+  listing and unlock
+- Repository passwords live in the OS keyring (freedesktop Secret Service on Linux, Windows
+  Credential Manager) and reach restic through a 0600 temporary file - never a command line,
+  the database or a log
+- Restore stages the snapshot and then moves files into place with skip/rename/overwrite
+  policies; existing files are never overwritten silently
+
 **nesva (desktop application)**
 - Qt 6 Widgets shell: sidebar navigation, top status bar, page stack, bottom activity dock
 - Eight pages: Dashboard, Backup Jobs, Storage, Archive Explorer, Snapshots, Restore,
@@ -95,9 +107,10 @@ without the window being open. What exists today is real, working functionality 
 **nesva-cli (automation and diagnostics)**
 - `status`, `doctor`, `jobs list`, `jobs run` (`--dry-run`, `--force`, `--retries`),
   `jobs cancel`, `storage list`, `storage test`, `archive list`, `archive restore`,
-  `history list`, `verify`, `schedule list` and `agent status|run|cancel|reload|stop`
-  implemented against the real database and agent socket, with `--json` output and documented
-  exit codes
+  `history list`, `verify`, `schedule list`, `agent status|run|cancel|reload|stop`,
+  `repository init|check|locks|unlock|set-password`, `snapshots list`,
+  `retention preview|apply` and `backup restore` implemented against the real database,
+  repositories and agent socket, with `--json` output and documented exit codes
 - Commands that belong to later phases return exit code 4 with an explicit
   "planned for Phase N; nothing was changed" message
 
@@ -183,7 +196,7 @@ next to the executable or into Program Files.
 
 ## Testing
 
-`ctest --preset linux-debug` runs 18 test binaries (188 test functions):
+`ctest --preset linux-debug` runs 21 test binaries (222 test functions):
 
 | Test | Covers |
 |---|---|
@@ -203,6 +216,9 @@ next to the executable or into Program Files.
 | `tst_archive_restore` | Conflict policies, verification, corruption detection, restore records |
 | `tst_schedule` | Next-run computation, DST, missed runs, retries, due decisions |
 | `tst_agent_protocol` | Request/status JSON, heartbeat round-trip, socket naming |
+| `tst_secret_store` | Credential store round-trip against the real Secret Service |
+| `tst_restic` | Restic argv/parsers plus real repository lifecycle, retention, check, restore |
+| `tst_backup_runner` | Job-level backup, incremental runs, cancellation, dry-run, conflict policies |
 | `tst_agent_integration` | Starts the real `nesva-agent`, runs a scheduled job, drives IPC |
 | `tst_gui_smoke` | Headless: real MainWindow, 8 pages, models, theme, worker-thread execution |
 
@@ -230,6 +246,8 @@ nesva/
 ├── include/nesva/               public headers for nesva-core
 ├── src/
 │   ├── core/                    logging, redaction, paths, errors, external tools
+│   ├── backup/                  Restic repository, argument builders and JSON parsers
+│   ├── security/                OS credential store (Secret Service / Credential Manager)
 │   ├── desktop/                 Qt 6 Widgets application (library + main.cpp)
 │   ├── database/                SQLite access, migrations, settings store
 │   ├── cli/                     nesva-cli
@@ -282,7 +300,7 @@ writes a record.
 | 1 | Foundation: build system, core services, SQLite, logging, desktop shell, CLI, tests | **delivered** |
 | 2 | Functional archive: job editor, local + Rclone providers, execution, progress, restore | **delivered** |
 | 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | **delivered** |
-| 4 | Restic: repository setup, snapshots, restore, retention, verification | next |
+| 4 | Restic: repository setup, snapshots, restore, retention, verification | **in progress** - engine + CLI delivered, snapshot UI next |
 | 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | planned |
 | 6 | Distribution: Windows installer, .deb/AppImage/RPM, CI/CD, user docs | planned |
 

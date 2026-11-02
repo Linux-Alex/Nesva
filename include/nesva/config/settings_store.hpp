@@ -58,6 +58,8 @@ inline constexpr const char* kResticBinaryPath = "tools.restic_path";
 inline constexpr const char* kNetworkChecksEnabled = "scheduling.network_checks";
 inline constexpr const char* kMinimizeToTray = "ui.minimize_to_tray";
 inline constexpr const char* kNotificationsEnabled = "ui.notifications";
+inline constexpr const char* kBackupPasswordSource = "backup.password_source";
+inline constexpr const char* kBackupPasswordFile = "backup.password_file";
 } // namespace keys
 
 } // namespace nesva::config

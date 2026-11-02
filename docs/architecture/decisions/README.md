@@ -17,6 +17,7 @@ supersedes an earlier one instead of editing it.
 | [0009](0009-headless-gui-testing.md) | UI compiled as a library and tested headlessly | Accepted |
 | [0010](0010-archive-execution-and-threading.md) | Archive execution on a worker thread with database-enforced single flight | Accepted |
 | [0011](0011-background-agent-and-scheduling.md) | Background agent, schedule evaluation and local IPC | Accepted |
+| [0012](0012-restic-integration-and-credentials.md) | Restic integration, credential handling and restore staging | Accepted |
 
 ## Template
 

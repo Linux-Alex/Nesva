@@ -11,6 +11,7 @@
 
 #include <optional>
 
+#include "nesva/backup/restic.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/core/result.hpp"
 #include "nesva/scan/exclusions.hpp"
@@ -59,6 +60,12 @@ struct ArchiveJob {
     QVector<JobSource> sources;
     QVector<scan::ExclusionRule> exclusions;
 
+    // Backup mode (Restic) options. destinationPath holds the repository
+    // location ("/srv/restic/home" or "rclone:icloud:Nesva/restic").
+    backup::RetentionPolicy retention;
+    bool checkAfterBackup = false;
+
+    bool isBackup() const { return mode == QStringLiteral("backup"); }
     bool isValid() const { return !name.trimmed().isEmpty() && !sources.isEmpty(); }
 };
 
@@ -158,6 +165,23 @@ public:
     Result<QVector<RunSummary>> listRuns(int limit, std::optional<qint64> jobId = std::nullopt) const;
     Result<RunSummary> getRun(qint64 runId) const;
     Result<bool> isJobRunning(qint64 jobId) const;
+
+    // ---- Restic snapshots --------------------------------------------------
+    struct SnapshotRecord {
+        qint64 id = 0;
+        QString snapshotId;
+        QString hostname;
+        QString repositoryPath;
+        QString createdAt;
+        QStringList tags;
+        qint64 sizeBytes = -1;
+        int filesProcessed = -1;
+    };
+
+    /// Records a snapshot produced by a backup run (idempotent per job+snapshot).
+    Status recordSnapshot(qint64 jobId, qint64 runId, const SnapshotRecord& snapshot);
+    Result<QVector<SnapshotRecord>> listSnapshots(qint64 jobId, int limit = 200) const;
+    Result<QVector<SnapshotRecord>> allSnapshots(int limit = 200) const;
 
     // ---- file manifest -----------------------------------------------------
     /// Manifest of the most recent successful run of the job (empty when there
