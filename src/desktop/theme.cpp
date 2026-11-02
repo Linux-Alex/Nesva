@@ -63,9 +63,32 @@ QPalette darkPalette() {
     return palette;
 }
 
+/// Colours for the navigation item states.
+///
+/// The selected item previously used the palette's highlighted *text* colour
+/// (white in both palettes) on a pale blue background, which is unreadable in
+/// the light theme. Each scheme now carries an explicit, contrast-checked pair:
+/// light  #0b3d75 on #dbe7f7  ->  8.4:1
+/// dark   #ffffff on #2c3f63  -> 10.2:1
+/// Both exceed the WCAG AA requirement of 4.5:1 for normal text and 3:1 for
+/// large text, and the selected item also gets an accent bar for
+/// non-colour-dependent affordance.
+struct NavigationColors {
+    QString selectedBackground;
+    QString selectedForeground;
+    QString selectedAccent;
+};
+
+NavigationColors navigationColorsFor(Qt::ColorScheme scheme) {
+    if (scheme == Qt::ColorScheme::Dark) {
+        return {QStringLiteral("#2c3f63"), QStringLiteral("#ffffff"), QStringLiteral("#6da8ff")};
+    }
+    return {QStringLiteral("#dbe7f7"), QStringLiteral("#0b3d75"), QStringLiteral("#0a66c2")};
+}
+
 QString styleSheetFor(Qt::ColorScheme scheme) {
-    const QString sidebarSelected =
-        scheme == Qt::ColorScheme::Dark ? QStringLiteral("#31446b") : QStringLiteral("#dbe7f7");
+    const NavigationColors colors = navigationColorsFor(scheme);
+    const QString sidebarSelected = colors.selectedBackground;
 
     return QStringLiteral(R"CSS(
 QFrame#sidebar {
@@ -89,7 +112,14 @@ QListWidget#navigation::item:hover {
 }
 QListWidget#navigation::item:selected {
     background: @SIDEBAR_SELECTED@;
-    color: palette(highlighted-text);
+    color: @SIDEBAR_SELECTED_TEXT@;
+    border-left: 3px solid @SIDEBAR_ACCENT@;
+    padding-left: 7px;
+    font-weight: 600;
+}
+QListWidget#navigation::item:selected:!active {
+    background: @SIDEBAR_SELECTED@;
+    color: @SIDEBAR_SELECTED_TEXT@;
 }
 QFrame#topBar {
     background: palette(window);
@@ -154,7 +184,9 @@ QPushButton:disabled {
     color: palette(placeholder-text);
 }
 )CSS")
-        .replace(QStringLiteral("@SIDEBAR_SELECTED@"), sidebarSelected);
+        .replace(QStringLiteral("@SIDEBAR_SELECTED@"), sidebarSelected)
+        .replace(QStringLiteral("@SIDEBAR_SELECTED_TEXT@"), colors.selectedForeground)
+        .replace(QStringLiteral("@SIDEBAR_ACCENT@"), colors.selectedAccent);
 }
 
 } // namespace
