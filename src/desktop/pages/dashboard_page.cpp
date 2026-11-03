@@ -226,7 +226,7 @@ QStringList DashboardPage::collectAttention() const {
 
     if (issues.isEmpty()) {
         issues.append(QStringLiteral(
-            "No issues detected. Scheduling and unattended runs arrive in Phase 3."));
+            "No issues detected."));
     }
     return issues;
 }

@@ -64,7 +64,7 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
     modeCombo_ = new QComboBox(this);
     modeCombo_->setObjectName(QStringLiteral("jobMode"));
     modeCombo_->addItem(tr("Archive - copy files, no versions"), QStringLiteral("archive"));
-    modeCombo_->addItem(tr("Backup - versioned Restic snapshots (Phase 4)"), QStringLiteral("backup"));
+    modeCombo_->addItem(tr("Backup - versioned, encrypted Restic snapshots"), QStringLiteral("backup"));
     modeCombo_->setItemData(1, QVariant(), Qt::ToolTipRole);
     modeCombo_->setToolTip(tr("Archive copies files. Backup creates versioned, encrypted Restic "
                               "snapshots in a repository."));

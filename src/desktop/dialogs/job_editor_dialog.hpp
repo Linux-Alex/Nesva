@@ -28,8 +28,8 @@ class AppContext;
 
 /// Creates or edits an archive job.
 ///
-/// Only archive mode is offered: Restic backup jobs arrive in Phase 4, and the
-/// dialog says so instead of pretending the option works.
+/// Offers both modes: archive (copy) and backup (versioned Restic snapshots),
+/// plus the content source (files and folders, or a Microsoft 365 mailbox).
 class JobEditorDialog : public QDialog {
     Q_OBJECT
 

@@ -53,8 +53,8 @@ QFrame* makeCard(QWidget* parent, const QString& title, QVBoxLayout*& cardLayout
 
 SettingsPage::SettingsPage(AppContext& context, QWidget* parent)
     : Page(QStringLiteral("Settings"),
-           QStringLiteral("Application preferences. Credentials are never stored here; keyring "
-                          "integration arrives with the storage and mail modules."),
+           QStringLiteral("Application preferences. Secrets live in the system keyring, never in "
+                          "this database."),
            parent),
       context_(context) {
     buildAppearanceSection();

@@ -25,8 +25,8 @@ namespace nesva::ui {
 
 JobsPage::JobsPage(AppContext& context, QWidget* parent)
     : Page(QStringLiteral("Backup Jobs"),
-           QStringLiteral("Archive jobs copy files to a destination. Backup jobs with Restic "
-                          "snapshots arrive in Phase 4."),
+           QStringLiteral("Archive jobs copy files to a destination; backup jobs create "
+                          "versioned, encrypted Restic snapshots. Mail jobs archive a mailbox."),
            parent),
       context_(context) {
     auto* toolbar = new QHBoxLayout();
@@ -161,8 +161,8 @@ void JobsPage::refresh() {
 
     agent::AgentClient client;
     const bool agentRunning = client.isReachable(200);
-    setSubtitle(QStringLiteral("Archive jobs copy files to a destination. Runs start in the %1. "
-                               "Backup jobs with Restic snapshots arrive in Phase 4. Database: %2")
+    setSubtitle(QStringLiteral("Archive jobs copy files to a destination; backup jobs create "
+                               "versioned Restic snapshots. Runs start in the %1. Database: %2")
                     .arg(agentRunning ? QStringLiteral("background agent")
                                       : QStringLiteral("application"),
                          context_.database().filePath()));
