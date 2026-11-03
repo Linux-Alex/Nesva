@@ -62,8 +62,9 @@ nesva-cli mail accounts      # account id, status, folder count
 nesva-cli mail folders 1     # discovered folders, and whether each is enabled
 ```
 
-Unrelated, system folders (Sync issues, Conversation history, ...) are stored but not enabled by
-default:
+Every discovered folder is enabled, including system folders (Sync issues, Conversation history,
+Deleted Items, Junk), so nothing is silently left out of the archive. Disable what you do not
+want:
 
 ```bash
 nesva-cli mail folders 1 --enable inbox --enable archive --disable drafts
@@ -82,12 +83,18 @@ temporary file and recorded with their SHA-256. Each run:
 
 - uses the per-folder **delta** feed, so only new and changed messages are downloaded;
 - resumes from a cursor that is advanced page by page, so an interrupted run does not start over;
-- skips a message whose `lastModifiedDateTime` is unchanged since the last download;
+- skips a message whose `lastModifiedDateTime` is unchanged **and** whose `.eml` is still on
+  disk, so a deleted file or a new destination is repaired rather than skipped;
 - keeps the local file when a message disappears from the mailbox, and marks the row `deleted`,
   so archiving never destroys evidence.
 
-Useful flags: `--full` (ignore the cursor), `--folder <remote-id>`,
-`--max-messages <n>` (bound a first run), `--dry-run` (list, download nothing).
+Useful flags: `--full` (ignore the cursor and re-walk every folder), `--folder <remote-id>`,
+`--max-messages <n>` (bound a run), `--dry-run` (list, download nothing).
+
+`--max-messages` bounds the **run**, not a folder: the run stops when the limit is reached and
+the delta cursor of the folder it stopped in is left where it was, so the next run continues from
+the same place instead of skipping the messages past the limit. Messages are never downloaded
+twice: the ones already archived are skipped by their timestamp.
 
 ---
 

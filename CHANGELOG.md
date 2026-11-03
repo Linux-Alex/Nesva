@@ -19,6 +19,21 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Fixed
 
+- **Mail sync survives a real mailbox.** Four defects found by the first live run against a
+  tenant, none of which the scripted tests could see:
+  - `QNetworkHttpTransport` built a `QNetworkAccessManager` per request, paying a DNS+TCP+TLS
+    handshake for every call (measured at ~235 ms each, one to two calls per message). The manager
+    is now held in a `thread_local`, keeping the connection pool per thread: ~68 ms per request,
+    a 1.1 MB message in ~144 ms, and each request logs host, path, status, bytes and elapsed time
+    at debug level.
+  - The delta `$select` asked for `size`, which Exchange rejects outright
+    (`RequestBroker--ParseUri`), failing every folder before anything was downloaded.
+  - A run bounded by `--max-messages` advanced the delta cursor past messages it never examined,
+    so Microsoft never reported them again and the archive silently missed them. A truncated page
+    no longer moves the cursor, and the run stops instead of visiting every remaining folder.
+  - "Already exported" ignored the file on disk, so a new destination produced an empty archive
+    and a deleted `.eml` was never restored. The recorded path is now checked under the current
+    destination.
 - **HTTP transport discarded every error response.** Qt reports an HTTP 4xx/5xx as a
   `QNetworkReply` error, and the transport treated any reply error as "no HTTP response": the
   status code collapsed to 0 and the body was dropped. Consequences fixed: a rejected token
