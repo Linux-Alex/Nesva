@@ -6,7 +6,23 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
+### Added (UI polish)
+
+- **Dashboard cards flow instead of shrinking.** A `FlowLayout` wraps them onto further rows when
+  the window is narrow, and the value labels wrap too, so a long timestamp breaks onto a second
+  line instead of being clipped.
+- **Display timezone.** Settings -> Appearance -> *Time zone* selects the zone used for every
+  timestamp in the UI (dashboard cards, recent events, activity). Stored values stay UTC.
+- **In-app Entra help.** Settings -> Microsoft 365 -> *How to register the app...* opens the full
+  registration walkthrough (platform, redirect URI, *Allow public client flows*, permissions and
+  the `AADSTS` codes), so setup does not depend on having the documentation at hand.
+
+### Fixed (UI polish)
+
+- **Job list ID column.** The model returned the string "right" for `Qt::TextAlignmentRole`, which
+  Qt ignores: the ID was drawn top-left in a cramped cell while other columns looked normal. It
+  now returns a real `Qt::Alignment` (right + vertically centred), and the ID and source-count
+  columns size to their contents.
 
 ### Added (17-item pass for the Windows deployment)
 

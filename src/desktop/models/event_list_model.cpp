@@ -10,7 +10,20 @@
 
 #include <utility>
 
+#include "time_display.hpp"
+
 namespace nesva::ui {
+
+void EventListModel::setDisplayTimeZone(const QTimeZone& zone) {
+    if (!zone.isValid() || zone == displayZone_) {
+        return;
+    }
+    displayZone_ = zone;
+    emit headerDataChanged(Qt::Horizontal, TimeColumn, TimeColumn);
+    if (!rows_.isEmpty()) {
+        emit dataChanged(index(0, TimeColumn), index(static_cast<int>(rows_.size()) - 1, TimeColumn));
+    }
+}
 
 EventListModel::EventListModel(db::Database& database, int rowLimit, QObject* parent)
     : QAbstractTableModel(parent), database_(database), rowLimit_(rowLimit) {}
@@ -44,7 +57,7 @@ QVariant EventListModel::data(const QModelIndex& index, int role) const {
 
     switch (index.column()) {
     case TimeColumn:
-        return row.timestamp;
+        return formatInZone(row.timestamp, displayZone_, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
     case LevelColumn:
         return row.level;
     case SourceColumn:
@@ -64,7 +77,7 @@ QVariant EventListModel::headerData(int section, Qt::Orientation orientation, in
     }
     switch (section) {
     case TimeColumn:
-        return QStringLiteral("Time (UTC)");
+        return QStringLiteral("Time (%1)").arg(QString::fromUtf8(displayZone_.id()));
     case LevelColumn:
         return QStringLiteral("Level");
     case SourceColumn:

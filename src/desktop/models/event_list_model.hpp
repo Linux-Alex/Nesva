@@ -5,6 +5,7 @@
 
 #include <QtCore/QAbstractTableModel>
 #include <QtCore/QString>
+#include <QtCore/QTimeZone>
 #include <QtCore/QVector>
 
 #include "nesva/db/database.hpp"
@@ -34,6 +35,9 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const override;
 
+    /// Timezone used to display the timestamp column (system zone by default).
+    void setDisplayTimeZone(const QTimeZone& zone);
+
     /// Reloads the model. Returns an error description on failure.
     QString refresh();
 
@@ -47,6 +51,7 @@ private:
     };
 
     db::Database& database_;
+    QTimeZone displayZone_ = QTimeZone::systemTimeZone();
     int rowLimit_ = 100;
     QVector<Row> rows_;
 };

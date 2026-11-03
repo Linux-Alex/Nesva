@@ -45,6 +45,7 @@ ActivityPage::ActivityPage(AppContext& context, QWidget* parent)
     body()->addWidget(summaryLabel_);
 
     model_ = new EventListModel(context_.database(), 500, this);
+    model_->setDisplayTimeZone(context_.displayTimeZone());
     proxy_ = new QSortFilterProxyModel(this);
     proxy_->setSourceModel(model_);
     proxy_->setFilterCaseSensitivity(Qt::CaseInsensitive);
@@ -83,6 +84,7 @@ ActivityPage::ActivityPage(AppContext& context, QWidget* parent)
 }
 
 void ActivityPage::refresh() {
+    model_->setDisplayTimeZone(context_.displayTimeZone());
     const QString error = model_->refresh();
     proxy_->setFilterFixedString(filterEdit_->text());
 

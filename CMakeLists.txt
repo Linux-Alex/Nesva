@@ -149,11 +149,17 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/snapshot_browser_dialog.cpp
   src/desktop/dialogs/snapshot_restore_dialog.hpp
   src/desktop/dialogs/snapshot_restore_dialog.cpp
+  src/desktop/dialogs/entra_help_dialog.hpp
+  src/desktop/dialogs/entra_help_dialog.cpp
   src/desktop/dialogs/mail_connect_dialog.hpp
   src/desktop/dialogs/mail_connect_dialog.cpp
   src/desktop/dialogs/tool_install_dialog.hpp
   src/desktop/dialogs/tool_install_dialog.cpp
   src/desktop/widgets/elided_label.hpp
+  src/desktop/widgets/flow_layout.hpp
+  src/desktop/widgets/flow_layout.cpp
+  src/desktop/time_display.hpp
+  src/desktop/time_display.cpp
   src/desktop/widgets/elided_label.cpp
   src/desktop/models/job_list_model.hpp
   src/desktop/models/job_list_model.cpp

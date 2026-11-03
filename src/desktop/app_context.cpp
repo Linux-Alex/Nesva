@@ -100,6 +100,19 @@ Status AppContext::initialise(const StartupOptions& options) {
     return Status();
 }
 
+QString AppContext::displayTimeZoneId() const {
+    if (settings_ == nullptr) {
+        return QString();
+    }
+    return settings_
+        ->getString(QString::fromUtf8(config::keys::kDisplayTimezone), QString())
+        .valueOr(QString());
+}
+
+QTimeZone AppContext::displayTimeZone() const {
+    return resolveDisplayTimeZone(displayTimeZoneId());
+}
+
 ThemeMode AppContext::themeMode() const {
     if (!settings_) {
         return ThemeMode::System;

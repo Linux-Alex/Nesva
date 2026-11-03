@@ -6,6 +6,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QString>
+#include <QtCore/QTimeZone>
 
 #include <memory>
 #include <optional>
@@ -16,6 +17,7 @@
 #include "nesva/core/result.hpp"
 #include "nesva/db/database.hpp"
 #include "theme.hpp"
+#include "time_display.hpp"
 
 namespace nesva::ui {
 
@@ -47,6 +49,11 @@ public:
 
     ThemeMode themeMode() const;
     Status setThemeMode(ThemeMode mode);
+
+    /// Timezone used to display timestamps (dashboard cards, activity, history).
+    /// Empty setting means "follow the system zone".
+    QTimeZone displayTimeZone() const;
+    QString displayTimeZoneId() const;
 
     /// Persists a diagnostic event into application_events and the log file.
     void recordEvent(LogLevel level, const QString& category, const QString& message,

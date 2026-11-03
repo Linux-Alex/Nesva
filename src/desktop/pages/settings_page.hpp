@@ -41,6 +41,7 @@ private:
     AppContext& context_;
     QComboBox* themeCombo_ = nullptr;
     QComboBox* logLevelCombo_ = nullptr;
+    QComboBox* timezoneCombo_ = nullptr;
     QCheckBox* confirmDestructive_ = nullptr;
     QCheckBox* minimizeToTrayCheck_ = nullptr;
     QCheckBox* notificationsCheck_ = nullptr;

@@ -84,6 +84,12 @@ JobsPage::JobsPage(AppContext& context, QWidget* parent)
     view_->horizontalHeader()->setSectionResizeMode(JobListModel::NameColumn, QHeaderView::Stretch);
     view_->horizontalHeader()->setSectionResizeMode(JobListModel::DestinationColumn,
                                                      QHeaderView::Stretch);
+    // The ID and the source count are short and should never be elided.
+    view_->horizontalHeader()->setSectionResizeMode(JobListModel::IdColumn,
+                                                    QHeaderView::ResizeToContents);
+    view_->horizontalHeader()->setSectionResizeMode(JobListModel::SourcesColumn,
+                                                    QHeaderView::ResizeToContents);
+    view_->verticalHeader()->setDefaultSectionSize(28);
     view_->setVisible(false);
     body()->addWidget(view_, 1);
 

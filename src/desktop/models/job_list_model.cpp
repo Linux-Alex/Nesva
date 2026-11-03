@@ -27,8 +27,13 @@ QVariant JobListModel::data(const QModelIndex& index, int role) const {
     }
     const Row& row = rows_.at(index.row());
 
-    if (role == Qt::TextAlignmentRole && index.column() == IdColumn) {
-        return QStringLiteral("right");
+    // Qt::TextAlignmentRole expects a Qt::Alignment value. Returning the string
+    // "right" (as this used to) is ignored by the view, which leaves the ID
+    // crammed into the top-left corner while the other columns look normal.
+    if (role == Qt::TextAlignmentRole) {
+        const bool numeric = index.column() == IdColumn || index.column() == SourcesColumn;
+        return static_cast<int>((numeric ? Qt::AlignRight : Qt::AlignLeft) |
+                                Qt::AlignVCenter);
     }
 
     if (role != Qt::DisplayRole && role != Qt::ToolTipRole) {

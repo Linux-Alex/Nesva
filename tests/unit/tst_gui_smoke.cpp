@@ -32,6 +32,7 @@
 #include <QtCore/QTimer>
 
 #include "dialogs/job_editor_dialog.hpp"
+#include "time_display.hpp"
 #include "widgets/elided_label.hpp"
 #include "dialogs/snapshot_browser_dialog.hpp"
 #include "pages/snapshots_page.hpp"
@@ -103,6 +104,9 @@ private slots:
     void mainWindowExposesEveryPage();
     void settingsPageOffersTheRcloneInstaller();
     void mailPageShowsAccountsAndFolderCounts();
+    void dashboardCardsStackWhenNarrow();
+    void jobModelAlignsNumericColumns();
+    void timestampsUseTheConfiguredZone();
     void statusTextDoesNotResizeTheJobsTable();
     void settingsPageScrollsInsteadOfSqueezing();
     void mainWindowSwitchesPages();
@@ -300,6 +304,69 @@ void GuiSmokeTest::statusTextDoesNotResizeTheJobsTable() {
     // The whole text is still reachable, through the tooltip.
     QCOMPARE(labels.first()->toolTip(), longMessage);
     QCOMPARE(labels.first()->text(), longMessage);
+}
+
+void GuiSmokeTest::dashboardCardsStackWhenNarrow() {
+    // Five cards in a QHBoxLayout were squeezed into slivers on a narrow window.
+    // They must flow onto further rows instead.
+    MainWindow window(*context_);
+    window.resize(560, 720);
+    window.show();
+    window.selectPage(0); // Dashboard
+    QCoreApplication::processEvents();
+
+    Page* dashboard = window.pageAt(0);
+    QVERIFY(dashboard != nullptr);
+    const QList<QFrame*> cards = dashboard->findChildren<QFrame*>(QStringLiteral("statCard"));
+    QVERIFY2(cards.size() >= 5, "the dashboard cards must exist");
+
+    // Collect the cards that share the first row: at 560 px not all five fit.
+    QSet<int> rowTops;
+    for (QFrame* card : cards) {
+        if (card->isVisible()) {
+            rowTops.insert(card->mapTo(dashboard, QPoint(0, 0)).y());
+        }
+    }
+    QVERIFY2(rowTops.size() >= 2,
+             qPrintable(QStringLiteral("expected the cards to occupy several rows, got %1")
+                            .arg(rowTops.size())));
+}
+
+void GuiSmokeTest::jobModelAlignsNumericColumns() {
+    // The ID column used to return the string "right" for Qt::TextAlignmentRole,
+    // which Qt ignores: the cell was drawn top-left and looked wrong next to the
+    // other columns.
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("Align job");
+    job.destinationPath = directory_->filePath(QStringLiteral("dest"));
+    job.sources = {{0, directory_->path(), QStringLiteral("source")}};
+    QVERIFY(store.createJob(job));
+
+    JobListModel model(context_->database());
+    QCOMPARE(model.refresh(), QString());
+    const QVariant alignment =
+        model.data(model.index(0, JobListModel::IdColumn), Qt::TextAlignmentRole);
+    QVERIFY2(alignment.isValid(), "the ID column must report an alignment");
+    const int value = alignment.toInt();
+    QVERIFY2((value & Qt::AlignRight) != 0, "IDs are right aligned");
+    QVERIFY2((value & Qt::AlignVCenter) != 0, "every cell is vertically centred");
+}
+
+void GuiSmokeTest::timestampsUseTheConfiguredZone() {
+    // Stored timestamps are UTC; the UI renders them in the configured zone.
+    const QTimeZone ljubljana("Europe/Ljubljana");
+    QVERIFY(ljubljana.isValid());
+    QCOMPARE(ui::formatInZone(QStringLiteral("2026-11-03T19:15:00.000Z"), ljubljana),
+             QStringLiteral("2026-11-03 20:15"));
+    const QTimeZone utc("UTC");
+    QCOMPARE(ui::formatInZone(QStringLiteral("2026-11-03T19:15:00.000Z"), utc),
+             QStringLiteral("2026-11-03 19:15"));
+    // Unparsable input must not become an epoch date.
+    QCOMPARE(ui::formatInZone(QString(), ljubljana), QString(QChar(0x2014)));
+    QVERIFY(ui::resolveDisplayTimeZone(QString()).isValid());
+    QCOMPARE(QString::fromUtf8(ui::resolveDisplayTimeZone(QStringLiteral("Not/AZone")).id()),
+             QString::fromUtf8(QTimeZone::systemTimeZone().id()));
 }
 
 void GuiSmokeTest::mailPageShowsAccountsAndFolderCounts() {

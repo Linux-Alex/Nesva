@@ -18,23 +18,13 @@
 
 #include "app_context.hpp"
 #include "models/event_list_model.hpp"
+#include "time_display.hpp"
+#include "widgets/flow_layout.hpp"
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/external_tool.hpp"
 
 namespace nesva::ui {
 namespace {
-
-QString formattedTimestamp(const QString& isoTimestamp) {
-    if (isoTimestamp.isEmpty()) {
-        return QStringLiteral("\u2014");
-    }
-    QString value = isoTimestamp;
-    value.replace(QLatin1Char('T'), QLatin1Char(' '));
-    if (value.size() > 19) {
-        value = value.left(19);
-    }
-    return value + QStringLiteral(" UTC");
-}
 
 int scalarInt(AppContext& context, const QString& sql, int fallback = 0) {
     Result<QSqlQuery> query = context.database().select(sql);
@@ -77,8 +67,10 @@ DashboardPage::DashboardPage(AppContext& context, QWidget* parent)
 }
 
 void DashboardPage::buildUi() {
-    auto* cardsRow = new QHBoxLayout();
-    cardsRow->setSpacing(12);
+    // Cards flow onto a second row when the window is narrow; a QHBoxLayout
+    // would squeeze them into unreadable slivers instead.
+    auto* cardsContainer = new QWidget(this);
+    auto* cardsRow = new FlowLayout(cardsContainer, 12, 12);
 
     const QStringList captions = {QStringLiteral("Jobs configured"),
                                   QStringLiteral("Last successful run"),
@@ -89,19 +81,24 @@ void DashboardPage::buildUi() {
         auto* card = new QFrame(this);
         card->setObjectName(QStringLiteral("statCard"));
         card->setMinimumHeight(86);
+        card->setMinimumWidth(170);
+        card->setMaximumWidth(360);
         auto* cardLayout = new QVBoxLayout(card);
         cardLayout->setContentsMargins(14, 10, 14, 10);
         cardLayout->setSpacing(2);
 
         StatCard entry;
         entry.value = makeLabel(QStringLiteral("\u2014"), "statCardValue", card);
+        // A timestamp is long enough to need a second line in a narrow card.
+        entry.value->setWordWrap(true);
         entry.caption = makeLabel(caption, "statCardCaption", card);
+        entry.caption->setWordWrap(true);
         cardLayout->addWidget(entry.value);
         cardLayout->addWidget(entry.caption);
-        cardsRow->addWidget(card, 1);
+        cardsRow->addWidget(card);
         cards_.append(entry);
     }
-    body()->addLayout(cardsRow);
+    body()->addWidget(cardsContainer);
 
     auto* attentionHeader = new QHBoxLayout();
     attentionHeader->setSpacing(8);
@@ -130,6 +127,7 @@ void DashboardPage::buildUi() {
     body()->addLayout(activityHeader);
 
     recentModel_ = new EventListModel(context_.database(), 10, this);
+    recentModel_->setDisplayTimeZone(context_.displayTimeZone());
     recentView_ = new QTableView(this);
     recentView_->setModel(recentModel_);
     recentView_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -239,6 +237,9 @@ void DashboardPage::refresh() {
     }
 
     probeTools(false);
+    if (recentModel_ != nullptr) {
+        recentModel_->setDisplayTimeZone(context_.displayTimeZone());
+    }
 
     const int jobCount = scalarInt(context_, QStringLiteral("SELECT COUNT(*) FROM backup_jobs"));
     const int storageCount =
@@ -253,11 +254,18 @@ void DashboardPage::refresh() {
         context_, QStringLiteral("SELECT MIN(next_run_at) FROM job_schedules "
                                  "WHERE next_run_at IS NOT NULL"));
 
-    const QString values[] = {QString::number(jobCount), formattedTimestamp(lastSuccess),
-                              formattedTimestamp(lastFailure), formattedTimestamp(nextRun),
+    // Timestamps are shown in the timezone chosen in Settings, not necessarily
+    // the machine's zone.
+    const QTimeZone zone = context_.displayTimeZone();
+    const QString values[] = {QString::number(jobCount), formatInZone(lastSuccess, zone),
+                              formatInZone(lastFailure, zone), formatInZone(nextRun, zone),
                               QString::number(storageCount)};
     for (int index = 0; index < cards_.size() && index < 5; ++index) {
         cards_.at(index).value->setText(values[index]);
+        if (index >= 1 && index <= 3) {
+            cards_.at(index).value->setToolTip(
+                QStringLiteral("Shown in %1").arg(QString::fromUtf8(zone.id())));
+        }
     }
 
     QStringList lines;

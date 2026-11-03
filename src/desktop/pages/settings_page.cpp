@@ -22,11 +22,15 @@
 #include <QtWidgets/QVBoxLayout>
 
 #include "app_context.hpp"
+#include "dialogs/entra_help_dialog.hpp"
 #include "dialogs/mail_connect_dialog.hpp"
 #include "dialogs/tool_install_dialog.hpp"
+#include <QtCore/QTimeZone>
+
 #include "nesva/agent/autostart.hpp"
 #include "nesva/agent/client.hpp"
 #include "nesva/core/external_tool.hpp"
+#include "time_display.hpp"
 #include "nesva/core/paths.hpp"
 
 namespace nesva::ui {
@@ -79,7 +83,43 @@ void SettingsPage::buildAppearanceSection() {
     themeCombo_->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     themeCombo_->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
     form->addRow(QStringLiteral("Theme"), themeCombo_);
+
+    // Timestamps (dashboard cards, activity, history) are rendered in this zone.
+    timezoneCombo_ = new QComboBox(card);
+    timezoneCombo_->setObjectName(QStringLiteral("settingsTimezone"));
+    timezoneCombo_->setEditable(true);
+    const QTimeZone systemZone = QTimeZone::systemTimeZone();
+    timezoneCombo_->addItem(zoneDisplayName(systemZone, true), QString());
+    timezoneCombo_->addItem(QStringLiteral("UTC"), QStringLiteral("UTC"));
+    QStringList zoneIds;
+    for (const QByteArray& id : QTimeZone::availableTimeZoneIds()) {
+        zoneIds.append(QString::fromUtf8(id));
+    }
+    zoneIds.sort();
+    for (const QString& id : zoneIds) {
+        if (id == QString::fromUtf8(systemZone.id()) || id == QStringLiteral("UTC")) {
+            continue;
+        }
+        timezoneCombo_->addItem(id, id);
+    }
+    const QString configuredZone =
+        context_.settings()
+            .getString(QString::fromUtf8(config::keys::kDisplayTimezone), QString())
+            .valueOr(QString());
+    const int zoneIndex = timezoneCombo_->findData(configuredZone);
+    timezoneCombo_->setCurrentIndex(zoneIndex >= 0 ? zoneIndex : 0);
+    timezoneCombo_->setToolTip(QStringLiteral("Timezone used to display dates and times"));
+    form->addRow(QStringLiteral("Time zone"), timezoneCombo_);
     cardLayout->addLayout(form);
+
+    connect(timezoneCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
+        const QString id = timezoneCombo_->currentData().toString();
+        if (context_.settings()
+                .setString(QString::fromUtf8(config::keys::kDisplayTimezone), id)
+                .ok()) {
+            showSaved();
+        }
+    });
 
     connect(themeCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
         const QString mode = themeCombo_->currentData().toString();
@@ -321,10 +361,19 @@ void SettingsPage::buildMailSection() {
     auto* buttons = new QHBoxLayout();
     auto* saveButton = new QPushButton(QStringLiteral("Save"), card);
     auto* connectButton = new QPushButton(QStringLiteral("Connect account..."), card);
+    auto* helpButton = new QPushButton(QStringLiteral("How to register the app..."), card);
+    helpButton->setToolTip(QStringLiteral("Step-by-step Entra ID registration, including the "
+                                          "public client flows requirement"));
     buttons->addWidget(saveButton);
     buttons->addWidget(connectButton);
+    buttons->addWidget(helpButton);
     buttons->addStretch(1);
     cardLayout->addLayout(buttons);
+
+    connect(helpButton, &QPushButton::clicked, this, [this] {
+        EntraHelpDialog dialog(this);
+        dialog.exec();
+    });
 
     connect(saveButton, &QPushButton::clicked, this, [this] { saveMailSettings(); });
     connect(browse, &QPushButton::clicked, this, [this] {
