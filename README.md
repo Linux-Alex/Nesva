@@ -26,12 +26,13 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: Phase 4 (Restic) delivered
+## Current status: Phase 5 (Microsoft 365) - engine + CLI done, UI next
 
-Phases 1-4 are implemented, built and tested on Linux. Archive jobs run end to end, scheduled
-jobs run in a background agent without the window, and versioned encrypted backups can be
-created, browsed, verified, pruned and restored either from the desktop application or through
-`nesva-cli`. What exists today is real, working functionality - not mockups:
+Phases 1-4 are implemented, built and tested on Linux; Phase 5's Microsoft 365 engine and CLI
+are in place. Archive jobs run end to end, scheduled jobs run in a background agent without the
+window, versioned encrypted backups work from the desktop application or `nesva-cli`, and
+Microsoft 365 mail can be exported as incremental .eml archives from the CLI. What exists today
+is real, working functionality - not mockups:
 
 **nesva-core (library, no Qt Widgets dependency)**
 - `Result<T>` / `Status` error model with stable, machine-readable error codes
@@ -81,6 +82,16 @@ created, browsed, verified, pruned and restored either from the desktop applicat
 - Desktop: backup jobs in the job editor (repository, retention, password, repository
   initialisation), a Snapshots page with repository refresh, restore, retention preview/apply,
   integrity check and unlock, and a snapshot restore dialog with progress
+
+**Microsoft 365 mail (Phase 5, engine + CLI)**
+- OAuth 2.0 authorization code flow with PKCE for a public desktop client: loopback redirect,
+  CSRF state check, no client secret anywhere
+- Refresh token in the OS keyring, access token in memory only; revocation is immediate
+- Read-only Microsoft Graph usage (`/me`, folders, per-folder delta feed, MIME endpoint) with
+  throttling (429 `Retry-After`), 5xx backoff and one 401 refresh
+- Incremental EML export: per-folder delta cursor in SQLite, restartable mid-run, unchanged
+  messages skipped, removed messages keep their local file
+- CLI: `mail connect`, `mail accounts`, `mail folders`, `mail sync`, `mail status`
 
 **nesva (desktop application)**
 - Qt 6 Widgets shell: sidebar navigation, top status bar, page stack, bottom activity dock
@@ -198,7 +209,7 @@ next to the executable or into Program Files.
 
 ## Testing
 
-`ctest --preset linux-debug` runs 21 test binaries (228 test functions):
+`ctest --preset linux-debug` runs 22 test binaries (238 test functions):
 
 | Test | Covers |
 |---|---|
@@ -221,6 +232,7 @@ next to the executable or into Program Files.
 | `tst_secret_store` | Credential store round-trip against the real Secret Service |
 | `tst_restic` | Restic argv/parsers plus real repository lifecycle, retention, check, restore |
 | `tst_backup_runner` | Job-level backup, incremental runs, cancellation, dry-run, conflict policies |
+| `tst_mail` | PKCE (RFC 7636 vector), Graph parsing, EML export, delta resume, dedupe |
 | `tst_agent_integration` | Starts the real `nesva-agent`, runs a scheduled job, drives IPC |
 | `tst_gui_smoke` | Headless: real MainWindow, 8 pages, models, theme, worker-thread execution |
 
@@ -256,6 +268,7 @@ nesva/
 │   ├── jobs/                    job store, archive runner, archive restore
 │   ├── providers/               storage provider interface, local + Rclone providers
 │   ├── scan/                    file scanner and exclusion rules
+│   ├── mail/                    Microsoft 365: OAuth PKCE, Graph client, EML exporter
 │   ├── agent/                   agent service, IPC protocol and client
 │   ├── scheduler/               schedule model (next run, missed runs, retries)
 │   └── mail/                    reserved for Phase 5 Microsoft 365
@@ -303,7 +316,7 @@ writes a record.
 | 2 | Functional archive: job editor, local + Rclone providers, execution, progress, restore | **delivered** |
 | 3 | Background execution: agent, IPC, scheduling, missed runs, tray, notifications | **delivered** |
 | 4 | Restic: repository setup, snapshots, restore, retention, verification | **delivered** |
-| 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | next |
+| 5 | Microsoft 365: OAuth (PKCE), mailbox selection, incremental EML export | **in progress** - engine + CLI delivered, UI next |
 | 6 | Distribution: Windows installer, .deb/AppImage/RPM, CI/CD, user docs | planned |
 
 ---

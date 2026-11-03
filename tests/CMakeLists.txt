@@ -39,6 +39,7 @@ nesva_add_unit_test(tst_agent_protocol unit/tst_agent_protocol.cpp)
 nesva_add_unit_test(tst_secret_store unit/tst_secret_store.cpp)
 nesva_add_unit_test(tst_restic unit/tst_restic.cpp)
 nesva_add_unit_test(tst_backup_runner unit/tst_backup_runner.cpp)
+nesva_add_unit_test(tst_mail unit/tst_mail.cpp)
 target_link_libraries(tst_secret_store PRIVATE Qt6::DBus)
 
 # Starts the real nesva-agent binary and talks to it over its socket.

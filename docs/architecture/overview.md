@@ -277,7 +277,7 @@ that would re-enter the source tree.
 | 2 | Job editor, local + Rclone providers, execution, progress, history, restore | delivered |
 | 3 | Agent, IPC, scheduling, missed runs, tray, notifications | delivered |
 | 4 | Restic repository, snapshots, restore, retention, verification | delivered |
-| 5 | Microsoft 365 OAuth, mailbox selection, EML export, incremental sync | planned |
+| 5 | Microsoft 365 OAuth, mailbox selection, EML export, incremental sync | in progress (engine + CLI delivered, UI next) |
 | 6 | Windows installer, Linux packages, release CI, user/security documentation | planned |
 
 ### 12.1 Phase 2 execution path

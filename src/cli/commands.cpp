@@ -31,6 +31,10 @@
 #include "nesva/jobs/archive_runner.hpp"
 #include "nesva/agent/client.hpp"
 #include "nesva/backup/restic.hpp"
+#include "nesva/mail/exporter.hpp"
+#include "nesva/mail/graph.hpp"
+#include "nesva/mail/mail_store.hpp"
+#include "nesva/security/secret_store.hpp"
 #include "nesva/jobs/backup_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/scheduler/schedule.hpp"
@@ -1807,6 +1811,372 @@ int commandBackupRestore(Context& context, const Options& options) {
     return output.flush(stdout, report.succeeded() ? kExitSuccess : kExitFailure);
 }
 
+
+// ---------------------------------------------------------------------------
+// Microsoft 365 mail archival
+// ---------------------------------------------------------------------------
+
+struct MailConfig {
+    QString tenantId;
+    QString clientId;
+    QString destination;
+};
+
+MailConfig mailConfigFromSettings(Context& context, const Options& options) {
+    config::SettingsStore settings(context.database);
+    MailConfig configuration;
+    configuration.tenantId =
+        settings.getString(QStringLiteral("mail.tenant_id"), QString()).valueOr(QString());
+    configuration.clientId =
+        settings.getString(QStringLiteral("mail.client_id"), QString()).valueOr(QString());
+    configuration.destination =
+        settings.getString(QStringLiteral("mail.destination"), QString()).valueOr(QString());
+    if (options.flags.contains(QStringLiteral("tenant"))) {
+        configuration.tenantId = options.flags.value(QStringLiteral("tenant"));
+    }
+    if (options.flags.contains(QStringLiteral("client"))) {
+        configuration.clientId = options.flags.value(QStringLiteral("client"));
+    }
+    if (options.flags.contains(QStringLiteral("to"))) {
+        configuration.destination = options.flags.value(QStringLiteral("to"));
+    }
+    return configuration;
+}
+
+QString mailTokenAccount(const QString& tenantId, const QString& upn) {
+    return QStringLiteral("msgraph/%1/%2").arg(tenantId, upn);
+}
+
+Result<QByteArray> loadMailToken(const QString& tenantId, const QString& upn) {
+    std::unique_ptr<security::SecretStore> secrets = security::createSecretStore();
+    if (!secrets->isAvailable()) {
+        return makeErrorValue(ErrorCode::Unsupported, "no credential store is available",
+                              secrets->unavailableReason().toStdString());
+    }
+    return secrets->lookup(QStringLiteral("nesva"), mailTokenAccount(tenantId, upn));
+}
+
+Status storeMailToken(const QString& tenantId, const QString& upn, const QString& token) {
+    std::unique_ptr<security::SecretStore> secrets = security::createSecretStore();
+    if (!secrets->isAvailable()) {
+        return makeError(ErrorCode::Unsupported, "no credential store is available",
+                         secrets->unavailableReason().toStdString());
+    }
+    return secrets->store(QStringLiteral("nesva"), mailTokenAccount(tenantId, upn),
+                          token.toUtf8());
+}
+
+/// Builds an authenticated Graph client for a stored account.
+Result<std::shared_ptr<mail::GraphClient>> openGraph(Context& context, const mail::MailAccount& account) {
+    Q_UNUSED(context);
+    const Result<QByteArray> token = loadMailToken(account.tenantId, account.accountIdentifier);
+    if (!token) {
+        return makeErrorValue(ErrorCode::PermissionDenied,
+                              "no Microsoft 365 refresh token is stored for this account",
+                              QString::fromStdString(token.error().message()).toStdString());
+    }
+    mail::OAuthConfig oauth;
+    oauth.tenantId = account.tenantId;
+    oauth.clientId = account.clientId;
+    auto transport = std::make_shared<net::QNetworkHttpTransport>();
+    auto provider = std::make_shared<mail::TokenProvider>(
+        oauth, QString::fromUtf8(token.value()), transport);
+    return std::make_shared<mail::GraphClient>(provider, transport);
+}
+
+int commandMail(Context& context, const Options& options) {
+    Output output(options.json);
+    const QString& sub = options.subcommand;
+    const MailConfig configuration = mailConfigFromSettings(context, options);
+
+    if (sub.isEmpty() || sub == QStringLiteral("help")) {
+        output.line(QStringLiteral("mail connect   --account <upn> [--tenant <id>] [--client <id>]"));
+        output.line(QStringLiteral("mail accounts"));
+        output.line(QStringLiteral("mail folders <account-id> [--enable <remote-id>] [--disable <remote-id>]"));
+        output.line(QStringLiteral("mail sync <account-id> --to <directory> [--full] [--max-messages N]"));
+        output.line(QStringLiteral("mail status <account-id>"));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (sub == QStringLiteral("connect")) {
+        const QString upn = options.flags.value(QStringLiteral("account"));
+        if (upn.trimmed().isEmpty() || configuration.tenantId.isEmpty() ||
+            configuration.clientId.isEmpty()) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               QStringLiteral("usage: mail connect --account <upn> "
+                                              "[--tenant <tenant-id>] [--client <client-id>]")
+                                   .toStdString()),
+                kExitUsage);
+        }
+
+        mail::OAuthConfig oauth;
+        oauth.tenantId = configuration.tenantId;
+        oauth.clientId = configuration.clientId;
+
+        const Result<mail::TokenSet> tokens = mail::interactiveAuthorize(
+            oauth, std::make_shared<net::QNetworkHttpTransport>(), 300000,
+            [](const QString& url) {
+                // Print immediately: the user has to act on this while the
+                // command waits for the browser redirect.
+                std::fprintf(stderr, "\nOpen this URL in a browser to sign in:\n%s\n\n", qPrintable(url));
+                std::fprintf(stderr, "Waiting for the sign-in to complete...\n");
+                std::fflush(stderr);
+            });
+        if (!tokens) {
+            return output.flushError(tokens.error(), kExitFailure);
+        }
+        if (tokens.value().refreshToken.isEmpty()) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::PermissionDenied,
+                               "Microsoft did not return a refresh token; the offline_access "
+                               "scope must be granted"),
+                kExitFailure);
+        }
+
+        const Status stored =
+            storeMailToken(configuration.tenantId, upn, tokens.value().refreshToken);
+        if (!stored.ok()) {
+            return output.flushError(stored.error(), kExitFailure);
+        }
+
+        mail::OAuthConfig verifyConfig = oauth;
+        auto transport = std::make_shared<net::QNetworkHttpTransport>();
+        auto provider = std::make_shared<mail::TokenProvider>(
+            verifyConfig, tokens.value().refreshToken, transport);
+        provider->setRefreshToken(tokens.value().refreshToken);
+        auto client = std::make_shared<mail::GraphClient>(provider, transport);
+
+        const Result<QJsonObject> me = client->me();
+        const QString resolvedUpn = me
+                                        ? me.value().value(QStringLiteral("userPrincipalName")).toString()
+                                        : upn;
+        mail::MailStore store(context.database);
+        mail::MailAccount account;
+        account.displayName = me ? me.value().value(QStringLiteral("displayName")).toString()
+                                 : upn;
+        if (account.displayName.isEmpty()) {
+            account.displayName = upn;
+        }
+        account.tenantId = configuration.tenantId;
+        account.clientId = configuration.clientId;
+        account.accountIdentifier = resolvedUpn;
+        account.scopes = oauth.scopes.join(QLatin1Char(' '));
+        account.status = QStringLiteral("connected");
+        const Result<qint64> accountId = store.upsertAccount(account);
+        if (!accountId) {
+            return output.flushError(accountId.error(), kExitFailure);
+        }
+
+        const Result<QVector<mail::MailFolderInfo>> folders = client->mailFolders();
+        if (!folders) {
+            return output.flushError(folders.error(), kExitFailure);
+        }
+        const Status stored2 = store.storeFolders(accountId.value(), folders.value());
+        if (!stored2.ok()) {
+            return output.flushError(stored2.error(), kExitFailure);
+        }
+
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("account_id"), accountId.value());
+        output.add(QStringLiteral("account"), resolvedUpn);
+        output.add(QStringLiteral("folders"), static_cast<int>(folders.value().size()));
+        output.line(QStringLiteral("Connected %1 (account id %2, %3 folders discovered).")
+                        .arg(resolvedUpn)
+                        .arg(accountId.value())
+                        .arg(folders.value().size()));
+        output.line(QStringLiteral("The refresh token is stored in the system keyring, never in the database."));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (sub == QStringLiteral("accounts")) {
+        mail::MailStore store(context.database);
+        const Result<QVector<mail::MailAccount>> accounts = store.accounts();
+        if (!accounts) {
+            return output.flushError(accounts.error(), kExitFailure);
+        }
+        QList<QStringList> table;
+        for (const mail::MailAccount& account : accounts.value()) {
+            const Result<QVector<mail::MailFolderRecord>> folders = store.folders(account.id);
+            const Result<QVector<mail::MailMessageRecord>> messages = store.messages(account.id, 1);
+            table.append({QString::number(account.id), account.accountIdentifier,
+                          account.displayName, account.status,
+                          QString::number(folders ? folders.value().size() : 0),
+                          messages ? QStringLiteral("yes") : QStringLiteral("no")});
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("count"), static_cast<int>(table.size()));
+        output.table({QStringLiteral("ID"), QStringLiteral("ACCOUNT"), QStringLiteral("NAME"),
+                      QStringLiteral("STATUS"), QStringLiteral("FOLDERS"),
+                      QStringLiteral("HAS MAIL")},
+                     table);
+        if (table.isEmpty()) {
+            output.line(QStringLiteral("No Microsoft 365 accounts are connected yet."));
+        }
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (options.positional.isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument,
+                           QStringLiteral("mail %1 requires an account id").arg(sub).toStdString()),
+            kExitUsage);
+    }
+    bool valid = false;
+    const qint64 accountId = options.positional.constFirst().toLongLong(&valid);
+    if (!valid) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument, "account id must be numeric"), kExitUsage);
+    }
+
+    mail::MailStore store(context.database);
+    const Result<mail::MailAccount> account = store.account(accountId);
+    if (!account) {
+        return output.flushError(account.error(), kExitNotFound);
+    }
+
+    if (sub == QStringLiteral("status")) {
+        const Result<QVector<mail::MailMessageRecord>> messages = store.messages(accountId, 100000);
+        if (!messages) {
+            return output.flushError(messages.error(), kExitFailure);
+        }
+        int exported = 0;
+        int pending = 0;
+        int failed = 0;
+        for (const mail::MailMessageRecord& message : messages.value()) {
+            if (message.exportState == QStringLiteral("exported")) {
+                ++exported;
+            } else if (message.exportState == QStringLiteral("failed")) {
+                ++failed;
+            } else {
+                ++pending;
+            }
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("account"), account.value().accountIdentifier);
+        output.add(QStringLiteral("exported"), exported);
+        output.add(QStringLiteral("pending"), pending);
+        output.add(QStringLiteral("failed"), failed);
+        output.line(QStringLiteral("Account:  %1 (%2)").arg(account.value().accountIdentifier,
+                                                           account.value().status));
+        output.line(QStringLiteral("Messages: %1 exported, %2 pending, %3 failed")
+                        .arg(exported)
+                        .arg(pending)
+                        .arg(failed));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (sub == QStringLiteral("folders")) {
+        Result<QVector<mail::MailFolderRecord>> folders = store.folders(accountId);
+        if (!folders) {
+            return output.flushError(folders.error(), kExitFailure);
+        }
+        if (options.flags.contains(QStringLiteral("enable")) ||
+            options.flags.contains(QStringLiteral("disable"))) {
+            const bool enable = options.flags.contains(QStringLiteral("enable"));
+            const QString remoteId = options.flags.value(
+                enable ? QStringLiteral("enable") : QStringLiteral("disable"));
+            bool found = false;
+            for (const mail::MailFolderRecord& folder : folders.value()) {
+                if (folder.remoteId == remoteId) {
+                    const Status status = store.setFolderSyncEnabled(folder.id, enable);
+                    if (!status.ok()) {
+                        return output.flushError(status.error(), kExitFailure);
+                    }
+                    found = true;
+                }
+            }
+            if (!found) {
+                return output.flushError(
+                    makeErrorValue(ErrorCode::NotFound, "no such folder id in this account"),
+                    kExitNotFound);
+            }
+            folders = store.folders(accountId);
+        }
+        QList<QStringList> table;
+        for (const mail::MailFolderRecord& folder : folders.value()) {
+            table.append({folder.remoteId, folder.displayName,
+                          folder.syncEnabled ? QStringLiteral("yes") : QStringLiteral("no"),
+                          folder.deltaLink.isEmpty() ? QStringLiteral("-")
+                                                     : QStringLiteral("set")});
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("count"), static_cast<int>(table.size()));
+        output.table({QStringLiteral("REMOTE ID"), QStringLiteral("FOLDER"),
+                      QStringLiteral("SYNC"), QStringLiteral("DELTA")},
+                     table);
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (sub == QStringLiteral("sync")) {
+        if (configuration.destination.trimmed().isEmpty()) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               QStringLiteral("mail sync requires --to <directory> "
+                                              "(or set mail.destination)")
+                                   .toStdString()),
+                kExitUsage);
+        }
+        Result<std::shared_ptr<mail::GraphClient>> graph = openGraph(context, account.value());
+        if (!graph) {
+            return output.flushError(graph.error(), kExitFailure);
+        }
+        const Result<QVector<mail::MailFolderInfo>> folders = graph.value()->mailFolders();
+        if (folders) {
+            store.storeFolders(accountId, folders.value());
+        }
+
+        mail::MailExportOptions exportOptions;
+        exportOptions.destinationDirectory = configuration.destination;
+        exportOptions.fullResync = options.flags.contains(QStringLiteral("full"));
+        exportOptions.maxMessages = options.flags.contains(QStringLiteral("max-messages"))
+                                        ? options.flags.value(QStringLiteral("max-messages")).toInt()
+                                        : 0;
+        if (options.flags.contains(QStringLiteral("folder"))) {
+            exportOptions.folderRemoteIds.append(options.flags.value(QStringLiteral("folder")));
+        }
+
+        const auto progress = [quiet = options.quiet](const mail::MailProgress& update) {
+            if (quiet) {
+                return;
+            }
+            std::fprintf(stderr, "\r%s: %d seen, %d exported, %d failed   ",
+                         qPrintable(update.folder), update.messagesSeen, update.exported,
+                         update.failed);
+            std::fflush(stderr);
+        };
+        mail::MailExporter exporter(context.database, graph.value(), progress);
+        const CancellationToken cancellation;
+        const Result<mail::MailExportReport> report =
+            exporter.run(accountId, exportOptions, cancellation);
+        if (!report) {
+            return output.flushError(report.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), report.value().succeeded());
+        output.add(QStringLiteral("folders"), report.value().folders);
+        output.add(QStringLiteral("exported"), report.value().exported);
+        output.add(QStringLiteral("skipped"), report.value().skipped);
+        output.add(QStringLiteral("removed"), report.value().removed);
+        output.add(QStringLiteral("failed"), report.value().failed);
+        output.add(QStringLiteral("bytes"), report.value().bytesWritten);
+        output.line(QStringLiteral("Exported %1, skipped %2, removed %3, failed %4 (%5 byte(s))")
+                        .arg(report.value().exported)
+                        .arg(report.value().skipped)
+                        .arg(report.value().removed)
+                        .arg(report.value().failed)
+                        .arg(report.value().bytesWritten));
+        for (const QString& error : report.value().errors) {
+            output.line(QStringLiteral("  error: %1").arg(error));
+        }
+        return output.flush(stdout, report.value().succeeded() ? kExitSuccess : kExitFailure);
+    }
+
+    return output.flushError(
+        makeErrorValue(ErrorCode::InvalidArgument,
+                       QStringLiteral("unknown mail command: %1").arg(sub).toStdString()),
+        kExitUsage);
+}
+
 } // namespace
 
 int run(int argc, char** argv) {
@@ -1891,6 +2261,9 @@ int run(int argc, char** argv) {
         }
         return commandNotImplemented(options, QStringLiteral("jobs %1").arg(subcommand),
                                      QStringLiteral("a later phase"));
+    }
+    if (command == QStringLiteral("mail")) {
+        return commandMail(context, options);
     }
     if (command == QStringLiteral("repository")) {
         return commandRepository(context, options);

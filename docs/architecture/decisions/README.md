@@ -18,6 +18,7 @@ supersedes an earlier one instead of editing it.
 | [0010](0010-archive-execution-and-threading.md) | Archive execution on a worker thread with database-enforced single flight | Accepted |
 | [0011](0011-background-agent-and-scheduling.md) | Background agent, schedule evaluation and local IPC | Accepted |
 | [0012](0012-restic-integration-and-credentials.md) | Restic integration, credential handling and restore staging | Accepted |
+| [0013](0013-microsoft365-oauth-and-export.md) | Microsoft 365 archival: OAuth PKCE, Graph delta sync and MIME export | Accepted |
 
 ## Template
 

@@ -16,6 +16,7 @@ const QStringList& knownCommands() {
         QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("archive"),
         QStringLiteral("verify"),  QStringLiteral("agent"),   QStringLiteral("schedule"),
         QStringLiteral("repository"), QStringLiteral("snapshots"), QStringLiteral("retention"),
+        QStringLiteral("mail"),
         QStringLiteral("backup"),  QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
@@ -77,7 +78,8 @@ Options parseArguments(const QStringList& arguments) {
                                                 "restore", "show",    "help",    "add",
                                                 "status",  "reload",  "stop",    "init",
                                                 "locks",   "unlock",  "apply",   "set-password",
-                                                "check",   "preview", "info"};
+                                                "check",   "preview", "info",   "connect",
+                                                "accounts", "sync",   "folders", "status"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
@@ -125,6 +127,12 @@ QString usageText() {
         "                            options: --to <dir>, --policy skip|overwrite|rename,\n"
         "                                     --overwrite, --rename, --no-verify\n"
         "  history list              List recent job runs (--limit <n>)\n"
+        "  mail connect              Sign in to Microsoft 365 and store the token in the keyring\n"
+        "                            (--account <upn> [--tenant <id>] [--client <id>])\n"
+        "  mail accounts             List connected Microsoft 365 accounts\n"
+        "  mail folders <account>    List folders ([--enable|--disable <remote-id>])\n"
+        "  mail sync <account>       Export mail as .eml (--to <dir> [--full] [--folder <id>])\n"
+        "  mail status <account>     Export counters for an account\n"
         "  repository info <job>     Show where the repository password is stored\n"
         "  repository init <job>     Store the repository password and run 'restic init'\n"
         "                            (--password-stdin | --password-file <path>)\n"

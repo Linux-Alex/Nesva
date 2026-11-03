@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.4.0
+  VERSION 0.5.0
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/nesva-project/nesva"
   LANGUAGES CXX)
@@ -72,6 +72,11 @@ add_library(nesva_core STATIC
   src/agent/client.cpp
   src/agent/protocol.cpp
   src/backup/restic.cpp
+  src/mail/exporter.cpp
+  src/mail/graph.cpp
+  src/mail/http.cpp
+  src/mail/mail_store.cpp
+  src/mail/oauth.cpp
   src/security/credential_manager_windows.cpp
   src/security/secret_service_linux.cpp
   src/security/secret_store.cpp

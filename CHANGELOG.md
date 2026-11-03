@@ -6,6 +6,39 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
+Phase 5 (in progress): Microsoft 365 mail archival. The engine, the CLI and the tests are in
+place; the desktop UI for accounts and scheduling is the remaining work.
+
+### Added
+
+- **OAuth 2.0 with PKCE** for a public desktop client: loopback redirect listener (IPv4+IPv6,
+  ephemeral port), CSRF state check, AAD error surfacing, and the `AADSTS50011` fallback for
+  tenants that match the redirect URI without a port.
+- **Token handling**: refresh token in the OS keyring, access token in memory only, rotated
+  refresh tokens persisted immediately.
+- **Graph client** (read-only): profile, folder tree (with child folders), per-folder message
+  delta feed, and the MIME content endpoint. 401 retry-after-refresh, 429 `Retry-After` handling,
+  5xx backoff.
+- **Incremental EML exporter**: per-folder delta cursor stored in SQLite and advanced page by
+  page, so an interrupted run resumes; unchanged messages are skipped by
+  `lastModifiedDateTime`; `@removed` keeps the local file and marks the row. Files:
+  `<folder>/<YYYY>/<MM>/<subject>-<id12>.eml` written atomically with SHA-256 recorded.
+- **CLI**: `mail connect`, `mail accounts`, `mail folders` (with `--enable/--disable`),
+  `mail sync` (with `--to`, `--full`, `--folder`, `--max-messages`) and `mail status`.
+- **Tests**: PKCE against the RFC 7636 vector, URL/token parsing, filename sanitisation, path
+  building, and a full export run against a scripted Graph (paging, dedupe on rerun, removed
+  messages, HTTP errors).
+
+### Known limitations
+
+- The desktop UI for Microsoft 365 (connect button, account list, folder selection, scheduled
+  mail archival) is not wired yet; use `nesva-cli mail` for now.
+- Live verification needs an interactive sign-in: the automated tests use a scripted Graph
+  transport, and the first real sync is executed against the configured tenant by the user.
+- Windows remains unbuilt/unverified.
+
 ## [0.4.0] - 2026-11-02
 
 Phase 4: Restic backup engine, credential storage and the matching desktop UI. Everything below
