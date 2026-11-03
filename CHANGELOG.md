@@ -36,6 +36,13 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Fixed
 
+- **Settings content was unreachable on a normal-height window.** Page bodies were a plain
+  vertical layout, so a page with more cards than the window is tall compressed every card below
+  its natural size: labels wrapped into unreadable slivers and the later sections - including the
+  new External tools card - simply could not be reached. Every page body now lives in a vertical
+  scroll area that keeps each card at its natural height and scrolls instead of squeezing, and a
+  table-only page still fills the page as before. The External tools card also moved directly
+  under Appearance, so the Rclone installer is visible without scrolling.
 - **Mail sync survives a real mailbox.** Four defects found by the first live run against a
   tenant, none of which the scripted tests could see:
   - `QNetworkHttpTransport` built a `QNetworkAccessManager` per request, paying a DNS+TCP+TLS

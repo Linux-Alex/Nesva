@@ -6,11 +6,18 @@
 #include <QtWidgets/QWidget>
 
 class QLabel;
+class QScrollArea;
 class QVBoxLayout;
 
 namespace nesva::ui {
 
 /// Common page chrome: title, subtitle and a body layout.
+///
+/// The body lives inside a vertical scroll area, so a page with more cards than
+/// the window is tall scrolls instead of squeezing every card below its natural
+/// size. Pages whose body is a single table still let the table fill the
+/// viewport: the scroll area resizes its content to at least the viewport, and
+/// the table's own scrolling takes over beyond that.
 ///
 /// Pages are plain widgets hosted by the main window's QStackedWidget; they pull
 /// their data from AppContext on refresh() rather than caching stale state.
@@ -29,10 +36,15 @@ public:
 protected:
     QVBoxLayout* body() const { return bodyLayout_; }
 
+    /// Scrolls to the widget that was just added, for pages that build their
+    /// content incrementally and want to reveal the newest part.
+    void scrollToBottom();
+
 private:
     QLabel* titleLabel_ = nullptr;
     QLabel* subtitleLabel_ = nullptr;
     QVBoxLayout* bodyLayout_ = nullptr;
+    QScrollArea* scrollArea_ = nullptr;
 };
 
 } // namespace nesva::ui

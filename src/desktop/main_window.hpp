@@ -34,6 +34,8 @@ public:
 
     int pageCount() const { return static_cast<int>(pages_.size()); }
     QString pageTitleAt(int index) const;
+    /// The page widget itself, for tests that need to reach real controls.
+    Page* pageAt(int index) const;
     void selectPage(int index);
 
 public slots:

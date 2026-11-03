@@ -495,6 +495,13 @@ QString MainWindow::pageTitleAt(int index) const {
     return pages_.at(index)->pageTitle();
 }
 
+Page* MainWindow::pageAt(int index) const {
+    if (index < 0 || index >= pages_.size()) {
+        return nullptr;
+    }
+    return pages_.at(index);
+}
+
 void MainWindow::closeEvent(QCloseEvent* event) {
     // Minimising to the tray keeps the window (and its in-process runs) alive;
     // the background agent is what guarantees unattended scheduling.

@@ -25,6 +25,9 @@
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPlainTextEdit>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QFrame>
+#include <QtWidgets/QScrollArea>
+#include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSpinBox>
 #include <QtCore/QTimer>
 
@@ -49,6 +52,7 @@ using nesva::ui::AppContext;
 using nesva::ui::EventListModel;
 using nesva::ui::JobListModel;
 using nesva::ui::MainWindow;
+using nesva::ui::Page;
 
 namespace {
 
@@ -95,6 +99,7 @@ private slots:
     void eventModelCombinesJobAndApplicationEvents();
     void mainWindowExposesEveryPage();
     void settingsPageOffersTheRcloneInstaller();
+    void settingsPageScrollsInsteadOfSqueezing();
     void mainWindowSwitchesPages();
     void mainWindowThemeIsApplied();
     void executorRunsArchiveJobInWorkerThread();
@@ -177,6 +182,70 @@ void GuiSmokeTest::eventModelCombinesJobAndApplicationEvents() {
     }
     QVERIFY2(applicationRows >= 1, "startup events are persisted to application_events");
     QCOMPARE(jobRows, 1);
+}
+
+void GuiSmokeTest::settingsPageScrollsInsteadOfSqueezing() {
+    // A page with more cards than the window is tall has to scroll. Without a
+    // scroll area Qt compresses every card, the buttons become unreadable and
+    // later sections are simply not reachable.
+    MainWindow window(*context_);
+    window.show();
+
+    int settingsIndex = -1;
+    for (int index = 0; index < window.pageCount(); ++index) {
+        if (window.pageTitleAt(index) == QStringLiteral("Settings")) {
+            settingsIndex = index;
+            break;
+        }
+    }
+    QVERIFY(settingsIndex >= 0);
+
+    // A roomy window and a small laptop screen: the content must never be
+    // compressed below what it needs.
+    for (const QSize size : {QSize(1100, 700), QSize(900, 560)}) {
+        window.resize(size);
+        window.selectPage(settingsIndex);
+        QCoreApplication::processEvents();
+
+        Page* settings = window.pageAt(settingsIndex);
+        QVERIFY(settings != nullptr);
+        auto* scroll = settings->findChild<QScrollArea*>(QStringLiteral("pageBodyScroll"));
+        QVERIFY2(scroll != nullptr, "page bodies must live in a scroll area");
+        QVERIFY(scroll->widgetResizable());
+
+        const int contentHeight = scroll->widget()->sizeHint().height();
+        const int viewportHeight = scroll->viewport()->height();
+        QVERIFY2(contentHeight > viewportHeight,
+                 qPrintable(QStringLiteral("at %1x%2 the Settings content (%3 px) must be "
+                                           "taller than the viewport (%4 px)")
+                                .arg(size.width())
+                                .arg(size.height())
+                                .arg(contentHeight)
+                                .arg(viewportHeight)));
+        QVERIFY2(scroll->verticalScrollBar()->maximum() > 0,
+                 "a window this size must scroll the Settings page rather than squeeze it");
+
+        // The installer must be inside that scroll area and reachable by
+        // scrolling, not clipped away.
+        QPushButton* install = nullptr;
+        for (QPushButton* button : scroll->findChildren<QPushButton*>()) {
+            if (button->text().contains(QStringLiteral("Rclone"))) {
+                install = button;
+                break;
+            }
+        }
+        QVERIFY2(install != nullptr, "the Rclone installer must live inside the page body");
+
+        scroll->ensureWidgetVisible(install, 0, 0);
+        QVERIFY(install->isVisible());
+        const QRect viewport = scroll->viewport()->rect();
+        const QRect inViewport(install->mapTo(scroll->viewport(), QPoint(0, 0)), install->size());
+        QVERIFY2(viewport.intersects(inViewport),
+                 qPrintable(QStringLiteral("installer button at y=%1 is outside the %2 px "
+                                           "viewport")
+                                .arg(inViewport.y())
+                                .arg(viewport.height())));
+    }
 }
 
 void GuiSmokeTest::settingsPageOffersTheRcloneInstaller() {

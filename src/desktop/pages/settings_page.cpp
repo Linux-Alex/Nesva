@@ -48,10 +48,10 @@ SettingsPage::SettingsPage(AppContext& context, QWidget* parent)
            parent),
       context_(context) {
     buildAppearanceSection();
+    buildToolsSection();
     buildLoggingSection();
     buildSafetySection();
     buildBehaviourSection();
-    buildToolsSection();
     buildAgentSection();
     buildLocationsSection();
 
