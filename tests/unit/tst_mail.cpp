@@ -137,6 +137,8 @@ private slots:
     void buildsDatedEmlPaths();
     void exportsMessagesAndRecordsDelta();
     void secondRunSkipsUnchangedMessages();
+    void messageLimitKeepsCursorBeforeUnseenMessages();
+    void missingFileIsExportedAgain();
     void honoursStatusErrors();
     void httpErrorStatusKeepsBodyAndHeaders();
     void unreachableHostHasNoStatusCode();
@@ -338,6 +340,82 @@ void MailTest::secondRunSkipsUnchangedMessages() {
     QCOMPARE(second.value().exported, 0);
     QCOMPARE(second.value().skipped, 2);
     QCOMPARE(second.value().failed, 0);
+}
+
+void MailTest::missingFileIsExportedAgain() {
+    // Skipping is decided by the file on disk as well as the database row: a
+    // deleted .eml, or a new destination, must be repaired, not skipped.
+    const qint64 accountId = seedAccountAndFolders();
+    QVERIFY(accountId > 0);
+    auto transport = std::make_shared<FakeTransport>();
+    transport->mimeProvider = [](const QString& url) {
+        return QByteArray("Subject: test\r\n\r\nBody for " + url.toUtf8());
+    };
+    auto tokens = std::make_shared<mail::TokenProvider>(mail::OAuthConfig{}, QStringLiteral("r"),
+                                                        transport);
+    auto graph = std::make_shared<mail::GraphClient>(tokens, transport);
+    const CancellationToken cancellation;
+    mail::MailExporter exporter(*database_, graph);
+
+    const QString destination = directory_->filePath(QStringLiteral("archive"));
+    mail::MailExportOptions options;
+    options.destinationDirectory = destination;
+    QCOMPARE(exporter.run(accountId, options, cancellation).value().exported, 2);
+
+    // Remove one exported file: the next run restores it.
+    mail::MailStore store(*database_);
+    const Result<QVector<mail::MailMessageRecord>> messages = store.messages(accountId, 100);
+    QVERIFY(messages);
+    bool removedOne = false;
+    for (const mail::MailMessageRecord& message : messages.value()) {
+        const QString path = QDir(destination).absoluteFilePath(message.emlPath);
+        if (QFile::exists(path)) {
+            QVERIFY(QFile::remove(path));
+            removedOne = true;
+            break;
+        }
+    }
+    QVERIFY(removedOne);
+    QCOMPARE(exporter.run(accountId, options, cancellation).value().exported, 1);
+}
+
+void MailTest::messageLimitKeepsCursorBeforeUnseenMessages() {
+    // A run bounded by --max-messages must not move the delta cursor past the
+    // messages it did not examine: Microsoft would never report them again and
+    // the archive would silently miss them.
+    const qint64 accountId = seedAccountAndFolders();
+    QVERIFY(accountId > 0);
+    auto transport = std::make_shared<FakeTransport>();
+    transport->mimeProvider = [](const QString& url) {
+        return QByteArray("Subject: test\r\n\r\nBody for " + url.toUtf8());
+    };
+    auto tokens = std::make_shared<mail::TokenProvider>(mail::OAuthConfig{}, QStringLiteral("r"),
+                                                        transport);
+    auto graph = std::make_shared<mail::GraphClient>(tokens, transport);
+    const QString destination = directory_->filePath(QStringLiteral("archive"));
+    const CancellationToken cancellation;
+
+    mail::MailExporter exporter(*database_, graph);
+    mail::MailExportOptions limited;
+    limited.destinationDirectory = destination;
+    limited.maxMessages = 1;
+    const Result<mail::MailExportReport> first = exporter.run(accountId, limited, cancellation);
+    QVERIFY(first);
+    QCOMPARE(first.value().exported, 1);
+
+    mail::MailStore store(*database_);
+    const Result<QVector<mail::MailFolderRecord>> folders = store.folders(accountId);
+    QVERIFY(folders);
+    QCOMPARE(folders.value().constFirst().deltaLink, QString());
+
+    // The next run starts from the same point and picks up the second message.
+    mail::MailExportOptions unbounded;
+    unbounded.destinationDirectory = destination;
+    const Result<mail::MailExportReport> second = exporter.run(accountId, unbounded, cancellation);
+    QVERIFY(second);
+    QCOMPARE(second.value().exported, 1);
+    QCOMPARE(second.value().skipped, 1);
+    QVERIFY(!store.folders(accountId).value().constFirst().deltaLink.isEmpty());
 }
 
 void MailTest::honoursStatusErrors() {

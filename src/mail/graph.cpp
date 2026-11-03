@@ -264,9 +264,13 @@ Result<DeltaPage> GraphClient::messagesDelta(const QString& folderId,
                        .arg(QString::fromUtf8(kGraphBaseUrl),
                             QString::fromUtf8(folderId.toUtf8())));
         QUrlQuery query;
+        // Delta supports only a subset of message properties. Asking for "size"
+        // makes Exchange reject the whole request with RequestBroker--ParseUri
+        // ("Could not find a property named 'size' on type 'microsoft.graph.message'").
+        // The archived size is the byte count of the downloaded .eml instead.
         query.addQueryItem(QStringLiteral("$select"),
                            QStringLiteral("id,internetMessageId,subject,from,receivedDateTime,"
-                                          "lastModifiedDateTime,parentFolderId,hasAttachments,size"));
+                                          "lastModifiedDateTime,parentFolderId,hasAttachments"));
         url.setQuery(query);
     }
 

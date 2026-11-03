@@ -104,6 +104,10 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
         ++report.folders;
         QString cursor = options.fullResync ? QString() : folder.deltaLink;
         int pageCount = 0;
+        // Set when the message limit stops the page early. The delta cursor must
+        // not move past messages that were never examined, or Microsoft would
+        // never report them again and the archive would silently miss them.
+        bool truncated = false;
 
         while (true) {
             if (cancellation.isCancelled()) {
@@ -132,6 +136,7 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                 ++messagesSeen;
                 ++report.messagesSeen;
                 if (options.maxMessages > 0 && report.messagesSeen > options.maxMessages) {
+                    truncated = true;
                     break;
                 }
 
@@ -152,9 +157,14 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                     ++report.failed;
                     continue;
                 }
-                const bool unchanged = existing.value().has_value() &&
-                                       existing.value()->exportState == QStringLiteral("exported") &&
-                                       existing.value()->lastModifiedAt == lastModified;
+                // "Already exported" must mean "still there": the same database
+                // can be pointed at another destination, and a file the user
+                // deleted has to come back, so the copy on disk is checked too.
+                const bool unchanged =
+                    existing.value().has_value() &&
+                    existing.value()->exportState == QStringLiteral("exported") &&
+                    existing.value()->lastModifiedAt == lastModified &&
+                    QFile::exists(destination.absoluteFilePath(existing.value()->emlPath));
                 if (unchanged) {
                     ++report.skipped;
                     continue;
@@ -214,6 +224,12 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                 }
             }
 
+            if (truncated) {
+                // Keep the cursor where it was: the next run resumes at the same
+                // page and the already-exported messages are skipped by
+                // lastModifiedDateTime.
+                break;
+            }
             if (!page.value().deltaLink.isEmpty()) {
                 // The delta link is the resume point for the next run.
                 store.setFolderDeltaLink(folder.id, page.value().deltaLink);
@@ -225,6 +241,11 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                 cursor = page.value().nextLink;
                 continue;
             }
+            break;
+        }
+        if (truncated) {
+            // The limit is a bound on the run, not on one folder: stop rather
+            // than paying a round trip for every remaining folder.
             break;
         }
     }

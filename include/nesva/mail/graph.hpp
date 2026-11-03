@@ -64,6 +64,8 @@ struct MailMessageInfo {
     QDateTime lastModifiedUtc;
     QString parentFolderId;
     bool hasAttachments = false;
+    /// Not returned by the delta feed (Exchange rejects "size" in $select); the
+    /// exporter reports the byte count of the downloaded .eml instead.
     qint64 sizeBytes = 0;
     bool removed = false;
 };
