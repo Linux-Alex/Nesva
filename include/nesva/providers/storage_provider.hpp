@@ -102,6 +102,11 @@ public:
     /// SHA-256 of a remote file, or an empty string when the provider cannot
     /// compute it. Callers must treat emptiness as "unverified", never as "ok".
     virtual Result<QString> checksum(const QString& relativePath) = 0;
+
+    /// Free bytes at the destination, or -1 when the provider cannot report it.
+    /// Used to refuse a run that cannot possibly fit instead of filling the
+    /// account and failing file by file.
+    virtual Result<qint64> freeSpaceBytes() { return qint64(-1); }
 };
 
 /// Normalises a provider-relative path: forward slashes, no leading '/', no

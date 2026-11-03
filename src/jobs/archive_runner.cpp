@@ -336,6 +336,31 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
     progress.message = QStringLiteral("Preparing destination");
     emitProgress(progress);
 
+    // A cloud destination must be able to hold what is about to be written too:
+    // "rclone about" reports the free bytes, and a run that cannot fit is refused
+    // before the first byte instead of filling the account file by file.
+    if (!options.dryRun && scanResult.totalBytes > 0) {
+        const Result<qint64> freeBytes = destination.provider->freeSpaceBytes();
+        if (freeBytes && freeBytes.value() >= 0 && freeBytes.value() < scanResult.totalBytes) {
+            const Error short_(ErrorCode::DestinationUnavailable,
+                               "the destination does not have enough free space",
+                               QStringLiteral("%1 has %2 free, this run needs about %3. Free "
+                                              "space at the provider, use a larger plan, or use "
+                                              "Restic so identical data is stored once.")
+                                   .arg(destination.provider->location(),
+                                        humanBytes(freeBytes.value()),
+                                        humanBytes(scanResult.totalBytes))
+                                   .toStdString());
+            report.status = QStringLiteral("failed");
+            appendError(report, QString::fromStdString(short_.toDisplayString()));
+            store_.finishRun(report.runId, report.status, report.counters, short_);
+            store_.appendJobEvent(job.id, report.runId, LogLevel::Error,
+                                  QStringLiteral("archive"),
+                                  QStringLiteral("Destination is short of space"));
+            return report;
+        }
+    }
+
     // A local destination must be able to hold what is about to be written. The
     // message names another disk when one has room, instead of failing halfway.
     if (!options.dryRun && !destination.localExclusionRoot.isEmpty()) {

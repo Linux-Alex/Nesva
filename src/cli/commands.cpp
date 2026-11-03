@@ -883,6 +883,128 @@ int commandHistoryList(Context& context, const Options& options) {
     return output.flush(stdout, kExitSuccess);
 }
 
+int commandStorageAdd(Context& context, const Options& options) {
+    Output output(options.json);
+    const QString name = options.flags.value(QStringLiteral("name"));
+    const QString remote = options.flags.value(QStringLiteral("remote"));
+    const QString path = options.flags.value(QStringLiteral("path"));
+    if (name.trimmed().isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument,
+                           "storage add requires --name <label> and either "
+                           "--remote <rclone-remote:> --path <base> or --local <directory>"),
+            kExitUsage);
+    }
+
+    jobs::JobStore store(context.database);
+    Result<qint64> providerId = makeErrorValue(ErrorCode::InvalidArgument,
+                                               "no destination was given");
+    if (!remote.trimmed().isEmpty()) {
+        providerId = store.upsertRcloneProvider(name.trimmed(), remote.trimmed(),
+                                                path.trimmed().isEmpty() ? QString()
+                                                                         : path.trimmed());
+    } else if (options.flags.contains(QStringLiteral("local"))) {
+        providerId =
+            store.upsertLocalProvider(name.trimmed(), options.flags.value(QStringLiteral("local")));
+    }
+    if (!providerId) {
+        return output.flushError(providerId.error(), kExitUsage);
+    }
+
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("storage_id"), providerId.value());
+    output.add(QStringLiteral("name"), name.trimmed());
+    output.line(QStringLiteral("Storage provider %1 '%2' saved (%3%4).")
+                    .arg(providerId.value())
+                    .arg(name.trimmed(), remote,
+                         path.trimmed().isEmpty() ? QString() : path.trimmed()));
+    output.line(QStringLiteral("Check it with 'nesva-cli storage test %1'.")
+                    .arg(providerId.value()));
+    return output.flush(stdout, kExitSuccess);
+}
+
+int commandJobsCreate(Context& context, const Options& options) {
+    Output output(options.json);
+    const QString name = options.flags.value(QStringLiteral("name"));
+    if (name.trimmed().isEmpty()) {
+        return output.flushError(
+            makeErrorValue(ErrorCode::InvalidArgument,
+                           "jobs create requires --name and at least one --source <path>"),
+            kExitUsage);
+    }
+
+    jobs::ArchiveJob job;
+    job.name = name.trimmed();
+    job.mode = options.flags.value(QStringLiteral("mode"), QStringLiteral("archive"));
+    for (const QString& source :
+         options.repeatedFlags.value(QStringLiteral("source"), {})) {
+        if (!source.trimmed().isEmpty()) {
+            job.sources.append({0, QDir::cleanPath(source), QString()});
+        }
+    }
+    if (options.flags.contains(QStringLiteral("provider"))) {
+        bool ok = false;
+        const qint64 providerId = options.flags.value(QStringLiteral("provider")).toLongLong(&ok);
+        if (!ok) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument, "--provider must be a storage id"),
+                kExitUsage);
+        }
+        job.storageProviderId = providerId;
+    }
+    job.destinationPath = options.flags.value(QStringLiteral("sub-path"));
+    if (!options.flags.contains(QStringLiteral("provider"))) {
+        job.destinationPath = options.flags.value(QStringLiteral("to"));
+    }
+    job.allowExistingDestination = options.flags.contains(QStringLiteral("allow-existing"));
+    if (options.flags.contains(QStringLiteral("exclude"))) {
+        for (const QString& pattern :
+             options.repeatedFlags.value(QStringLiteral("exclude"), {})) {
+            if (!pattern.trimmed().isEmpty()) {
+                job.exclusions.append({pattern, scan::PatternKind::Glob});
+            }
+        }
+    }
+
+    jobs::JobStore store(context.database);
+    const Result<qint64> created = store.createJob(job);
+    if (!created) {
+        return output.flushError(created.error(), kExitUsage);
+    }
+
+    sched::ScheduleSpec spec;
+    spec.timezone = QTimeZone::systemTimeZoneId();
+    if (options.flags.contains(QStringLiteral("schedule"))) {
+        spec.kind = sched::triggerKindFromString(options.flags.value(QStringLiteral("schedule")))
+                        .value_or(sched::TriggerKind::Manual);
+    }
+    if (options.flags.contains(QStringLiteral("time"))) {
+        const QTime time =
+            QTime::fromString(options.flags.value(QStringLiteral("time")), QStringLiteral("HH:mm"));
+        if (time.isValid()) {
+            spec.timeOfDay = time;
+        }
+    }
+    const Status scheduled = store.upsertSchedule(created.value(), spec);
+    if (!scheduled.ok()) {
+        return output.flushError(scheduled.error(), kExitFailure);
+    }
+
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("job_id"), created.value());
+    output.add(QStringLiteral("job"), job.name);
+    output.add(QStringLiteral("sources"), static_cast<int>(job.sources.size()));
+    output.add(QStringLiteral("schedule"), sched::describe(spec));
+    output.line(QStringLiteral("Job %1 '%2' created with %3 source(s).")
+                    .arg(created.value())
+                    .arg(job.name)
+                    .arg(job.sources.size()));
+    output.line(QStringLiteral("Schedule: %1").arg(sched::describe(spec)));
+    output.line(QStringLiteral("Dry run: 'nesva-cli jobs run %1 --dry-run'; run: 'nesva-cli jobs run %1'.")
+                    .arg(created.value()));
+    return output.flush(stdout, kExitSuccess);
+}
+
 int commandStorageList(Context& context, const Options& options) {
     Output output(options.json);
     Result<QSqlQuery> query = context.database.select(QStringLiteral(
@@ -2778,6 +2900,9 @@ int run(int argc, char** argv) {
         if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {
             return commandStorageList(context, options);
         }
+        if (subcommand == QStringLiteral("add")) {
+            return commandStorageAdd(context, options);
+        }
         if (subcommand == QStringLiteral("test")) {
             return commandStorageTest(context, options);
         }
@@ -2787,6 +2912,9 @@ int run(int argc, char** argv) {
     if (command == QStringLiteral("jobs")) {
         if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {
             return commandJobsList(context, options);
+        }
+        if (subcommand == QStringLiteral("create")) {
+            return commandJobsCreate(context, options);
         }
         if (subcommand == QStringLiteral("run")) {
             return commandJobsRun(context, options);

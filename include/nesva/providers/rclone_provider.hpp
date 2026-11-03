@@ -80,6 +80,7 @@ public:
     Result<QVector<RemoteEntry>> listFiles(const QString& directoryRelativePath,
                                            bool recursive) override;
     Result<QString> checksum(const QString& relativePath) override;
+    Result<qint64> freeSpaceBytes() override;
 
     /// Remote target string for a provider-relative path, e.g.
     /// "icloud:Nesva/Archive/Documents/a.txt". Exposed for CLI output and tests.

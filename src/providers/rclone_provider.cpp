@@ -199,6 +199,26 @@ Status RcloneProvider::testConnection() {
     return Status();
 }
 
+Result<qint64> RcloneProvider::freeSpaceBytes() {
+    // "rclone about --json" reports total/used/free where the backend knows it.
+    const CancellationToken cancellation;
+    const Result<ProcessOutcome> outcome = runRclone(
+        {QStringLiteral("about"), remoteSpec_, QStringLiteral("--json")}, cancellation, 60000);
+    if (!outcome || outcome.value().exitCode != 0) {
+        return qint64(-1); // unknown: never block a run on a missing number
+    }
+    const QJsonObject object =
+        QJsonDocument::fromJson(outcome.value().standardOutput).object();
+    if (object.contains(QStringLiteral("free"))) {
+        return static_cast<qint64>(object.value(QStringLiteral("free")).toDouble(-1));
+    }
+    if (object.contains(QStringLiteral("total")) && object.contains(QStringLiteral("used"))) {
+        return static_cast<qint64>(object.value(QStringLiteral("total")).toDouble(0) -
+                                   object.value(QStringLiteral("used")).toDouble(0));
+    }
+    return qint64(-1);
+}
+
 Status RcloneProvider::ensureContainer() {
     const CancellationToken cancellation;
     const Result<ProcessOutcome> outcome = runRclone(

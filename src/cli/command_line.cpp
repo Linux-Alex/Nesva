@@ -58,12 +58,19 @@ Options parseArguments(const QStringList& arguments) {
             const QString body = argument.mid(2);
             const qsizetype equals = body.indexOf(QLatin1Char('='));
             if (equals >= 0) {
-                options.flags.insert(body.left(equals).toLower(), body.mid(equals + 1));
+                const QString key = body.left(equals).toLower();
+                const QString value = body.mid(equals + 1);
+                options.flags.insert(key, value);
+                options.repeatedFlags[key].append(value);
             } else if (!booleanFlags().contains(body.toLower()) && index + 1 < arguments.size() &&
                        !arguments.at(index + 1).startsWith(QLatin1Char('-'))) {
-                options.flags.insert(body.toLower(), arguments.at(++index));
+                const QString key = body.toLower();
+                const QString value = arguments.at(++index);
+                options.flags.insert(key, value);
+                options.repeatedFlags[key].append(value);
             } else {
                 options.flags.insert(body.toLower(), QString());
+                options.repeatedFlags[body.toLower()].append(QString());
             }
         } else {
             remaining.append(argument);
@@ -80,8 +87,8 @@ Options parseArguments(const QStringList& arguments) {
         // id, ...). Keep it in sync with usageText().
         static const QStringList subcommands = {
             "accounts", "add",      "apply",     "cancel",   "check",    "connect", "estimate",
-            "install",  "uninstall", "configure", "folders", "help",    "info",     "init",
-            "job",      "list",    "locks",
+            "install",  "uninstall", "configure", "create",  "folders", "help",    "info",
+            "init",     "job",      "list",      "locks",
             "preview",
             "rclone",   "reload",   "restore",   "run",      "set-password", "show", "status",
             "stop",     "sync",     "test",      "unlock"};

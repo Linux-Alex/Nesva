@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QtCore/QHash>
 #include <QtCore/QMap>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
@@ -30,6 +31,9 @@ struct Options {
     QString subcommand;
     QStringList positional;
     QMap<QString, QString> flags;
+    /// Every occurrence of a value flag, in order: "--source a --source b" keeps
+    /// both, which is what a job with several sources needs.
+    QHash<QString, QStringList> repeatedFlags;
     QStringList parseErrors;
 };
 
