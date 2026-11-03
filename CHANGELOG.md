@@ -8,6 +8,23 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Added
 
+- **Rclone installation from inside Nesva.** Settings -> External tools -> *Install Rclone...*
+  (CLI: `nesva-cli tools rclone`) resolves the current release and shows every step before
+  anything happens: the download URL, the published SHA-256 check, the exact unpack command, the
+  target path and, for an all-users install, the full elevated command
+  (`pkexec install -m 0755 ...`). The archive is verified against the publisher's `SHA256SUMS`
+  before it is unpacked and nothing is installed on a mismatch; the default scope is per-user and
+  needs no privileges; there is no shell anywhere, and the archive is never unpacked as root. The
+  installed path is recorded so Rclone works without changing `PATH`.
+- **Mail progress you can plan with.** `nesva-cli mail estimate <account>` counts every folder
+  from Microsoft's own counters and prints what is left; a sync now reports
+  `[ 42.3%] 2053/4881 messages · 7.9 msg/s · ETA 6m 0s · 1.2 GB archived`, switching to `[delta]`
+  for incremental runs where a percentage of the whole mailbox would be misleading. Per-folder
+  counts, archived sizes and the measured speed of the last sync are stored (schema v5), so the
+  next estimate is based on real throughput rather than a guess.
+- **`docs/user-guide/tutorial.md`**: a guided walkthrough from environment check to a verified
+  archive, with the acceptance scenario to run after any change.
+
 - **Actionable Microsoft Entra diagnostics.** A rejected token request now leads with the fix for
   the `AADSTS` code (public client flows disabled, redirect URI mismatch, missing consent,
   account not assigned, expired or reused code, single-page-app misconfiguration) and keeps

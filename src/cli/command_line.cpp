@@ -16,7 +16,7 @@ const QStringList& knownCommands() {
         QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("archive"),
         QStringLiteral("verify"),  QStringLiteral("agent"),   QStringLiteral("schedule"),
         QStringLiteral("repository"), QStringLiteral("snapshots"), QStringLiteral("retention"),
-        QStringLiteral("mail"),
+        QStringLiteral("mail"),    QStringLiteral("tools"),
         QStringLiteral("backup"),  QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
@@ -74,12 +74,14 @@ Options parseArguments(const QStringList& arguments) {
     }
     if (!remaining.isEmpty() && !remaining.constFirst().startsWith(QLatin1Char('-'))) {
         const QString candidate = remaining.constFirst();
-        static const QStringList subcommands = {"list",    "run",     "cancel",  "test",
-                                                "restore", "show",    "help",    "add",
-                                                "status",  "reload",  "stop",    "init",
-                                                "locks",   "unlock",  "apply",   "set-password",
-                                                "check",   "preview", "info",   "connect",
-                                                "accounts", "sync",   "folders", "status"};
+        // The first positional word is a subcommand only when it is one this
+        // list recognises; otherwise it is an argument (a job id, an account
+        // id, ...). Keep it in sync with usageText().
+        static const QStringList subcommands = {
+            "accounts", "add",      "apply",     "cancel",   "check",    "connect", "estimate",
+            "folders",  "help",     "info",      "init",     "list",     "locks",   "preview",
+            "rclone",   "reload",   "restore",   "run",      "set-password", "show", "status",
+            "stop",     "sync",     "test",      "unlock"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
@@ -131,7 +133,9 @@ QString usageText() {
         "                            (--account <upn> [--tenant <id>] [--client <id>])\n"
         "  mail accounts             List connected Microsoft 365 accounts\n"
         "  mail folders <account>    List folders ([--enable|--disable <remote-id>])\n"
+        "  mail estimate <account>   Count the mail per folder and estimate the sync time\n"
         "  mail sync <account>       Export mail as .eml (--to <dir> [--full] [--folder <id>])\n"
+        "                            (--max-messages <n>, --quiet to silence progress)\n"
         "  mail status <account>     Export counters for an account\n"
         "  repository info <job>     Show where the repository password is stored\n"
         "  repository init <job>     Store the repository password and run 'restic init'\n"

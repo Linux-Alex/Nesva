@@ -74,7 +74,7 @@ add_library(nesva_core STATIC
   src/backup/restic.cpp
   src/mail/exporter.cpp
   src/mail/graph.cpp
-  src/mail/http.cpp
+  src/core/http.cpp
   src/mail/mail_store.cpp
   src/mail/oauth.cpp
   src/security/credential_manager_windows.cpp
@@ -86,6 +86,7 @@ add_library(nesva_core STATIC
   src/jobs/job_store.cpp
   src/jobs/job_worker.cpp
   include/nesva/jobs/job_worker.hpp
+  src/tools/tool_installer.cpp
   src/providers/local_provider.cpp
   src/providers/provider_factory.cpp
   src/providers/rclone_provider.cpp
@@ -142,6 +143,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/snapshot_browser_dialog.cpp
   src/desktop/dialogs/snapshot_restore_dialog.hpp
   src/desktop/dialogs/snapshot_restore_dialog.cpp
+  src/desktop/dialogs/tool_install_dialog.hpp
+  src/desktop/dialogs/tool_install_dialog.cpp
   src/desktop/models/job_list_model.hpp
   src/desktop/models/job_list_model.cpp
   src/desktop/models/event_list_model.hpp

@@ -3,6 +3,10 @@
 This guide documents what the current build actually does. The full user documentation ships with
 the packaged installation in Phase 6; nothing here claims a capability the software does not have.
 
+Start here:
+
+- [Tutorial: from install to a verified archive](tutorial.md) - the guided walkthrough, including
+  the acceptance scenario to run after any change.
 - [Archiving Microsoft 365 mail](microsoft-365.md) - app registration, sign-in, sync, troubleshooting.
 
 ## What you can do today (version 0.5.0)
@@ -21,7 +25,13 @@ the packaged installation in Phase 6; nothing here claims a capability the softw
    (`nesva-cli mail`, see [the mail guide](microsoft-365.md)).
 7. Let `nesva-agent` run schedules in the background, with missed-slot catch-up, retry backoff and
    a single running job per job id.
-8. Use `nesva-cli` for every one of those operations, with `--json` output for scripting.
+8. Install Rclone from inside Nesva, from a preview of every step (download URL, SHA-256 check,
+   unpack command, target path and, for an all-users install, the exact elevated command):
+   Settings -> External tools -> Install Rclone. The CLI equivalent is
+   `nesva-cli tools rclone` (preview) and `nesva-cli tools rclone --install`.
+9. Count the mail before copying it (`nesva-cli mail estimate <account>`) and watch a sync report
+   its percentage, rate and remaining time (`nesva-cli mail sync <account> --to <dir>`).
+10. Use `nesva-cli` for every one of those operations, with `--json` output for scripting.
 
 Not yet available: the desktop UI for Microsoft 365 accounts and mail schedules, the Windows
 build (unbuilt and unverified), and packaged installers. Those are Phase 5 (UI) and Phase 6.

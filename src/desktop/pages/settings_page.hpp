@@ -28,6 +28,8 @@ private:
     void buildLoggingSection();
     void buildSafetySection();
     void buildBehaviourSection();
+    void buildToolsSection();
+    void refreshToolsStatus();
     void buildAgentSection();
     void refreshAgentStatus();
     void buildLocationsSection();
@@ -40,6 +42,7 @@ private:
     QCheckBox* minimizeToTrayCheck_ = nullptr;
     QCheckBox* notificationsCheck_ = nullptr;
     QLabel* agentStatusValue_ = nullptr;
+    QLabel* toolsStatusValue_ = nullptr;
     QLabel* savedLabel_ = nullptr;
     QLabel* dataRootValue_ = nullptr;
     QLabel* databaseValue_ = nullptr;

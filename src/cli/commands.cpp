@@ -39,6 +39,7 @@
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/scheduler/schedule.hpp"
 #include "nesva/providers/provider_factory.hpp"
+#include "nesva/tools/tool_installer.hpp"
 
 namespace nesva::cli {
 namespace {
@@ -161,6 +162,48 @@ int Output::flushError(const Error& error, int exitCode) {
     std::fwrite(utf8.constData(), 1, static_cast<std::size_t>(utf8.size()), stderr);
     std::fflush(stderr);
     return exitCode;
+}
+
+/// Durations as a person reads them: "45s", "3m 12s", "1h 05m", "2d 04h".
+QString humanDuration(qint64 seconds) {
+    if (seconds < 0) {
+        return QStringLiteral("unknown");
+    }
+    if (seconds < 60) {
+        return QStringLiteral("%1s").arg(seconds);
+    }
+    if (seconds < 3600) {
+        return QStringLiteral("%1m %2s").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    }
+    if (seconds < 86400) {
+        const qint64 minutes = (seconds % 3600) / 60;
+        return QStringLiteral("%1h %2m").arg(seconds / 3600).arg(minutes, 2, 10, QLatin1Char('0'));
+    }
+    const qint64 hours = (seconds % 86400) / 3600;
+    return QStringLiteral("%1d %2h").arg(seconds / 86400).arg(hours, 2, 10, QLatin1Char('0'));
+}
+
+/// Byte counts in binary units, one decimal above a kilobyte.
+QString humanBytes(qint64 bytes) {
+    if (bytes < 1024) {
+        return QStringLiteral("%1 B").arg(bytes);
+    }
+    const QStringList units = {QStringLiteral("KB"), QStringLiteral("MB"), QStringLiteral("GB"),
+                               QStringLiteral("TB")};
+    double value = static_cast<double>(bytes) / 1024.0;
+    int unit = 0;
+    while (value >= 1024.0 && unit + 1 < units.size()) {
+        value /= 1024.0;
+        ++unit;
+    }
+    return QStringLiteral("%1 %2").arg(value, 0, 'f', 1).arg(units.at(unit));
+}
+
+/// One-line sync progress. Written with \r so a terminal shows a single
+/// updating line; the padding clears the remains of a longer previous line.
+void renderMailProgress(const QString& text) {
+    std::fprintf(stderr, "\r%-110s", qPrintable(text));
+    std::fflush(stderr);
 }
 
 int exitCodeFor(const ErrorCode code) {
@@ -418,6 +461,136 @@ void printProgressLine(const jobs::RunProgress& progress, bool json) {
 
 CheckResult makeCheck(const QString& name, const QString& status, const QString& detail) {
     return CheckResult{name, status, detail};
+}
+
+int commandTools(Context& context, const Options& options) {
+    Output output(options.json);
+    config::SettingsStore settings(context.database);
+    const QString& sub = options.subcommand;
+
+    const auto settingOrDefault = [&settings](const char* key, const QString& fallback) {
+        const Result<QString> value = settings.getString(QString::fromUtf8(key), fallback);
+        return value && !value.value().trimmed().isEmpty() ? value.value() : fallback;
+    };
+
+    if (sub.isEmpty() || sub == QStringLiteral("status")) {
+        QList<QStringList> table;
+        QJsonArray toolsJson;
+        struct ToolRow {
+            const char* key;
+            QString name;
+        };
+        const QList<ToolRow> rows = {
+            {config::keys::kRcloneBinaryPath, QStringLiteral("rclone")},
+            {config::keys::kResticBinaryPath, QStringLiteral("restic")},
+        };
+        for (const ToolRow& row : rows) {
+            const QString configured = settingOrDefault(row.key, row.name);
+            const Result<ExternalToolInfo> probe =
+                probeExternalTool(configured, {QStringLiteral("version")}, 8000);
+            QJsonObject entry;
+            entry.insert(QStringLiteral("tool"), row.name);
+            entry.insert(QStringLiteral("configured"), configured);
+            if (probe) {
+                entry.insert(QStringLiteral("path"), probe.value().executable);
+                entry.insert(QStringLiteral("version"), probe.value().versionText);
+                entry.insert(QStringLiteral("found"), true);
+                table.append({row.name, probe.value().executable, probe.value().versionText});
+            } else {
+                entry.insert(QStringLiteral("found"), false);
+                table.append({row.name, QStringLiteral("-"),
+                              QStringLiteral("not installed (nesva-cli tools %1 --install)")
+                                  .arg(row.name)});
+            }
+            toolsJson.append(entry);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("items"), toolsJson);
+        output.table({QStringLiteral("TOOL"), QStringLiteral("PATH"), QStringLiteral("VERSION")},
+                     table);
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (sub == QStringLiteral("rclone")) {
+        const bool install = options.flags.contains(QStringLiteral("install"));
+        const tools::InstallScope scope =
+            options.flags.contains(QStringLiteral("system")) ? tools::InstallScope::System
+                                                             : tools::InstallScope::User;
+
+        net::QNetworkHttpTransport transport;
+        const Result<tools::ToolInstallPlan> plan = tools::planRcloneInstall(scope, transport);
+        if (!plan) {
+            return output.flushError(plan.error(), kExitFailure);
+        }
+        const tools::ToolInstallPlan& value = plan.value();
+
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("version"), value.version);
+        output.add(QStringLiteral("download_url"), value.downloadUrl);
+        output.add(QStringLiteral("checksum_url"), value.checksumUrl);
+        output.add(QStringLiteral("target"), value.targetPath);
+        output.add(QStringLiteral("scope"), tools::toToken(value.scope));
+        output.add(QStringLiteral("requires_elevation"), value.requiresElevation);
+        output.add(QStringLiteral("automatic"), value.automatic);
+        output.add(QStringLiteral("installed"), false);
+
+        if (!install) {
+            output.line(QStringLiteral("Installation plan - nothing has been downloaded, written "
+                                       "or executed yet:"));
+            for (const QString& line :
+                 tools::describeInstallPlan(value).split(QLatin1Char('\n'))) {
+                output.line(QStringLiteral("  %1").arg(line));
+            }
+            if (!value.automatic) {
+                output.line(QStringLiteral("This installation cannot be performed automatically on "
+                                           "this system: run the commands shown above."));
+                return output.flush(stdout, kExitSuccess);
+            }
+            output.line(QStringLiteral("Run '%1' to perform exactly these steps.")
+                            .arg(options.flags.contains(QStringLiteral("system"))
+                                     ? QStringLiteral("nesva-cli tools rclone --install --system")
+                                     : QStringLiteral("nesva-cli tools rclone --install")));
+            return output.flush(stdout, kExitSuccess);
+        }
+
+        const auto progress = [quiet = options.quiet](const QString& text) {
+            if (quiet) {
+                return;
+            }
+            std::fprintf(stderr, "  %s\n", qPrintable(text));
+            std::fflush(stderr);
+        };
+        const Result<tools::InstallOutcome> outcome =
+            tools::executeRcloneInstall(value, progress);
+        if (!outcome) {
+            return output.flushError(outcome.error(), kExitFailure);
+        }
+
+        // Record the absolute path: Nesva then uses this binary even when the
+        // install directory is not on PATH (the usual case for ~/.local/bin).
+        const Status stored = settings.setString(
+            QString::fromUtf8(config::keys::kRcloneBinaryPath), outcome.value().executablePath);
+        if (!stored.ok()) {
+            return output.flushError(stored.error(), kExitFailure);
+        }
+
+        output.add(QStringLiteral("installed"), true);
+        output.add(QStringLiteral("installed_version"), outcome.value().version);
+        output.add(QStringLiteral("installed_path"), outcome.value().executablePath);
+        output.add(QStringLiteral("sha256"), outcome.value().sha256);
+        output.add(QStringLiteral("bytes_downloaded"), outcome.value().bytesDownloaded);
+        output.line(QStringLiteral("Installed rclone %1 at %2 (SHA-256 verified).")
+                        .arg(outcome.value().version, outcome.value().executablePath));
+        output.line(QStringLiteral("Nesva now uses that path, so it works without changing PATH."));
+        output.line(QStringLiteral("To also use rclone in a terminal, add %1 to PATH.")
+                        .arg(QFileInfo(outcome.value().executablePath).absolutePath()));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    return output.flushError(
+        makeErrorValue(ErrorCode::InvalidArgument,
+                       QStringLiteral("unknown tools command: %1").arg(sub).toStdString()),
+        kExitUsage);
 }
 
 int commandDoctor(Context& context, const Options& options) {
@@ -1893,6 +2066,7 @@ int commandMail(Context& context, const Options& options) {
         output.line(QStringLiteral("mail connect   --account <upn> [--tenant <id>] [--client <id>]"));
         output.line(QStringLiteral("mail accounts"));
         output.line(QStringLiteral("mail folders <account-id> [--enable <remote-id>] [--disable <remote-id>]"));
+        output.line(QStringLiteral("mail estimate <account-id>"));
         output.line(QStringLiteral("mail sync <account-id> --to <directory> [--full] [--max-messages N]"));
         output.line(QStringLiteral("mail status <account-id>"));
         return output.flush(stdout, kExitSuccess);
@@ -2112,6 +2286,91 @@ int commandMail(Context& context, const Options& options) {
         return output.flush(stdout, kExitSuccess);
     }
 
+    if (sub == QStringLiteral("estimate")) {
+        // Count first, sync second: the folder counters come from Microsoft, so
+        // the size of the job is known before a single message is downloaded.
+        bool refreshed = false;
+        const Result<std::shared_ptr<mail::GraphClient>> graph =
+            openGraph(context, account.value());
+        if (graph) {
+            const Result<QVector<mail::MailFolderInfo>> folders = graph.value()->mailFolders();
+            if (folders) {
+                store.storeFolders(accountId, folders.value());
+                refreshed = true;
+            }
+        }
+        const Result<QVector<mail::MailFolderStats>> stats = store.folderStats(accountId);
+        if (!stats) {
+            return output.flushError(stats.error(), kExitFailure);
+        }
+
+        QList<QStringList> table;
+        qint64 total = 0;
+        qint64 archived = 0;
+        int enabledFolders = 0;
+        for (const mail::MailFolderStats& folder : stats.value()) {
+            if (!folder.syncEnabled) {
+                continue;
+            }
+            ++enabledFolders;
+            total += folder.totalItems;
+            archived += folder.exportedItems;
+            table.append({folder.displayName, QString::number(folder.totalItems),
+                          QString::number(folder.exportedItems),
+                          QString::number(folder.remainingItems())});
+        }
+        const qint64 remaining = qMax<qint64>(0, total - archived);
+
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("account"), account.value().accountIdentifier);
+        output.add(QStringLiteral("folders"), enabledFolders);
+        output.add(QStringLiteral("total_messages"), total);
+        output.add(QStringLiteral("archived_messages"), archived);
+        output.add(QStringLiteral("remaining_messages"), remaining);
+        output.add(QStringLiteral("counts_refreshed"), refreshed);
+        output.table({QStringLiteral("FOLDER"), QStringLiteral("IN MICROSOFT"),
+                      QStringLiteral("ARCHIVED"), QStringLiteral("REMAINING")},
+                     table);
+        output.line(QStringLiteral("%1 messages in %2 enabled folder(s); %3 archived, %4 to go.")
+                        .arg(total)
+                        .arg(enabledFolders)
+                        .arg(archived)
+                        .arg(remaining));
+        if (!refreshed) {
+            output.line(QStringLiteral("Folder counts are the stored ones: Microsoft could not be "
+                                       "asked just now, so they may be slightly out of date."));
+        }
+
+        if (remaining == 0) {
+            output.line(QStringLiteral("Nothing left to archive in the enabled folders."));
+            output.add(QStringLiteral("eta_seconds"), 0);
+            return output.flush(stdout, kExitSuccess);
+        }
+        if (!account.value().hasSpeed()) {
+            output.line(QStringLiteral("No measured speed yet: run `mail sync` once and later "
+                                       "estimates will carry a duration."));
+            output.add(QStringLiteral("eta_seconds"), -1);
+            return output.flush(stdout, kExitSuccess);
+        }
+
+        const double rate = account.value().messagesPerSecond();
+        const qint64 etaSeconds = rate > 0 ? static_cast<qint64>(remaining / rate) : -1;
+        const qint64 bytes = remaining * account.value().bytesPerMessage();
+        output.add(QStringLiteral("eta_seconds"), etaSeconds);
+        output.add(QStringLiteral("expected_bytes"), bytes);
+        output.add(QStringLiteral("messages_per_second"), rate);
+        output.line(QStringLiteral("At the measured %1 messages/s of the last sync: about %2 "
+                                   "(~%3) remaining.")
+                        .arg(rate, 0, 'f', 1)
+                        .arg(humanDuration(etaSeconds))
+                        .arg(humanBytes(bytes)));
+        if (bytes == 0) {
+            output.line(QStringLiteral("The expected size is unknown until a sync has downloaded "
+                                       "something."));
+        }
+        return output.flush(stdout, kExitSuccess);
+    }
+
     if (sub == QStringLiteral("sync")) {
         if (configuration.destination.trimmed().isEmpty()) {
             return output.flushError(
@@ -2144,15 +2403,36 @@ int commandMail(Context& context, const Options& options) {
             if (quiet) {
                 return;
             }
-            std::fprintf(stderr, "\r%s: %d seen, %d exported, %d failed   ",
-                         qPrintable(update.folder), update.messagesSeen, update.exported,
-                         update.failed);
-            std::fflush(stderr);
+            QString line;
+            if (update.percent() >= 0.0) {
+                line = QStringLiteral("[%1%] %2/%3 messages")
+                           .arg(update.percent(), 5, 'f', 1)
+                           .arg(update.done)
+                           .arg(update.total);
+            } else {
+                // A delta run reports what changed, so a percentage of the
+                // mailbox would be meaningless.
+                line = QStringLiteral("[delta] %1 messages examined").arg(update.done);
+            }
+            if (update.messagesPerSecond > 0.0) {
+                line += QStringLiteral(" · %1 msg/s").arg(update.messagesPerSecond, 0, 'f', 1);
+            }
+            if (update.etaSeconds >= 0) {
+                line += QStringLiteral(" · ETA %1").arg(humanDuration(update.etaSeconds));
+            }
+            if (update.bytesWritten > 0) {
+                line += QStringLiteral(" · %1 archived").arg(humanBytes(update.bytesWritten));
+            }
+            line += QStringLiteral(" · %1").arg(update.folder);
+            renderMailProgress(line);
         };
         mail::MailExporter exporter(context.database, graph.value(), progress);
         const CancellationToken cancellation;
         const Result<mail::MailExportReport> report =
             exporter.run(accountId, exportOptions, cancellation);
+        if (!options.quiet) {
+            std::fprintf(stderr, "\n");
+        }
         if (!report) {
             return output.flushError(report.error(), kExitFailure);
         }
@@ -2163,12 +2443,26 @@ int commandMail(Context& context, const Options& options) {
         output.add(QStringLiteral("removed"), report.value().removed);
         output.add(QStringLiteral("failed"), report.value().failed);
         output.add(QStringLiteral("bytes"), report.value().bytesWritten);
-        output.line(QStringLiteral("Exported %1, skipped %2, removed %3, failed %4 (%5 byte(s))")
+        output.line(QStringLiteral("Exported %1, skipped %2, removed %3, failed %4 (%5)")
                         .arg(report.value().exported)
                         .arg(report.value().skipped)
                         .arg(report.value().removed)
                         .arg(report.value().failed)
-                        .arg(report.value().bytesWritten));
+                        .arg(humanBytes(report.value().bytesWritten)));
+        const qint64 elapsed = static_cast<qint64>(report.value().elapsedSeconds);
+        output.line(QStringLiteral("Took %1 at %2 messages/s.")
+                        .arg(humanDuration(elapsed))
+                        .arg(report.value().messagesPerSecond(), 0, 'f', 1));
+        if (report.value().incremental) {
+            output.line(QStringLiteral("Incremental run: only messages that changed were examined."));
+        } else {
+            const qint64 inScope = qMax<qint64>(1, report.value().totalMessages);
+            output.line(QStringLiteral("Coverage: %1 of %2 messages in scope (%3%), %4 archived.")
+                            .arg(report.value().messagesSeen)
+                            .arg(report.value().totalMessages)
+                            .arg(100.0 * report.value().messagesSeen / inScope, 0, 'f', 1)
+                            .arg(humanBytes(report.value().bytesWritten)));
+        }
         for (const QString& error : report.value().errors) {
             output.line(QStringLiteral("  error: %1").arg(error));
         }
@@ -2233,6 +2527,10 @@ int run(int argc, char** argv) {
     if (command == QStringLiteral("status")) {
         return commandStatus(context, options);
     }
+    if (command == QStringLiteral("tools")) {
+        return commandTools(context, options);
+    }
+
     if (command == QStringLiteral("doctor")) {
         return commandDoctor(context, options);
     }

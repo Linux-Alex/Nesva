@@ -360,6 +360,28 @@ QStringList migrationV4Statements() {
     };
 }
 
+QStringList migrationV5Statements() {
+    return {
+        // Message counts per folder, so a sync can state how much work is ahead
+        // before it downloads anything.
+        QStringLiteral("ALTER TABLE mail_folders ADD COLUMN total_item_count INTEGER NOT NULL "
+                       "DEFAULT 0"),
+
+        // The archived size, measured from the .eml itself: the delta feed does
+        // not return a message size.
+        QStringLiteral("ALTER TABLE mail_messages ADD COLUMN size_bytes INTEGER NOT NULL "
+                       "DEFAULT 0"),
+
+        // Speed of the last sync, so the next run can estimate its duration.
+        QStringLiteral("ALTER TABLE mail_accounts ADD COLUMN last_sync_messages INTEGER NOT NULL "
+                       "DEFAULT 0"),
+        QStringLiteral("ALTER TABLE mail_accounts ADD COLUMN last_sync_bytes INTEGER NOT NULL "
+                       "DEFAULT 0"),
+        QStringLiteral("ALTER TABLE mail_accounts ADD COLUMN last_sync_seconds REAL NOT NULL "
+                       "DEFAULT 0"),
+    };
+}
+
 } // namespace
 
 const QStringList& bootstrapStatements() {
@@ -401,6 +423,13 @@ const std::vector<Migration>& allMigrations() {
             QStringLiteral("snapshot-file-counts"),
             QStringLiteral("Restic snapshots record how many files they contain."),
             migrationV4Statements(),
+        },
+        Migration{
+            5,
+            QStringLiteral("mail-progress-and-sizes"),
+            QStringLiteral("Mail: per-folder message counts, archived sizes and the speed of the "
+                           "last sync, so progress and duration can be reported."),
+            migrationV5Statements(),
         },
     };
     return migrations;

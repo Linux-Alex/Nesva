@@ -58,7 +58,8 @@ Result<qint64> MailStore::upsertAccount(const MailAccount& account) {
 Result<QVector<MailAccount>> MailStore::accounts() const {
     Result<QSqlQuery> query = database_.select(
         QStringLiteral("SELECT id, display_name, tenant_id, client_id, account_identifier, "
-                       "scopes, status, COALESCE(last_sync_at, '') FROM mail_accounts "
+                       "scopes, status, COALESCE(last_sync_at, ''), last_sync_messages, "
+                       "last_sync_bytes, last_sync_seconds FROM mail_accounts "
                        "ORDER BY display_name"));
     if (!query) {
         return query.error();
@@ -75,6 +76,9 @@ Result<QVector<MailAccount>> MailStore::accounts() const {
         account.scopes = rows.value(5).toString();
         account.status = rows.value(6).toString();
         account.lastSyncAt = rows.value(7).toString();
+        account.lastSyncMessages = rows.value(8).toLongLong();
+        account.lastSyncBytes = rows.value(9).toLongLong();
+        account.lastSyncSeconds = rows.value(10).toDouble();
         accounts.append(account);
     }
     return accounts;
@@ -116,14 +120,17 @@ Status MailStore::storeFolders(qint64 accountId, const QVector<MailFolderInfo>& 
         QSqlQuery query(database_.handle());
         query.prepare(QStringLiteral(
             "INSERT INTO mail_folders (mail_account_id, remote_folder_id, display_name, "
-            "parent_remote_folder_id, sync_enabled, created_at) VALUES (?, ?, ?, ?, 1, ?) "
+            "parent_remote_folder_id, sync_enabled, total_item_count, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?, ?) "
             "ON CONFLICT(mail_account_id, remote_folder_id) DO UPDATE SET "
             "display_name = excluded.display_name, "
-            "parent_remote_folder_id = excluded.parent_remote_folder_id"));
+            "parent_remote_folder_id = excluded.parent_remote_folder_id, "
+            "total_item_count = excluded.total_item_count"));
         query.addBindValue(accountId);
         query.addBindValue(folder.id);
         query.addBindValue(folder.path.isEmpty() ? folder.displayName : folder.path);
         query.addBindValue(folder.parentId.isEmpty() ? QVariant() : QVariant(folder.parentId));
+        query.addBindValue(folder.totalItemCount);
         query.addBindValue(timestamp);
         if (!query.exec()) {
             return makeError(ErrorCode::DatabaseError, "cannot store a mail folder",
@@ -137,7 +144,7 @@ Result<QVector<MailFolderRecord>> MailStore::folders(qint64 accountId) const {
     Result<QSqlQuery> query = database_.select(
         QStringLiteral("SELECT id, remote_folder_id, display_name, "
                        "COALESCE(parent_remote_folder_id, ''), COALESCE(delta_link, ''), "
-                       "sync_enabled FROM mail_folders WHERE mail_account_id = ? "
+                       "sync_enabled, total_item_count FROM mail_folders WHERE mail_account_id = ? "
                        "ORDER BY display_name"),
         {QVariant(accountId)});
     if (!query) {
@@ -153,9 +160,54 @@ Result<QVector<MailFolderRecord>> MailStore::folders(qint64 accountId) const {
         folder.parentRemoteId = rows.value(3).toString();
         folder.deltaLink = rows.value(4).toString();
         folder.syncEnabled = rows.value(5).toBool();
+        folder.totalItemCount = rows.value(6).toLongLong();
         folders.append(folder);
     }
     return folders;
+}
+
+Result<QVector<MailFolderStats>> MailStore::folderStats(qint64 accountId) const {
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral("SELECT f.id, f.display_name, f.total_item_count, f.sync_enabled, "
+                       "COALESCE(f.delta_link, '') <> '', "
+                       "(SELECT COUNT(*) FROM mail_messages m WHERE m.mail_folder_id = f.id "
+                       " AND m.export_state = 'exported') "
+                       "FROM mail_folders f WHERE f.mail_account_id = ? ORDER BY f.display_name"),
+        {QVariant(accountId)});
+    if (!query) {
+        return query.error();
+    }
+    QSqlQuery rows = std::move(query).take();
+    QVector<MailFolderStats> stats;
+    while (rows.next()) {
+        MailFolderStats folder;
+        folder.folderRowId = rows.value(0).toLongLong();
+        folder.displayName = rows.value(1).toString();
+        folder.totalItems = rows.value(2).toLongLong();
+        folder.syncEnabled = rows.value(3).toBool();
+        folder.hasCursor = rows.value(4).toBool();
+        folder.exportedItems = rows.value(5).toLongLong();
+        stats.append(folder);
+    }
+    return stats;
+}
+
+Status MailStore::recordSyncStats(qint64 accountId, qint64 messages, qint64 bytes,
+                                  double seconds) {
+    QSqlQuery query(database_.handle());
+    query.prepare(QStringLiteral(
+        "UPDATE mail_accounts SET last_sync_messages = ?, last_sync_bytes = ?, "
+        "last_sync_seconds = ?, updated_at = ? WHERE id = ?"));
+    query.addBindValue(messages);
+    query.addBindValue(bytes);
+    query.addBindValue(seconds);
+    query.addBindValue(db::Database::currentTimestampUtc());
+    query.addBindValue(accountId);
+    if (!query.exec()) {
+        return makeError(ErrorCode::DatabaseError, "cannot record the sync speed",
+                         query.lastError().text().toStdString());
+    }
+    return Status();
 }
 
 Status MailStore::setFolderSyncEnabled(qint64 folderRowId, bool enabled) {
@@ -222,15 +274,16 @@ Status MailStore::upsertMessage(qint64 accountId, qint64 folderRowId,
     query.prepare(QStringLiteral(
         "INSERT INTO mail_messages (mail_account_id, mail_folder_id, remote_message_id, "
         "internet_message_id, subject, sender, received_at, message_key, eml_path, eml_sha256, "
-        "export_state, last_modified_at, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "export_state, last_modified_at, size_bytes, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(mail_account_id, remote_message_id) DO UPDATE SET "
         "mail_folder_id = excluded.mail_folder_id, "
         "internet_message_id = excluded.internet_message_id, subject = excluded.subject, "
         "sender = excluded.sender, received_at = excluded.received_at, "
         "message_key = excluded.message_key, eml_path = excluded.eml_path, "
         "eml_sha256 = excluded.eml_sha256, export_state = excluded.export_state, "
-        "last_modified_at = excluded.last_modified_at, updated_at = excluded.updated_at"));
+        "last_modified_at = excluded.last_modified_at, size_bytes = excluded.size_bytes, "
+        "updated_at = excluded.updated_at"));
     query.addBindValue(accountId);
     query.addBindValue(folderRowId > 0 ? folderRowId : QVariant());
     query.addBindValue(message.remoteId);
@@ -245,6 +298,7 @@ Status MailStore::upsertMessage(qint64 accountId, qint64 folderRowId,
     query.addBindValue(message.exportState);
     query.addBindValue(message.lastModifiedAt.isEmpty() ? QVariant()
                                                         : QVariant(message.lastModifiedAt));
+    query.addBindValue(message.sizeBytes);
     query.addBindValue(timestamp);
     query.addBindValue(timestamp);
     if (!query.exec()) {
@@ -277,8 +331,9 @@ Result<QVector<MailMessageRecord>> MailStore::messages(qint64 accountId, int lim
         QStringLiteral("SELECT id, remote_message_id, COALESCE(internet_message_id, ''), "
                        "COALESCE(subject, ''), COALESCE(sender, ''), COALESCE(received_at, ''), "
                        "message_key, COALESCE(eml_path, ''), COALESCE(eml_sha256, ''), "
-                       "export_state, COALESCE(last_modified_at, '') FROM mail_messages "
-                       "WHERE mail_account_id = ? ORDER BY received_at DESC LIMIT ?"),
+                       "export_state, COALESCE(last_modified_at, ''), size_bytes "
+                       "FROM mail_messages WHERE mail_account_id = ? "
+                       "ORDER BY received_at DESC LIMIT ?"),
         {QVariant(accountId), QVariant(limit)});
     if (!query) {
         return query.error();
@@ -298,6 +353,7 @@ Result<QVector<MailMessageRecord>> MailStore::messages(qint64 accountId, int lim
         message.emlSha256 = rows.value(8).toString();
         message.exportState = rows.value(9).toString();
         message.lastModifiedAt = rows.value(10).toString();
+        message.sizeBytes = rows.value(11).toLongLong();
         messages.append(message);
     }
     return messages;

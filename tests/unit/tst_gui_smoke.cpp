@@ -24,6 +24,7 @@
 #include <QtWidgets/QTableView>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPlainTextEdit>
+#include <QtWidgets/QPushButton>
 #include <QtWidgets/QSpinBox>
 #include <QtCore/QTimer>
 
@@ -93,6 +94,7 @@ private slots:
     void jobModelIsEmptyOnFreshDatabase();
     void eventModelCombinesJobAndApplicationEvents();
     void mainWindowExposesEveryPage();
+    void settingsPageOffersTheRcloneInstaller();
     void mainWindowSwitchesPages();
     void mainWindowThemeIsApplied();
     void executorRunsArchiveJobInWorkerThread();
@@ -175,6 +177,34 @@ void GuiSmokeTest::eventModelCombinesJobAndApplicationEvents() {
     }
     QVERIFY2(applicationRows >= 1, "startup events are persisted to application_events");
     QCOMPARE(jobRows, 1);
+}
+
+void GuiSmokeTest::settingsPageOffersTheRcloneInstaller() {
+    // The install button and the tool status must be reachable from the real
+    // window: this is the control the user asked for, so its absence is a bug.
+    MainWindow window(*context_);
+    window.show();
+
+    QPushButton* install = nullptr;
+    for (QPushButton* button : window.findChildren<QPushButton*>()) {
+        if (button->text().contains(QStringLiteral("Rclone"))) {
+            install = button;
+            break;
+        }
+    }
+    QVERIFY2(install != nullptr, "the Settings page must offer the Rclone installer");
+
+    // The status label names both tools, so a missing tool is visible before the
+    // user tries to use it.
+    bool foundStatus = false;
+    for (QLabel* label : window.findChildren<QLabel*>()) {
+        const QString text = label->text();
+        if (text.contains(QStringLiteral("rclone")) && text.contains(QStringLiteral("restic"))) {
+            foundStatus = true;
+            break;
+        }
+    }
+    QVERIFY2(foundStatus, "the external tools card must report both tools");
 }
 
 void GuiSmokeTest::mainWindowExposesEveryPage() {

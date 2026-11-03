@@ -13,7 +13,7 @@
 #include <optional>
 
 #include "nesva/core/result.hpp"
-#include "nesva/mail/http.hpp"
+#include "nesva/core/http.hpp"
 
 class QTcpServer;
 class QTcpSocket;

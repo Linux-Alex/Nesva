@@ -21,7 +21,7 @@
 #include "nesva/db/database.hpp"
 #include "nesva/mail/exporter.hpp"
 #include "nesva/mail/graph.hpp"
-#include "nesva/mail/http.hpp"
+#include "nesva/core/http.hpp"
 #include "nesva/mail/mail_store.hpp"
 #include "nesva/mail/oauth.hpp"
 #include "support/test_fixtures.hpp"
@@ -138,6 +138,7 @@ private slots:
     void exportsMessagesAndRecordsDelta();
     void secondRunSkipsUnchangedMessages();
     void messageLimitKeepsCursorBeforeUnseenMessages();
+    void progressReportsTotalsRateAndEta();
     void missingFileIsExportedAgain();
     void honoursStatusErrors();
     void httpErrorStatusKeepsBodyAndHeaders();
@@ -159,6 +160,7 @@ private:
             return 0;
         }
         mail::MailFolderInfo inbox;
+        inbox.totalItemCount = 2; // what Microsoft reports; used for progress only
         inbox.id = QStringLiteral("inbox");
         inbox.displayName = QStringLiteral("Inbox");
         inbox.path = QStringLiteral("Inbox");
@@ -377,6 +379,46 @@ void MailTest::missingFileIsExportedAgain() {
     }
     QVERIFY(removedOne);
     QCOMPARE(exporter.run(accountId, options, cancellation).value().exported, 1);
+}
+
+void MailTest::progressReportsTotalsRateAndEta() {
+    // A long first sync must be able to say where it is, how fast and how long
+    // is left. That needs the exported totals, the running count and a rate.
+    const qint64 accountId = seedAccountAndFolders();
+    QVERIFY(accountId > 0);
+    auto transport = std::make_shared<FakeTransport>();
+    transport->mimeProvider = [](const QString& url) {
+        return QByteArray("Subject: test\r\n\r\nBody for " + url.toUtf8());
+    };
+    auto tokens = std::make_shared<mail::TokenProvider>(mail::OAuthConfig{}, QStringLiteral("r"),
+                                                        transport);
+    auto graph = std::make_shared<mail::GraphClient>(tokens, transport);
+
+    QVector<mail::MailProgress> updates;
+    mail::MailExporter exporter(*database_, graph, [&updates](const mail::MailProgress& update) {
+        updates.append(update);
+    });
+    mail::MailExportOptions options;
+    options.destinationDirectory = directory_->filePath(QStringLiteral("archive"));
+    const CancellationToken cancellation;
+    const Result<mail::MailExportReport> report = exporter.run(accountId, options, cancellation);
+    QVERIFY(report);
+
+    QVERIFY2(!updates.isEmpty(), "progress must be reported during a run");
+    const mail::MailProgress& last = updates.last();
+    QCOMPARE(last.folder, QStringLiteral("Inbox"));
+    QCOMPARE(last.total, qint64(2)); // the folder's advertised count
+    QCOMPARE(last.done, qint64(2));  // both messages examined
+    QCOMPARE(last.folderCount, 1);
+    QCOMPARE(last.exported, 2);
+    QVERIFY(last.percent() > 99.0);
+    QVERIFY(last.messagesPerSecond > 0.0);
+    QVERIFY(!last.incremental); // no cursor existed, so this walk is the whole folder
+    QVERIFY(last.bytesWritten > 0);
+
+    QCOMPARE(report.value().totalMessages, qint64(2));
+    QVERIFY(report.value().elapsedSeconds >= 0.0);
+    QVERIFY(!report.value().incremental);
 }
 
 void MailTest::messageLimitKeepsCursorBeforeUnseenMessages() {

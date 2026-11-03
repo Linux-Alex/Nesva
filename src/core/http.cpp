@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 The Nesva Authors
 
-#include "nesva/mail/http.hpp"
+#include "nesva/core/http.hpp"
 
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QEventLoop>

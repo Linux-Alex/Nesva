@@ -18,7 +18,9 @@
 #include <QtWidgets/QVBoxLayout>
 
 #include "app_context.hpp"
+#include "dialogs/tool_install_dialog.hpp"
 #include "nesva/agent/client.hpp"
+#include "nesva/core/external_tool.hpp"
 #include "nesva/core/paths.hpp"
 
 namespace nesva::ui {
@@ -49,6 +51,7 @@ SettingsPage::SettingsPage(AppContext& context, QWidget* parent)
     buildLoggingSection();
     buildSafetySection();
     buildBehaviourSection();
+    buildToolsSection();
     buildAgentSection();
     buildLocationsSection();
 
@@ -267,6 +270,79 @@ void SettingsPage::buildBehaviourSection() {
     });
 
     body()->addWidget(card);
+}
+
+void SettingsPage::buildToolsSection() {
+    QVBoxLayout* cardLayout = nullptr;
+    QFrame* card = makeCard(this, QStringLiteral("External tools"), cardLayout);
+
+    toolsStatusValue_ = new QLabel(card);
+    toolsStatusValue_->setObjectName(QStringLiteral("pageSubtitle"));
+    toolsStatusValue_->setWordWrap(true);
+    toolsStatusValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    cardLayout->addWidget(toolsStatusValue_);
+
+    auto* hint = new QLabel(
+        QStringLiteral("Nesva calls <b>rclone</b> for cloud destinations and <b>restic</b> for "
+                       "versioned backups, and never bundles either one. The installer downloads "
+                       "the release over HTTPS, verifies its published SHA-256 and copies a single "
+                       "binary: no shell, and nothing runs with elevated privileges unless you "
+                       "choose an all-users install and confirm the step."),
+        card);
+    hint->setObjectName(QStringLiteral("pageSubtitle"));
+    hint->setWordWrap(true);
+    hint->setTextFormat(Qt::RichText);
+    cardLayout->addWidget(hint);
+
+    auto* buttons = new QHBoxLayout();
+    auto* refreshButton = new QPushButton(QStringLiteral("Check again"), card);
+    auto* installButton = new QPushButton(QStringLiteral("Install Rclone..."), card);
+    buttons->addWidget(refreshButton);
+    buttons->addWidget(installButton);
+    buttons->addStretch(1);
+    cardLayout->addLayout(buttons);
+
+    connect(refreshButton, &QPushButton::clicked, this, [this] { refreshToolsStatus(); });
+    connect(installButton, &QPushButton::clicked, this, [this] {
+        ToolInstallDialog dialog(context_, this);
+        dialog.exec();
+        if (!dialog.installedPath().isEmpty()) {
+            refreshToolsStatus();
+        }
+    });
+
+    body()->addWidget(card);
+    refreshToolsStatus();
+}
+
+void SettingsPage::refreshToolsStatus() {
+    if (toolsStatusValue_ == nullptr) {
+        return;
+    }
+    QStringList lines;
+    const struct {
+        const char* key;
+        const char* name;
+    } tools[] = {{config::keys::kRcloneBinaryPath, "rclone"},
+                 {config::keys::kResticBinaryPath, "restic"}};
+    for (const auto& tool : tools) {
+        const QString configured =
+            context_.settings()
+                .getString(QString::fromUtf8(tool.key), QString::fromUtf8(tool.name))
+                .valueOr(QString::fromUtf8(tool.name));
+        const Result<ExternalToolInfo> probe =
+            probeExternalTool(configured, {QStringLiteral("version")}, 8000);
+        if (probe) {
+            lines.append(QStringLiteral("<b>%1</b> %2 &mdash; %3")
+                             .arg(QString::fromUtf8(tool.name), probe.value().versionText,
+                                  probe.value().executable.toHtmlEscaped()));
+        } else {
+            lines.append(QStringLiteral("<b>%1</b> &mdash; not installed")
+                             .arg(QString::fromUtf8(tool.name)));
+        }
+    }
+    toolsStatusValue_->setText(lines.join(QStringLiteral("<br>")));
+    toolsStatusValue_->setTextFormat(Qt::RichText);
 }
 
 void SettingsPage::buildAgentSection() {

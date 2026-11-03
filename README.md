@@ -91,7 +91,26 @@ is real, working functionality - not mockups:
   throttling (429 `Retry-After`), 5xx backoff and one 401 refresh
 - Incremental EML export: per-folder delta cursor in SQLite, restartable mid-run, unchanged
   messages skipped, removed messages keep their local file
-- CLI: `mail connect`, `mail accounts`, `mail folders`, `mail sync`, `mail status`
+- CLI: `mail connect`, `mail accounts`, `mail folders`, `mail estimate`, `mail sync`,
+  `mail status`
+- Progress you can act on: `mail estimate` counts every folder from Microsoft's own counters and
+  turns the measured speed of the previous run into a duration; `mail sync` reports
+  `[ 42.3%] 2053/4881 messages · 7.9 msg/s · ETA 6m 0s` and switches to `[delta]` for a run that
+  only carries changes, where a percentage of the whole mailbox would be misleading
+
+**External tools (Rclone)**
+- One-click installation that never pipes a download into a shell: Nesva resolves the current
+  release, shows every step before anything happens - the download URL, the published SHA-256,
+  the unpack command, the target path - and then performs exactly those steps
+- The archive is verified against the publisher's `SHA256SUMS` before unpacking; a mismatch
+  installs nothing
+- Per-user install by default (no privileges, no password). An all-users install shows the exact
+  elevated command (`pkexec install -m 0755 ...`) before the password prompt; the archive is
+  never unpacked as root
+- After installation Nesva records the absolute path, so Rclone works even when
+  `~/.local/bin` is not on `PATH`
+- Desktop: Settings -> External tools -> Install Rclone; CLI: `nesva-cli tools rclone`
+  (`--install`, `--system`)
 
 **nesva (desktop application)**
 - Qt 6 Widgets shell: sidebar navigation, top status bar, page stack, bottom activity dock
@@ -112,15 +131,18 @@ is real, working functionality - not mockups:
 - Activity page: combined job + application event stream with live text filtering, sortable
   columns, and a shortcut to the log folder
 - Settings page: theme (system/light/dark), log verbosity, destructive-action confirmation,
-  real path inspection - all persisted in SQLite
+  real path inspection, and an External tools card that reports Rclone/Restic and offers the
+  Rclone installer with its full step preview - all persisted in SQLite
 - Light and dark palettes, programmatic theme-aware icon set, high-DPI, keyboard navigation
   (Ctrl+1..Ctrl+8), native menu bar, system tray integration
 - `--gui-selftest` mode that drives every page and writes PNG screenshots (headless or X11)
 
 **nesva-cli (automation and diagnostics)**
-- `status`, `doctor`, `jobs list`, `jobs run` (`--dry-run`, `--force`, `--retries`),
+- `status`, `doctor`, `tools` (`tools rclone [--install] [--system]`),
+  `jobs list`, `jobs run` (`--dry-run`, `--force`, `--retries`),
   `jobs cancel`, `storage list`, `storage test`, `archive list`, `archive restore`,
   `history list`, `verify`, `schedule list`, `agent status|run|cancel|reload|stop`,
+  `mail connect|accounts|folders|estimate|sync|status`,
   `repository init|check|locks|unlock|set-password`, `snapshots list`,
   `retention preview|apply` and `backup restore` implemented against the real database,
   repositories and agent socket, with `--json` output and documented exit codes
@@ -143,8 +165,8 @@ Verified development environment (Ubuntu 26.04, x86_64):
 | Ninja | 1.10+ | 1.13.2 |
 | Qt | 6.5+ (Core, Gui, Widgets, Sql, Network, Concurrent, Test) | 6.10.2 |
 | SQLite | via Qt SQL SQLite plugin | 3.46.1 |
-| Rclone | optional at build time; required for cloud remotes | not installed in this environment |
-| Restic | optional at build time; required for backup mode | not installed in this environment |
+| Rclone | optional at build time; required for cloud remotes | 1.75.2, installed by Nesva |
+| Restic | optional at build time; required for backup mode | 0.18.1 (SHA-256 verified install) |
 
 On Debian/Ubuntu the Qt dependencies are:
 
@@ -269,12 +291,14 @@ nesva/
 │   ├── providers/               storage provider interface, local + Rclone providers
 │   ├── scan/                    file scanner and exclusion rules
 │   ├── mail/                    Microsoft 365: OAuth PKCE, Graph client, EML exporter
+│   ├── tools/                   external tool installation (Rclone) with a reviewed plan
 │   ├── agent/                   agent service, IPC protocol and client
 │   ├── scheduler/               schedule model (next run, missed runs, retries)
-│   └── mail/                    reserved for Phase 5 Microsoft 365
+│   └── security/                keyring / Credential Manager secret store
 ├── tests/unit/                  Qt Test suites registered with CTest
 ├── docs/architecture/           overview + ADRs
 ├── docs/developer-guide/        build, test and packaging instructions
+├── docs/user-guide/             tutorial, Microsoft 365 setup, troubleshooting
 ├── packaging/                   desktop entry, Windows installer staging (Phase 6)
 ├── assets/icons/                application icon source
 └── scripts/                     developer helper scripts
@@ -297,6 +321,10 @@ nesva/
 - **No credentials anywhere.** No credential is stored, logged or transmitted; logs are redacted
   by construction, and credential *references* (not secrets) are the only thing the schema holds.
 - **Confirmation first.** The destructive-action confirmation setting defaults to enabled.
+- **Installs are reviewed and verified.** The Rclone installer shows every step before running it,
+  checks the publisher's SHA-256 before unpacking anything, installs per-user by default, and
+  never pipes a download into a shell. An all-users install displays the exact elevated command
+  first and unpacking never happens as root.
 
 ---
 

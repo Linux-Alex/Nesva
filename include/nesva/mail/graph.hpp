@@ -13,7 +13,7 @@
 #include <memory>
 
 #include "nesva/core/result.hpp"
-#include "nesva/mail/http.hpp"
+#include "nesva/core/http.hpp"
 #include "nesva/mail/oauth.hpp"
 
 namespace nesva::mail {

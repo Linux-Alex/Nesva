@@ -41,14 +41,43 @@ struct MailExportReport {
     qint64 bytesWritten = 0;
     QStringList errors;
 
+    /// How much mail the run had in front of it, from Microsoft's own folder
+    /// counters, and how long it took. Used for progress and for estimating the
+    /// next run; never as a decision.
+    qint64 totalMessages = 0;
+    double elapsedSeconds = 0;
+    /// True when only changes were fetched (every folder had a delta cursor),
+    /// where a percentage of the whole mailbox would be meaningless.
+    bool incremental = false;
+
     bool succeeded() const { return failed == 0; }
+    double messagesPerSecond() const {
+        return elapsedSeconds > 0 ? static_cast<double>(messagesSeen) / elapsedSeconds : 0.0;
+    }
 };
 
+/// Live progress for a long first sync.
 struct MailProgress {
     QString folder;
+    int folderIndex = 0;
+    int folderCount = 0;
     int messagesSeen = 0;
     int exported = 0;
     int failed = 0;
+
+    /// Messages examined so far, and the size of the mailbox in scope (0 when
+    /// the run is incremental, so no honest percentage exists).
+    qint64 done = 0;
+    qint64 total = 0;
+    qint64 bytesWritten = 0;
+    double messagesPerSecond = 0;
+    qint64 etaSeconds = -1; ///< -1 when it cannot be estimated
+    bool incremental = false;
+
+    /// Percentage of the scope, or -1 when it is unknown.
+    double percent() const {
+        return total > 0 ? 100.0 * static_cast<double>(done) / static_cast<double>(total) : -1.0;
+    }
 };
 
 /// Exports Microsoft 365 mail as individual .eml files.

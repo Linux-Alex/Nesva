@@ -5,7 +5,9 @@
 
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
+#include <QtCore/QHash>
 #include <QtCore/QJsonObject>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSaveFile>
@@ -88,11 +90,20 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
     MailExportReport report;
     int messagesSeen = 0;
 
-    for (const MailFolderRecord& folder : allFolders.value()) {
-        if (cancellation.isCancelled()) {
-            report.errors.append(QStringLiteral("cancelled by the user"));
-            return report;
+    // What this run will look at, and how big it is. The totals are Microsoft's
+    // own folder counters, so the run can report "12% of 2 938 messages" rather
+    // than only "12 processed". They are used for progress only: whether a
+    // message is exported never depends on them.
+    QVector<MailFolderRecord> selected;
+    const Result<QVector<MailFolderStats>> folderStats = store.folderStats(accountId);
+    QHash<qint64, MailFolderStats> statsByRow;
+    if (folderStats) {
+        for (const MailFolderStats& stats : folderStats.value()) {
+            statsByRow.insert(stats.folderRowId, stats);
         }
+    }
+    int foldersWithCursor = 0;
+    for (const MailFolderRecord& folder : allFolders.value()) {
         if (!folder.syncEnabled) {
             continue;
         }
@@ -100,7 +111,57 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
             !options.folderRemoteIds.contains(folder.remoteId)) {
             continue;
         }
+        selected.append(folder);
+        report.totalMessages += folder.totalItemCount;
+        if (!folder.deltaLink.isEmpty()) {
+            ++foldersWithCursor;
+        }
+    }
+    // A delta-only run reports what changed, not a slice of the mailbox: a
+    // percentage of the whole mailbox would be a lie, so it is not offered.
+    report.incremental = !options.fullResync && foldersWithCursor == selected.size();
 
+    QElapsedTimer clock;
+    clock.start();
+    qint64 processed = 0;
+    int folderIndex = 0;
+
+    const auto publishProgress = [&](const QString& folderName) {
+        if (!progress_) {
+            return;
+        }
+        MailProgress update;
+        update.folder = folderName;
+        update.folderIndex = folderIndex;
+        update.folderCount = static_cast<int>(selected.size());
+        update.messagesSeen = messagesSeen;
+        update.exported = report.exported;
+        update.failed = report.failed;
+        update.done = processed;
+        update.bytesWritten = report.bytesWritten;
+        update.incremental = report.incremental;
+        // Nanoseconds, not milliseconds: a fast run would otherwise report a
+        // rate of zero because "0 ms" is not a duration.
+        const double elapsed = static_cast<double>(clock.nsecsElapsed()) / 1.0e9;
+        update.messagesPerSecond = elapsed > 0 ? static_cast<double>(processed) / elapsed : 0.0;
+        if (!report.incremental) {
+            update.total = report.totalMessages;
+            if (update.messagesPerSecond > 0 && report.totalMessages > processed) {
+                update.etaSeconds = static_cast<qint64>(
+                    static_cast<double>(report.totalMessages - processed) /
+                    update.messagesPerSecond);
+            }
+        }
+        progress_(update);
+    };
+
+    for (const MailFolderRecord& folder : selected) {
+        if (cancellation.isCancelled()) {
+            report.errors.append(QStringLiteral("cancelled by the user"));
+            return report;
+        }
+        ++folderIndex;
+        publishProgress(folder.displayName);
         ++report.folders;
         QString cursor = options.fullResync ? QString() : folder.deltaLink;
         int pageCount = 0;
@@ -135,10 +196,12 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                 }
                 ++messagesSeen;
                 ++report.messagesSeen;
+                ++processed;
                 if (options.maxMessages > 0 && report.messagesSeen > options.maxMessages) {
                     truncated = true;
                     break;
                 }
+                publishProgress(folder.displayName);
 
                 if (message.removed) {
                     // The message is gone (or moved) in Microsoft 365. The local
@@ -208,6 +271,7 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                 record.messageKey = messageKey;
                 record.emlPath = relative;
                 record.emlSha256 = sha256OfBytes(mime.value());
+                record.sizeBytes = static_cast<qint64>(mime.value().size());
                 record.exportState = QStringLiteral("exported");
                 record.lastModifiedAt = lastModified;
                 if (!store.upsertMessage(accountId, folder.id, record).ok()) {
@@ -217,11 +281,7 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
                     continue;
                 }
                 ++report.exported;
-
-                if (progress_) {
-                    progress_(MailProgress{folder.displayName, messagesSeen, report.exported,
-                                           report.failed});
-                }
+                publishProgress(folder.displayName);
             }
 
             if (truncated) {
@@ -250,13 +310,20 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
         }
     }
 
+    report.elapsedSeconds = static_cast<double>(clock.nsecsElapsed()) / 1.0e9;
     store.updateAccountStatus(accountId, QStringLiteral("connected"),
                               db::Database::currentTimestampUtc());
+    // The measured speed is what lets the next run estimate its own duration.
+    if (report.messagesSeen > 0 && report.elapsedSeconds > 0) {
+        store.recordSyncStats(accountId, report.messagesSeen, report.bytesWritten,
+                              report.elapsedSeconds);
+    }
     logInfo("mail.exporter", QStringLiteral("mail export finished"),
             QJsonObject{{QStringLiteral("account"), account.value().accountIdentifier},
                         {QStringLiteral("exported"), report.exported},
                         {QStringLiteral("skipped"), report.skipped},
-                        {QStringLiteral("failed"), report.failed}});
+                        {QStringLiteral("failed"), report.failed},
+                        {QStringLiteral("messages_per_second"), report.messagesPerSecond()}});
     return report;
 }
 
