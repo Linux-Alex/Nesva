@@ -169,6 +169,9 @@ QString humanDuration(qint64 seconds) {
     if (seconds < 0) {
         return QStringLiteral("unknown");
     }
+    if (seconds <= 0) {
+        return QStringLiteral("under a second");
+    }
     if (seconds < 60) {
         return QStringLiteral("%1s").arg(seconds);
     }

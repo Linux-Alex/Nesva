@@ -313,9 +313,11 @@ Result<MailExportReport> MailExporter::run(qint64 accountId, const MailExportOpt
     report.elapsedSeconds = static_cast<double>(clock.nsecsElapsed()) / 1.0e9;
     store.updateAccountStatus(accountId, QStringLiteral("connected"),
                               db::Database::currentTimestampUtc());
-    // The measured speed is what lets the next run estimate its own duration.
-    if (report.messagesSeen > 0 && report.elapsedSeconds > 0) {
-        store.recordSyncStats(accountId, report.messagesSeen, report.bytesWritten,
+    // The measured speed is what lets the next run estimate its own duration,
+    // so it must measure downloading: a run that only skipped unchanged
+    // messages would otherwise report a rate nothing can be estimated from.
+    if (report.exported > 0 && report.elapsedSeconds > 0) {
+        store.recordSyncStats(accountId, report.exported, report.bytesWritten,
                               report.elapsedSeconds);
     }
     logInfo("mail.exporter", QStringLiteral("mail export finished"),
