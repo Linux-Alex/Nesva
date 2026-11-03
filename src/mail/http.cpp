@@ -26,7 +26,8 @@ HttpResponse QNetworkHttpTransport::send(HttpVerb verb, const QUrl& url,
         request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
     }
 
-    QByteArray payload = body;
+    const QByteArray payload = body;
+    const int effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : 30000;
 
     QNetworkReply* reply = nullptr;
     switch (verb) {
@@ -40,34 +41,60 @@ HttpResponse QNetworkHttpTransport::send(HttpVerb verb, const QUrl& url,
         reply = manager.put(request, payload);
         break;
     }
+    if (reply == nullptr) {
+        response.error = QStringLiteral("the request could not be created");
+        return response;
+    }
 
+    // Connect before the loop runs, then check for a request that already
+    // finished: a synchronous failure would otherwise wait for the timeout.
+    bool timedOut = false;
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, &loop, [&loop, reply] {
-        if (reply != nullptr && reply->isRunning()) {
+    QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
+        timedOut = true;
+        if (reply->isRunning()) {
             reply->abort();
         }
         loop.quit();
     });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timer.start(timeoutMs > 0 ? timeoutMs : 30000);
-    loop.exec();
+    if (!reply->isFinished()) {
+        timer.start(effectiveTimeoutMs);
+        loop.exec();
+    }
+    timer.stop();
 
-    if (reply->error() != QNetworkReply::NoError) {
-        // An aborted request is a timeout, not an HTTP status.
-        response.error = reply->errorString();
-        response.statusCode = 0;
-    } else {
-        response.statusCode =
-            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    // Qt reports HTTP error statuses (4xx/5xx) through QNetworkReply::error(),
+    // so the reply error alone does not mean the exchange failed at the
+    // transport level. The presence of a status code is what distinguishes a
+    // server response from a broken connection, and the body must be kept:
+    // callers need it to read the error document and to honour Retry-After.
+    const QVariant statusAttribute = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    const int statusCode = statusAttribute.isValid() ? statusAttribute.toInt() : 0;
+
+    if (statusCode > 0) {
+        response.statusCode = statusCode;
         response.body = reply->readAll();
         response.contentType = reply->rawHeader("Content-Type");
         for (const QByteArray& name : reply->rawHeaderList()) {
             response.headers.insert(QString::fromUtf8(name).toLower(),
                                     QString::fromUtf8(reply->rawHeader(name)));
         }
+    } else {
+        response.statusCode = 0;
+        if (timedOut) {
+            response.error =
+                QStringLiteral("the request timed out after %1 ms").arg(effectiveTimeoutMs);
+        } else {
+            response.error = reply->errorString();
+            if (response.error.isEmpty()) {
+                response.error = QStringLiteral("the request failed without an HTTP response");
+            }
+        }
     }
+
     reply->deleteLater();
     return response;
 }

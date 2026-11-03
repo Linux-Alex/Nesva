@@ -10,6 +10,10 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QTemporaryDir>
 
+#include <QtNetwork/QHostAddress>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
+
 #include <functional>
 #include <memory>
 
@@ -83,6 +87,40 @@ public:
 
 } // namespace
 
+/// Minimal HTTP server that answers every request with a canned response, so
+/// the real QNetworkHttpTransport can be exercised without a network or tenant.
+class CannedHttpServer {
+public:
+    explicit CannedHttpServer(QByteArray response) : response_(std::move(response)) {}
+
+    bool listen() {
+        if (!server_.listen(QHostAddress::LocalHost, 0)) {
+            return false;
+        }
+        QObject::connect(&server_, &QTcpServer::newConnection, &server_, [this] {
+            while (QTcpSocket* socket = server_.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+                    socket->readAll();
+                    socket->write(response_);
+                    socket->flush();
+                    socket->disconnectFromHost();
+                });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket,
+                                 &QObject::deleteLater);
+            }
+        });
+        return true;
+    }
+
+    QUrl url() const {
+        return QUrl(QStringLiteral("http://127.0.0.1:%1/probe").arg(server_.serverPort()));
+    }
+
+private:
+    QTcpServer server_;
+    QByteArray response_;
+};
+
 class MailTest : public QObject {
     Q_OBJECT
 
@@ -100,6 +138,8 @@ private slots:
     void exportsMessagesAndRecordsDelta();
     void secondRunSkipsUnchangedMessages();
     void honoursStatusErrors();
+    void httpErrorStatusKeepsBodyAndHeaders();
+    void unreachableHostHasNoStatusCode();
 
 private:
     qint64 seedAccountAndFolders() {
@@ -316,6 +356,52 @@ void MailTest::honoursStatusErrors() {
     // The folder error is reported, nothing is silently treated as success.
     QVERIFY(!report.value().errors.isEmpty());
     QCOMPARE(report.value().exported, 0);
+}
+
+void MailTest::httpErrorStatusKeepsBodyAndHeaders() {
+    // Qt raises QNetworkReply::error() for HTTP 4xx/5xx. The transport must not
+    // mistake that for "no response": the status code, the error document and
+    // Retry-After are what callers need (refresh-once, backoff, diagnostics).
+    const QByteArray body =
+        R"({"error":"invalid_grant","error_description":"AADSTS50011: redirect mismatch"})";
+    const QByteArray response = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n"
+                                "Retry-After: 7\r\nContent-Length: " +
+                                QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" +
+                                body;
+    CannedHttpServer server(response);
+    QVERIFY(server.listen());
+
+    net::QNetworkHttpTransport transport;
+    const net::HttpResponse result =
+        transport.send(net::HttpVerb::Post, server.url(),
+                       {{QStringLiteral("Content-Type"),
+                         QStringLiteral("application/x-www-form-urlencoded")}},
+                       QByteArrayLiteral("client_id=probe"), 5000);
+
+    QCOMPARE(result.statusCode, 400);
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.body, body);
+    QCOMPARE(result.headers.value(QStringLiteral("retry-after")), QStringLiteral("7"));
+    QVERIFY(result.error.isEmpty());
+}
+
+void MailTest::unreachableHostHasNoStatusCode() {
+    // A closed port is a transport failure: status 0 with a non-empty reason,
+    // which is what the callers report instead of a misleading "(0: )".
+    quint16 port = 0;
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        port = probe.serverPort();
+    }
+
+    net::QNetworkHttpTransport transport;
+    const net::HttpResponse result = transport.send(
+        net::HttpVerb::Get, QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(port)), {}, {}, 5000);
+
+    QCOMPARE(result.statusCode, 0);
+    QVERIFY(!result.error.isEmpty());
+    QVERIFY(result.body.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(MailTest)

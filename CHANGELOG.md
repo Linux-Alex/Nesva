@@ -6,6 +6,16 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **HTTP transport discarded every error response.** Qt reports an HTTP 4xx/5xx as a
+  `QNetworkReply` error, and the transport treated any reply error as "no HTTP response": the
+  status code collapsed to 0 and the body was dropped. Consequences fixed: a rejected token
+  request now reports the real AAD error instead of `0:`; Graph 401 token refresh, 429
+  `Retry-After` throttling and 5xx backoff now receive the status they act on. Also
+  distinguishes a real transport failure (no status) from a server error, and reports timeouts
+  as timeouts instead of a bare cancellation.
+
 ## [0.5.0] - 2026-11-02
 
 Phase 5 (in progress): Microsoft 365 mail archival. The engine, the CLI and the tests are in

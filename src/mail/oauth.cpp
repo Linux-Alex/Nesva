@@ -354,9 +354,20 @@ Result<TokenSet> interactiveAuthorize(const OAuthConfig& config,
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (response.statusCode == 0) {
+            // No HTTP exchange happened at all: report the transport failure
+            // rather than a status code, which would read as "(0: )".
+            return makeErrorValue(ErrorCode::ExternalToolFailed,
+                                  "the token endpoint could not be reached",
+                                  response.error.isEmpty()
+                                      ? "the request failed without an HTTP response"
+                                      : response.error.toStdString());
+        }
         const QJsonObject error = QJsonDocument::fromJson(response.body).object();
         const QString description =
             error.value(QStringLiteral("error_description")).toString();
+        logWarn("mail.oauth", QStringLiteral("the token request was rejected"),
+                QJsonObject{{QStringLiteral("status"), response.statusCode}});
         return makeErrorValue(ErrorCode::PermissionDenied,
                               "the token request failed",
                               QString::number(response.statusCode).toStdString() + ": " +

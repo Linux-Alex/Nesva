@@ -1924,6 +1924,10 @@ int commandMail(Context& context, const Options& options) {
                 std::fflush(stderr);
             });
         if (!tokens) {
+            std::fprintf(stderr,
+                         "\nAn authorization code can be redeemed only once; "
+                         "run this command again to start a fresh sign-in.\n");
+            std::fflush(stderr);
             return output.flushError(tokens.error(), kExitFailure);
         }
         if (tokens.value().refreshToken.isEmpty()) {
