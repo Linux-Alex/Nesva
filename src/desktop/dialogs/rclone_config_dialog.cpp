@@ -6,6 +6,7 @@
 #include <QtCore/QProcess>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QStandardPaths>
+#include <QtWidgets/QComboBox>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
@@ -31,36 +32,120 @@ QString stripAnsi(const QString& text) {
     return cleaned;
 }
 
-QString guideHtml(const QString& remoteName) {
-    return QStringLiteral(
-        "<h3>Create the remote in rclone</h3>"
-        "<p>This is rclone's own configuration; the password and the two-factor code go straight "
-        "into rclone and are never stored by Nesva.</p>"
-        "<ol>"
-        "<li><b>New remote?</b> &rarr; <code>n</code></li>"
-        "<li><b>name&gt;</b> &rarr; <code>%1</code> (the name you will use as <code>%1:</code>)</li>"
-        "<li><b>Storage&gt;</b> &rarr; type <code>iclouddrive</code> and press Enter "
-        "(for the family photos you can pick <code>photos</code> later in another remote)</li>"
-        "<li><b>service&gt;</b> &rarr; <code>drive</code> for iCloud Drive</li>"
-        "<li><b>apple_id&gt;</b> &rarr; the Apple ID of the account that owns the storage</li>"
-        "<li><b>password&gt;</b> &rarr; the Apple ID password (not an app-specific password: the "
-        "web API Nesva uses requires the real one plus 2FA)</li>"
-        "<li><b>2FA code</b> &rarr; the six digits Apple shows on your trusted device</li>"
-        "<li><b>Edit advanced config?</b> &rarr; <code>n</code></li>"
-        "<li><b>Keep this remote?</b> &rarr; <code>y</code></li>"
-        "<li><b>Quit config</b> &rarr; <code>q</code></li>"
-        "</ol>"
-        "<p>When it finishes, press <b>Check</b> in the dialog and the run continues.</p>"
-        "<h3>If it fails with 401 / &quot;unauthorised&quot;</h3>"
-        "<p>Apple invalidates the saved session when the password changes, when two-factor is "
-        "reset, or simply after a few weeks. Run this wizard again (or <code>rclone config "
-        "update %1</code>) and enter a fresh 2FA code. Nesva marks the storage provider as "
-        "needing re-authentication and refuses to start a run until it is fixed, instead of "
-        "failing file by file.</p>")
-        .arg(remoteName.toHtmlEscaped());
-}
-
 } // namespace
+
+QVector<RcloneProviderProfile> rcloneProviderProfiles() {
+    QVector<RcloneProviderProfile> profiles;
+
+    profiles.append({QStringLiteral("iclouddrive"), QStringLiteral("iCloud Drive"),
+                     QStringLiteral("iclouddrive"), QStringLiteral("icloud"),
+                     QStringLiteral(
+                         "<h3>iCloud Drive</h3>"
+                         "<p>Apple has no public API, so rclone uses the iCloud web session: it needs the <b>real</b> Apple ID password (an app-specific password does not work) plus a two-factor code.</p>"
+                         "<ol>"
+                         "<li><b>New remote?</b> &rarr; <code>n</code> &nbsp; <b>name&gt;</b> &rarr; <code>icloud</code></li>"
+                         "<li><b>Storage&gt;</b> &rarr; <code>iclouddrive</code></li>"
+                         "<li><b>service&gt;</b> &rarr; <code>drive</code> (or <code>photos</code>)</li>"
+                         "<li><b>apple_id&gt;</b> &rarr; your Apple ID</li>"
+                         "<li><b>Option password</b> offers <code>y</code> / <code>g</code>: answer <code>y</code> <b>first</b>, then type the password at the next prompt</li>"
+                         "<li><b>2FA code</b> &rarr; the six digits Apple shows</li>"
+                         "<li><b>Edit advanced config?</b> &rarr; <code>n</code>, <b>Keep this remote?</b> &rarr; <code>y</code>, then <code>q</code></li>"
+                         "</ol>"
+                         "<p>The session lasts weeks, not forever: when it expires Nesva marks the provider as needing re-authentication. Run this wizard again for a fresh code.</p>"
+                         )});
+    profiles.append({QStringLiteral("drive"), QStringLiteral("Google Drive"),
+                     QStringLiteral("drive"), QStringLiteral("gdrive"),
+                     QStringLiteral(
+                         "<h3>Google Drive</h3>"
+                         "<p>Google rate-limits rclone shared client ID, so create your own OAuth client once:</p>"
+                         "<ol>"
+                         "<li><b>console.cloud.google.com</b> &rarr; new project (any name).</li>"
+                         "<li><b>APIs &amp; Services &rarr; Library</b> &rarr; enable <b>Google Drive API</b>.</li>"
+                         "<li><b>OAuth consent screen</b> &rarr; External &rarr; add your account under <i>Test users</i>.</li>"
+                         "<li><b>Credentials &rarr; Create credentials &rarr; OAuth client ID</b> &rarr; type <b>Desktop app</b> &rarr; copy client ID and secret.</li>"
+                         "</ol>"
+                         "<p>Then in this session:</p>"
+                         "<ol>"
+                         "<li><code>n</code> &nbsp; <b>name&gt;</b> &rarr; <code>gdrive</code></li>"
+                         "<li><b>Storage&gt;</b> &rarr; <code>drive</code></li>"
+                         "<li><b>client_id</b> &rarr; paste it (do not leave it empty)</li>"
+                         "<li><b>client_secret</b> &rarr; paste it</li>"
+                         "<li><b>scope&gt;</b> &rarr; Enter (default <code>drive</code>)</li>"
+                         "<li><b>service_account_file</b> &rarr; Enter; any later <b>client_id</b>/<b>token</b> prompt &rarr; Enter</li>"
+                         "<li><b>Edit advanced config?</b> &rarr; <code>n</code></li>"
+                         "<li><b>Use web browser to automatically authenticate?</b> &rarr; <code>y</code> &rarr; sign in, allow access</li>"
+                         "<li><b>Keep this remote?</b> &rarr; <code>y</code>, then <code>q</code></li>"
+                         "</ol>"
+                         "<p>15 GB free, shared with Gmail and Photos. Use it as <code>gdrive:</code> or <code>gdrive:Nesva/Archive</code>.</p>"
+                         )});
+    profiles.append({QStringLiteral("pcloud"), QStringLiteral("pCloud"),
+                     QStringLiteral("pcloud"), QStringLiteral("pcloud"),
+                     QStringLiteral(
+                         "<h3>pCloud</h3>"
+                         "<p>Nothing to create in a console: the credentials are your pCloud account.</p>"
+                         "<ol>"
+                         "<li><code>n</code> &nbsp; <b>name&gt;</b> &rarr; <code>pcloud</code></li>"
+                         "<li><b>Storage&gt;</b> &rarr; <code>pcloud</code></li>"
+                         "<li><b>client_id</b> &rarr; Enter (empty uses rclone registered app)</li>"
+                         "<li><b>client_secret</b> &rarr; Enter</li>"
+                         "<li><b>Use web browser to automatically authenticate?</b> &rarr; <code>y</code> &rarr; sign in and allow access</li>"
+                         "<li><b>Edit advanced config?</b> &rarr; <code>n</code>, <b>Keep this remote?</b> &rarr; <code>y</code>, then <code>q</code></li>"
+                         "</ol>"
+                         "<p>About 10 GB free. If asked for a <b>hostname</b>, <code>eapi.pcloud.com</code> keeps the data in the EU.</p>"
+                         )});
+    profiles.append({QStringLiteral("b2"), QStringLiteral("Backblaze B2"),
+                     QStringLiteral("b2"), QStringLiteral("b2"),
+                     QStringLiteral(
+                         "<h3>Backblaze B2</h3>"
+                         "<p>Object storage with a 10 GB free tier and static keys: nothing expires, no browser. The best test target of the four.</p>"
+                         "<ol>"
+                         "<li><b>backblaze.com</b> &rarr; sign up (free tier needs no card).</li>"
+                         "<li><b>Buckets &rarr; Create a Bucket</b> &rarr; unique name, keep it <b>Private</b>.</li>"
+                         "<li><b>My Settings &rarr; Application Keys &rarr; Add a New Application Key</b> &rarr; name <code>nesva</code>, allow all buckets &rarr; create.</li>"
+                         "<li>Copy <b>keyID</b> and <b>applicationKey</b> now: the second value is shown only once.</li>"
+                         "</ol>"
+                         "<p>Then in this session:</p>"
+                         "<ol>"
+                         "<li><code>n</code> &nbsp; <b>name&gt;</b> &rarr; <code>b2</code></li>"
+                         "<li><b>Storage&gt;</b> &rarr; <code>b2</code></li>"
+                         "<li><b>account</b> &rarr; the <b>keyID</b></li>"
+                         "<li><b>key</b> &rarr; the <b>applicationKey</b></li>"
+                         "<li><b>hard_delete</b> &rarr; Enter (keep <code>false</code>: Nesva never deletes)</li>"
+                         "<li><b>Edit advanced config?</b> &rarr; <code>n</code>, <b>Keep this remote?</b> &rarr; <code>y</code>, then <code>q</code></li>"
+                         "</ol>"
+                         "<p>Address the remote as <code>b2:your-bucket-name</code>. B2 is also a native Restic backend.</p>"
+                         )});
+    profiles.append({QStringLiteral("onedrive"), QStringLiteral("Microsoft OneDrive"),
+                     QStringLiteral("onedrive"), QStringLiteral("onedrive"),
+                     QStringLiteral(
+                         "<h3>OneDrive</h3>"
+                         "<ol>"
+                         "<li><code>n</code> &nbsp; <b>name&gt;</b> &rarr; <code>onedrive</code></li>"
+                         "<li><b>Storage&gt;</b> &rarr; <code>onedrive</code></li>"
+                         "<li>Choose <b>OneDrive Personal or Business</b>; accept the default client ID and secret with Enter</li>"
+                         "<li><b>Use web browser to automatically authenticate?</b> &rarr; <code>y</code> and sign in</li>"
+                         "<li>Pick the <b>drive</b> to use (usually <i>root</i>)</li>"
+                         "<li><b>Edit advanced config?</b> &rarr; <code>n</code>, <b>Keep this remote?</b> &rarr; <code>y</code>, then <code>q</code></li>"
+                         "</ol>"
+                         "<p>5 GB free on a personal account.</p>"
+                         )});
+    profiles.append({QStringLiteral("webdav"), QStringLiteral("WebDAV / NAS"),
+                     QStringLiteral("webdav"), QStringLiteral("nas"),
+                     QStringLiteral(
+                         "<h3>WebDAV (NAS, Nextcloud, Storage Box)</h3>"
+                         "<ol>"
+                         "<li><code>n</code> &nbsp; <b>name&gt;</b> &rarr; <code>nas</code></li>"
+                         "<li><b>Storage&gt;</b> &rarr; <code>webdav</code></li>"
+                         "<li><b>url</b> &rarr; the WebDAV endpoint</li>"
+                         "<li><b>vendor</b> &rarr; <code>nextcloud</code> / <code>owncloud</code> / <code>other</code></li>"
+                         "<li><b>user</b> / <b>pass</b> &rarr; usually an app password</li>"
+                         "<li><b>Edit advanced config?</b> &rarr; <code>n</code>, <b>Keep this remote?</b> &rarr; <code>y</code>, then <code>q</code></li>"
+                         "</ol>"
+                         "<p>No account needed for a local test: run <code>rclone serve webdav /tmp/store --addr 127.0.0.1:8088</code> and use <code>http://127.0.0.1:8088</code> with any user/password.</p>"
+                         )});
+
+    return profiles;
+}
 
 RcloneConfigDialog::RcloneConfigDialog(AppContext& context, const QString& remoteName,
                                        QWidget* parent)
@@ -77,10 +162,22 @@ RcloneConfigDialog::RcloneConfigDialog(AppContext& context, const QString& remot
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(16, 14, 16, 12);
 
+    // Provider selector: changing it swaps the walkthrough on the left and the
+    // name/backend suggestions offered at rclone's prompts.
+    profiles_ = rcloneProviderProfiles();
+    auto* providerRow = new QHBoxLayout();
+    providerRow->addWidget(new QLabel(QStringLiteral("Provider:"), this));
+    providerCombo_ = new QComboBox(this);
+    providerCombo_->setObjectName(QStringLiteral("rcloneProvider"));
+    for (const RcloneProviderProfile& entry : profiles_) {
+        providerCombo_->addItem(entry.label, entry.key);
+    }
+    providerRow->addWidget(providerCombo_, 1);
+    root->addLayout(providerRow);
+
     auto* splitter = new QSplitter(Qt::Horizontal, this);
 
     guide_ = new QTextBrowser(splitter);
-    guide_->setHtml(guideHtml(remoteName_));
     guide_->setOpenExternalLinks(true);
     guide_->setMinimumWidth(320);
     splitter->addWidget(guide_);
@@ -130,8 +227,19 @@ RcloneConfigDialog::RcloneConfigDialog(AppContext& context, const QString& remot
     buttons->addWidget(closeButton_);
     root->addLayout(buttons);
 
+    // Pressing Enter in the answer line must send ONE line. A QPushButton in a
+    // dialog is "auto default" by default, so Enter used to trigger the button
+    // as well as returnPressed - every answer was sent twice, which is what made
+    // rclone re-ask ("Bad password: no characters in password").
+    for (QPushButton* button : {sendButton_, restartButton_, closeButton_}) {
+        button->setAutoDefault(false);
+        button->setDefault(false);
+    }
+
     connect(sendButton_, &QPushButton::clicked, this, [this] { sendLine(input_->text()); });
     connect(input_, &QLineEdit::returnPressed, this, [this] { sendLine(input_->text()); });
+    connect(providerCombo_, &QComboBox::currentIndexChanged, this,
+            [this](int index) { applyProfile(index); });
     connect(restartButton_, &QPushButton::clicked, this, [this] {
         if (process_ != nullptr) {
             return;
@@ -148,7 +256,42 @@ RcloneConfigDialog::RcloneConfigDialog(AppContext& context, const QString& remot
         reject();
     });
 
+    // Default to the profile whose remote name matches what the caller asked
+    // for ("icloud", "gdrive", "pcloud", "b2", ...).
+    for (int index = 0; index < profiles_.size(); ++index) {
+        if (profiles_.at(index).remote.compare(remoteName_, Qt::CaseInsensitive) == 0 ||
+            profiles_.at(index).backend.compare(remoteName_, Qt::CaseInsensitive) == 0) {
+            providerCombo_->setCurrentIndex(index);
+            break;
+        }
+    }
+    applyProfile(providerCombo_->currentIndex());
+
     startSession();
+}
+
+const RcloneProviderProfile* RcloneConfigDialog::profile() const {
+    const int index = providerCombo_ != nullptr ? providerCombo_->currentIndex() : -1;
+    if (index < 0 || index >= profiles_.size()) {
+        return nullptr;
+    }
+    return &profiles_.at(index);
+}
+
+void RcloneConfigDialog::applyProfile(int index) {
+    if (index < 0 || index >= profiles_.size()) {
+        return;
+    }
+    const RcloneProviderProfile& chosen = profiles_.at(index);
+    remoteName_ = chosen.remote;
+    guide_->setHtml(chosen.html);
+    setWindowTitle(QStringLiteral("Configure Rclone - %1").arg(chosen.label));
+    if (statusLabel_ != nullptr) {
+        statusLabel_->setText(
+            QStringLiteral("Follow the %1 steps on the left; the live rclone session is on the "
+                           "right. Suggested remote name: %2 (use it as %2:).")
+                .arg(chosen.label, chosen.remote));
+    }
 }
 
 void RcloneConfigDialog::startSession() {
@@ -203,12 +346,19 @@ void RcloneConfigDialog::readOutput() {
     while (!lines.isEmpty() && lines.last().trimmed().isEmpty()) {
         lines.removeLast();
     }
-    if (!lines.isEmpty()) {
-        offerChoices(lines.last().trimmed());
+    // Remember which option rclone is asking about, so the quick buttons can be
+    // the right ones ("Option Storage." -> offer the backend names).
+    static const QRegularExpression optionLine(QStringLiteral("^Option ([A-Za-z0-9_]+)\\."));
+    for (const QString& line : lines) {
+        const QRegularExpressionMatch match = optionLine.match(line.trimmed());
+        if (match.hasMatch()) {
+            lastOption_ = match.captured(1);
+        }
     }
+    offerChoices();
 }
 
-void RcloneConfigDialog::offerChoices(const QString& prompt) {
+void RcloneConfigDialog::offerChoices() {
     while (QLayoutItem* item = choiceLayout_->takeAt(0)) {
         if (QWidget* widget = item->widget()) {
             widget->deleteLater();
@@ -218,9 +368,20 @@ void RcloneConfigDialog::offerChoices(const QString& prompt) {
     QStringList choices;
     static const QRegularExpression choicePrompt(
         QStringLiteral("^([A-Za-z0-9]+(?:/[A-Za-z0-9]+)+)>\\s*$"));
-    const QRegularExpressionMatch match = choicePrompt.match(prompt);
+    const QStringList tail = pendingOutput_.trimmed().split(QLatin1Char('\n'));
+    const QRegularExpressionMatch match =
+        choicePrompt.match(tail.isEmpty() ? QString() : tail.last().trimmed());
     if (match.hasMatch()) {
         choices = match.captured(1).split(QLatin1Char('/'));
+    } else if (lastOption_ == QStringLiteral("Storage")) {
+        // rclone accepts the backend name instead of the list number.
+        for (const RcloneProviderProfile& entry : profiles_) {
+            choices.append(entry.backend);
+        }
+        choices.append(QStringLiteral("local"));
+        choices.append(QStringLiteral("webdav"));
+    } else if (lastOption_ == QStringLiteral("password")) {
+        choices = {QStringLiteral("y"), QStringLiteral("g")};
     }
     for (const QString& choice : choices) {
         auto* button = new QPushButton(choice, choiceBar_);

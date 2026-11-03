@@ -8,6 +8,13 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Added (cloud credentials)
 
+- **Provider tutorials in the rclone wizard.** The dialog now has a provider selector
+  (iCloud Drive, Google Drive, pCloud, Backblaze B2, OneDrive, WebDAV/NAS); choosing one swaps the
+  walkthrough on the left and the suggested remote name, and the quick-answer buttons offer the
+  backend names at rclone's `Storage>` prompt. Each tutorial includes where the credentials come
+  from (Google Cloud OAuth client, Backblaze application key, pCloud sign-in).
+
+
 - **Guided rclone configuration** (`RcloneConfigDialog`): Storage ->
   **Configure / re-authenticate...** opens a split view - the walkthrough on the left, a live
   `rclone config` session on the right with the transcript, an answer line and quick-choice
@@ -31,6 +38,10 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Fixed (UI polish)
 
+- **Every answer in the rclone wizard was sent twice.** A `QPushButton` in a dialog is
+  "auto default", so pressing Enter in the answer line fired both `returnPressed` and the button,
+  writing two newlines: rclone then reported "Bad password: no characters in password" and re-asked
+  every question. The dialog's buttons no longer take the default role.
 - **Job list ID column.** The model returned the string "right" for `Qt::TextAlignmentRole`, which
   Qt ignores: the ID was drawn top-left in a cramped cell while other columns looked normal. It
   now returns a real `Qt::Alignment` (right + vertically centred), and the ID and source-count

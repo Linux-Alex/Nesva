@@ -32,6 +32,7 @@
 #include <QtCore/QTimer>
 
 #include "dialogs/job_editor_dialog.hpp"
+#include "dialogs/rclone_config_dialog.hpp"
 #include "time_display.hpp"
 #include "widgets/elided_label.hpp"
 #include "dialogs/snapshot_browser_dialog.hpp"
@@ -107,6 +108,7 @@ private slots:
     void dashboardCardsStackWhenNarrow();
     void jobModelAlignsNumericColumns();
     void timestampsUseTheConfiguredZone();
+    void rcloneWizardShipsPerProviderTutorials();
     void statusTextDoesNotResizeTheJobsTable();
     void settingsPageScrollsInsteadOfSqueezing();
     void mainWindowSwitchesPages();
@@ -367,6 +369,44 @@ void GuiSmokeTest::timestampsUseTheConfiguredZone() {
     QVERIFY(ui::resolveDisplayTimeZone(QString()).isValid());
     QCOMPARE(QString::fromUtf8(ui::resolveDisplayTimeZone(QStringLiteral("Not/AZone")).id()),
              QString::fromUtf8(QTimeZone::systemTimeZone().id()));
+}
+
+void GuiSmokeTest::rcloneWizardShipsPerProviderTutorials() {
+    // The wizard is the only place the credentials walkthrough lives, so every
+    // supported provider must ship one, with the backend name rclone expects.
+    const QVector<ui::RcloneProviderProfile> profiles = ui::rcloneProviderProfiles();
+    QVERIFY(profiles.size() >= 6);
+
+    QStringList backends;
+    for (const ui::RcloneProviderProfile& profile : profiles) {
+        backends.append(profile.backend);
+        QVERIFY2(!profile.html.isEmpty(), qPrintable(profile.label));
+        QVERIFY2(profile.html.contains(QStringLiteral("Storage&gt;")),
+                 qPrintable(profile.label));
+        QVERIFY2(!profile.remote.isEmpty(), qPrintable(profile.label));
+        // Every tutorial ends with the same two answers rclone needs.
+        QVERIFY2(profile.html.contains(QStringLiteral("Keep this remote?")),
+                 qPrintable(profile.label));
+    }
+    for (const QString& expected : {QStringLiteral("drive"), QStringLiteral("pcloud"),
+                                    QStringLiteral("b2"), QStringLiteral("onedrive"),
+                                    QStringLiteral("iclouddrive"), QStringLiteral("webdav")}) {
+        QVERIFY2(backends.contains(expected), qPrintable(expected));
+    }
+
+    // Google Drive must warn about needing your own OAuth client, and B2 must
+    // point at the application key screen: those are the two steps people miss.
+    const auto driveProfile = std::find_if(profiles.cbegin(), profiles.cend(), [](const auto& p) {
+        return p.backend == QStringLiteral("drive");
+    });
+    QVERIFY(driveProfile != profiles.cend());
+    QVERIFY(driveProfile->html.contains(QStringLiteral("OAuth client ID")));
+
+    const auto b2Profile = std::find_if(profiles.cbegin(), profiles.cend(), [](const auto& p) {
+        return p.backend == QStringLiteral("b2");
+    });
+    QVERIFY(b2Profile != profiles.cend());
+    QVERIFY(b2Profile->html.contains(QStringLiteral("Application Keys")));
 }
 
 void GuiSmokeTest::mailPageShowsAccountsAndFolderCounts() {

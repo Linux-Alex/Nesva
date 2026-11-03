@@ -5,6 +5,7 @@
 
 #include <QtWidgets/QDialog>
 
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
@@ -19,13 +20,23 @@ namespace nesva::ui {
 
 class AppContext;
 
+/// A supported rclone backend with the walkthrough for connecting it.
+struct RcloneProviderProfile {
+    QString key;      ///< stable id used by the combo box
+    QString label;    ///< shown in the UI
+    QString backend;  ///< value to type at rclone's "Storage>" prompt
+    QString remote;   ///< suggested remote name ("drive", "b2", ...)
+    QString html;     ///< the tutorial shown on the left
+};
+
+QVector<RcloneProviderProfile> rcloneProviderProfiles();
+
 /// Guided rclone config session.
 ///
-/// The left side is the walkthrough (what to answer, in order); the right side
-/// is a live session of "rclone config" that the user finishes by typing,
-/// including the Apple ID password and the two-factor code that only a human can
-/// supply. Nesva never learns those secrets: they go straight into rclone's own
-/// configuration.
+/// The left side is the walkthrough for the chosen provider; the right side is a
+/// live "rclone config" session the user finishes by typing, including the
+/// secrets and two-factor codes that only a human can supply. Nesva never learns
+/// them: they go straight into rclone's own configuration.
 ///
 /// rclone's questions are line based, so a transcript plus an input line is a
 /// faithful terminal and needs no PTY or terminal emulator on any platform.
@@ -43,13 +54,18 @@ private:
     void startSession();
     void readOutput();
     void sendLine(const QString& text);
-    void offerChoices(const QString& prompt);
+    void offerChoices();
     void finishSession(int exitCode, bool crashed);
+    void applyProfile(int index);
+    const RcloneProviderProfile* profile() const;
 
     AppContext& context_;
+    QVector<RcloneProviderProfile> profiles_;
     QString remoteName_;
     QString executable_;
+    QString lastOption_;
 
+    QComboBox* providerCombo_ = nullptr;
     QTextBrowser* guide_ = nullptr;
     QPlainTextEdit* transcript_ = nullptr;
     QLineEdit* input_ = nullptr;
@@ -60,7 +76,7 @@ private:
     QPushButton* restartButton_ = nullptr;
     QPushButton* closeButton_ = nullptr;
     QProcess* process_ = nullptr;
-    QString pendingOutput_;
+    QString pendingOutput_; ///< text seen since the last answer, used to spot the prompt
     bool configured_ = false;
     bool closing_ = false;
 };
