@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "app_context.hpp"
+#include "widgets/elided_label.hpp"
 #include "dialogs/snapshot_browser_dialog.hpp"
 #include "dialogs/snapshot_restore_dialog.hpp"
 #include "nesva/backup/restic.hpp"
@@ -74,9 +75,10 @@ SnapshotsPage::SnapshotsPage(AppContext& context, QWidget* parent)
     toolbar->addWidget(unlockButton_);
     body()->addLayout(toolbar);
 
-    statusLabel_ = new QLabel(this);
+    // Fixed single line: repository messages are long and must not reflow the
+    // snapshot table underneath them.
+    statusLabel_ = new ElidedLabel(this);
     statusLabel_->setObjectName(QStringLiteral("pageSubtitle"));
-    statusLabel_->setWordWrap(true);
     body()->addWidget(statusLabel_);
 
     busyBar_ = new QProgressBar(this);

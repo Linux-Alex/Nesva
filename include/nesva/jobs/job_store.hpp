@@ -65,8 +65,20 @@ struct ArchiveJob {
     backup::RetentionPolicy retention;
     bool checkAfterBackup = false;
 
+    /// Where the content comes from: 'filesystem' (the sources below) or 'mail'
+    /// (a Microsoft 365 mailbox archived as .eml files). Mail jobs keep archive
+    /// mode's copy semantics; the mode column is unchanged.
+    QString sourceKind = QStringLiteral("filesystem");
+    qint64 mailAccountId = 0; ///< mail_accounts.id, for sourceKind == "mail"
+
     bool isBackup() const { return mode == QStringLiteral("backup"); }
-    bool isValid() const { return !name.trimmed().isEmpty() && !sources.isEmpty(); }
+    bool isMail() const { return sourceKind == QStringLiteral("mail"); }
+    bool isValid() const {
+        if (name.trimmed().isEmpty()) {
+            return false;
+        }
+        return isMail() ? mailAccountId > 0 : !sources.isEmpty();
+    }
 };
 
 /// A stored schedule together with its scheduler bookkeeping.

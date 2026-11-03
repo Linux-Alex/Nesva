@@ -8,6 +8,17 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Added
 
+- **Mail archival is a job.** A job can now take its content from a Microsoft 365 mailbox
+  (`source_kind = 'mail'`, schema v6), so scheduled mail archiving gets the scheduler, retries,
+  run history, notifications and the agent's single-run guard without a special case.
+  `nesva-cli mail job <account> --to <dir> --schedule daily --time 03:00` creates it; the desktop
+  **Mail** page creates the same job and can start it with **Sync now**.
+- **Mail page** (new, Ctrl+5): connected accounts, per-folder counts with an include checkbox,
+  **Estimate** with a duration once a speed has been measured, **Sync now**, **Schedule job...**
+  and **Back up archive with Restic...**, which creates a backup job over the archive directory -
+  the versioned, encrypted counterpart of the plain `.eml` copy.
+- **Job editor: "Content" selector** - *Files and folders* or *Microsoft 365 mailbox* - with the
+  account picker and the mail-specific validation (an account and a destination directory).
 - **Rclone installation from inside Nesva.** Settings -> External tools -> *Install Rclone...*
   (CLI: `nesva-cli tools rclone`) resolves the current release and shows every step before
   anything happens: the download URL, the published SHA-256 check, the exact unpack command, the
@@ -36,6 +47,11 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Fixed
 
+- **Status lines no longer move the job table.** A long run message wrapped, grew its row and
+  pushed the Backup Jobs table down while a run was in progress; the error line appeared and
+  disappeared with the same effect. Status and error lines are now single-line labels that elide
+  with the full text in a tooltip, so the table geometry never changes. The same fix applies to the
+  Storage and Snapshots pages.
 - **Settings content was unreachable on a normal-height window.** Page bodies were a plain
   vertical layout, so a page with more cards than the window is tall compressed every card below
   its natural size: labels wrapped into unreadable slivers and the later sections - including the

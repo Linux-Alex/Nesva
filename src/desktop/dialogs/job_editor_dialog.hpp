@@ -54,6 +54,7 @@ private:
     jobs::ArchiveJob buildJob() const;
     sched::ScheduleSpec buildSchedule() const;
     void updateModeUi();
+    void updateSourceUi();
     void setRepositoryPassword();
     void initialiseRepository();
     void updateScheduleSummary();
@@ -66,6 +67,10 @@ private:
 
     QLineEdit* nameEdit_ = nullptr;
     QComboBox* modeCombo_ = nullptr;
+    QComboBox* sourceKind_ = nullptr;
+    QComboBox* mailAccount_ = nullptr;
+    QWidget* sourceRow_ = nullptr;
+    QWidget* mailAccountRow_ = nullptr;
     QListWidget* sourceList_ = nullptr;
     QComboBox* destinationKind_ = nullptr;
     QLineEdit* destinationPathEdit_ = nullptr;

@@ -12,6 +12,7 @@
 #include <QtWidgets/QTableView>
 
 #include "app_context.hpp"
+#include "widgets/elided_label.hpp"
 #include "nesva/agent/client.hpp"
 #include "dialogs/history_dialog.hpp"
 #include "dialogs/job_editor_dialog.hpp"
@@ -48,21 +49,21 @@ JobsPage::JobsPage(AppContext& context, QWidget* parent)
     toolbar->addWidget(refreshButton);
     body()->addLayout(toolbar);
 
+    // Status lines keep one fixed height: a longer message must never wrap and
+    // push the table below it around while a run is in progress.
     auto* progressRow = new QHBoxLayout();
     progressRow->setSpacing(8);
-    runLabel_ = new QLabel(this);
+    runLabel_ = new ElidedLabel(this);
     runLabel_->setObjectName(QStringLiteral("pageSubtitle"));
     runProgress_ = new QProgressBar(this);
     runProgress_->setVisible(false);
     runProgress_->setRange(0, 0);
     progressRow->addWidget(runLabel_, 1);
-    progressRow->addWidget(runProgress_, 1);
+    progressRow->addWidget(runProgress_, 0);
     body()->addLayout(progressRow);
 
-    errorLabel_ = new QLabel(this);
-    errorLabel_->setWordWrap(true);
+    errorLabel_ = new ElidedLabel(this);
     errorLabel_->setStyleSheet(QStringLiteral("color: #c0392b;"));
-    errorLabel_->setVisible(false);
     body()->addWidget(errorLabel_);
 
     emptyState_ = new QLabel(this);
@@ -139,8 +140,9 @@ JobsPage::JobsPage(AppContext& context, QWidget* parent)
 
 void JobsPage::refresh() {
     const QString error = model_->refresh();
+    // The label keeps its row: showing or clearing an error must not move the
+    // table, only fill the line that is already reserved for it.
     errorLabel_->setText(error);
-    errorLabel_->setVisible(!error.isEmpty());
 
     const bool hasJobs = model_->jobCount() > 0;
     view_->setVisible(hasJobs);

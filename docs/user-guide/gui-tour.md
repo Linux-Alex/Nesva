@@ -5,7 +5,7 @@ A short guide to the eight pages and the order in which to use them. The
 scenario; this page is only about what you click.
 
 Start it with `./build/linux-debug/nesva`. The window has a sidebar on the left
-(Ctrl+1 ... Ctrl+8), a status bar at the bottom, and the pages in the middle. Every page body
+(Ctrl+1 ... Ctrl+9), a status bar at the bottom, and the pages in the middle. Every page body
 scrolls, so a small window never hides a control.
 
 ---
@@ -80,7 +80,25 @@ What a job actually put where: the destination listing joined with the manifest,
 a real file at the destination with its hash. Useful as a sanity check after the first run, and
 to find a file before restoring it.
 
-## 5. Snapshots (Ctrl+5)
+## 5. Mail (Ctrl+5)
+
+Microsoft 365 archival on one page. Connecting a mailbox is a browser sign-in, so it happens once
+from a terminal (`nesva-cli mail connect`); after that everything is here.
+
+- **Account** selector: the connected mailboxes.
+- **Folder table**: per folder, how much mail Microsoft reports, how much is archived, how much is
+  left, and a checkbox that includes or excludes the folder.
+- **Estimate** counts the enabled folders and, once a sync has run, turns the measured speed into
+  a duration.
+- **Sync now** runs a real job: it creates the mail job on first use (asking for the archive
+  directory), then shows the same progress, history and notifications as any other job.
+- **Schedule job...** opens the normal job editor with the mail content preselected - daily or
+  weekly archival is one dialog away.
+- **Back up archive with Restic...** creates a *backup* job whose source is the mail archive
+  directory, which gives the .eml files versioned, encrypted snapshots instead of only a plain
+  copy.
+
+## 6. Snapshots (Ctrl+6)
 
 The Restic side of a backup job.
 
@@ -93,7 +111,7 @@ The Restic side of a backup job.
 - **Check repository** verifies integrity; **Unlock** clears a stale lock left by an interrupted
   run.
 
-## 6. Restore (Ctrl+6)
+## 7. Restore (Ctrl+7)
 
 Restoring from an archive job or from a snapshot.
 
@@ -106,13 +124,13 @@ Restoring from an archive job or from a snapshot.
 Restored files are verified against the recorded hash, and a run that could not verify a file
 says so instead of reporting success.
 
-## 7. Activity (Ctrl+7)
+## 8. Activity (Ctrl+8)
 
 Every job event and application event in one stream, with a text filter and sortable columns.
 This is the first place to look when something went wrong; **Open log folder** takes you to the
 JSON log if you need the detail.
 
-## 8. Settings (Ctrl+8)
+## 9. Settings (Ctrl+9)
 
 - **Appearance** - theme: follow system, light or dark.
 - **External tools** - the status of Rclone and Restic, and **Install Rclone...**, which shows the

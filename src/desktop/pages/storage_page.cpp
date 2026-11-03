@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "app_context.hpp"
+#include "widgets/elided_label.hpp"
 #include "nesva/config/settings_store.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/jobs/job_store.hpp"
@@ -52,15 +53,13 @@ StoragePage::StoragePage(AppContext& context, QWidget* parent)
     toolbar->addWidget(refreshButton);
     body()->addLayout(toolbar);
 
-    errorLabel_ = new QLabel(this);
-    errorLabel_->setWordWrap(true);
+    // One line each, fixed height: status text must never reflow the table.
+    errorLabel_ = new ElidedLabel(this);
     errorLabel_->setStyleSheet(QStringLiteral("color: #c0392b;"));
-    errorLabel_->setVisible(false);
     body()->addWidget(errorLabel_);
 
-    statusLabel_ = new QLabel(this);
+    statusLabel_ = new ElidedLabel(this);
     statusLabel_->setObjectName(QStringLiteral("pageSubtitle"));
-    statusLabel_->setWordWrap(true);
     body()->addWidget(statusLabel_);
 
     emptyState_ = new QLabel(this);
@@ -98,7 +97,7 @@ StoragePage::StoragePage(AppContext& context, QWidget* parent)
 
 void StoragePage::refresh() {
     model_->removeRows(0, model_->rowCount());
-    errorLabel_->setVisible(false);
+    errorLabel_->clearText();
 
     Result<QSqlQuery> query = context_.database().select(QStringLiteral(
         "SELECT id, name, provider_type, "
@@ -107,7 +106,6 @@ void StoragePage::refresh() {
         "FROM storage_providers ORDER BY name"));
     if (!query) {
         errorLabel_->setText(QString::fromStdString(query.error().toDisplayString()));
-        errorLabel_->setVisible(true);
         return;
     }
 

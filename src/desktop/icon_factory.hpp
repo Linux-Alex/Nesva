@@ -18,6 +18,7 @@ enum class Glyph {
     Snapshots,
     Restore,
     Activity,
+    Mail,
     Settings,
 };
 

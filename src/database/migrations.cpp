@@ -360,6 +360,18 @@ QStringList migrationV4Statements() {
     };
 }
 
+QStringList migrationV6Statements() {
+    return {
+        // A job's content can come from a filesystem tree or from a Microsoft 365
+        // mailbox. Mail archival keeps archive mode's copy semantics, so the mode
+        // column stays as it is and the source is described separately.
+        QStringLiteral("ALTER TABLE backup_jobs ADD COLUMN source_kind TEXT NOT NULL DEFAULT "
+                       "'filesystem' CHECK (source_kind IN ('filesystem','mail'))"),
+        QStringLiteral("ALTER TABLE backup_jobs ADD COLUMN mail_account_id INTEGER "
+                       "REFERENCES mail_accounts(id) ON DELETE SET NULL"),
+    };
+}
+
 QStringList migrationV5Statements() {
     return {
         // Message counts per folder, so a sync can state how much work is ahead
@@ -430,6 +442,13 @@ const std::vector<Migration>& allMigrations() {
             QStringLiteral("Mail: per-folder message counts, archived sizes and the speed of the "
                            "last sync, so progress and duration can be reported."),
             migrationV5Statements(),
+        },
+        Migration{
+            6,
+            QStringLiteral("mail-archive-jobs"),
+            QStringLiteral("A job's content may come from a Microsoft 365 mailbox, so mail "
+                           "archival can be scheduled and run by the agent like any other job."),
+            migrationV6Statements(),
         },
     };
     return migrations;

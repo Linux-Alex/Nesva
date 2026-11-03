@@ -27,6 +27,7 @@ struct SnapshotInfo;
 namespace nesva::ui {
 
 class AppContext;
+class ElidedLabel;
 
 /// Restic snapshot history for backup jobs, with restore, retention and
 /// repository maintenance actions.
@@ -71,7 +72,7 @@ private:
     QComboBox* jobCombo_ = nullptr;
     QTableView* view_ = nullptr;
     QStandardItemModel* model_ = nullptr;
-    QLabel* statusLabel_ = nullptr;
+    ElidedLabel* statusLabel_ = nullptr;
     QLabel* emptyState_ = nullptr;
     QProgressBar* busyBar_ = nullptr;
     QPushButton* refreshButton_ = nullptr;

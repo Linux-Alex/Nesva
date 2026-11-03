@@ -12,6 +12,7 @@
 #include "nesva/core/result.hpp"
 #include "nesva/jobs/archive_runner.hpp"
 #include "nesva/jobs/backup_runner.hpp"
+#include "nesva/jobs/mail_job_runner.hpp"
 
 namespace nesva::jobs {
 

@@ -101,6 +101,12 @@ void paintGlyph(QPainter& painter, Glyph glyph, const QColor& color) {
         painter.drawPath(pulse);
         break;
     }
+    case Glyph::Mail: {
+        painter.drawRoundedRect(QRectF(3.0, 6.0, 16.0, 12.0), 1.8, 1.8);
+        painter.drawLine(QPointF(3.4, 6.6), QPointF(11.0, 12.4));
+        painter.drawLine(QPointF(18.6, 6.6), QPointF(11.0, 12.4));
+        break;
+    }
     case Glyph::Settings: {
         painter.drawEllipse(QRectF(8.0, 8.0, 6.0, 6.0));
         painter.drawEllipse(QRectF(4.0, 4.0, 14.0, 14.0));

@@ -79,7 +79,8 @@ Options parseArguments(const QStringList& arguments) {
         // id, ...). Keep it in sync with usageText().
         static const QStringList subcommands = {
             "accounts", "add",      "apply",     "cancel",   "check",    "connect", "estimate",
-            "folders",  "help",     "info",      "init",     "list",     "locks",   "preview",
+            "folders",  "help",     "info",      "init",     "job",      "list",    "locks",
+            "preview",
             "rclone",   "reload",   "restore",   "run",      "set-password", "show", "status",
             "stop",     "sync",     "test",      "unlock"};
         if (subcommands.contains(candidate)) {

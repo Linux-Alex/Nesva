@@ -227,6 +227,44 @@ nesva-cli mail sync 1 --to ~/Archive/Mail
   than a guess.
 - Every message becomes `<folder>/<YYYY>/<MM>/<subject>-<id12>.eml`, written atomically, with
   its SHA-256 recorded. Nothing is ever deleted from the mailbox.
+
+### Make it a job, so it runs on schedule
+
+An ad-hoc sync downloads once. A **job** gets a schedule, retries, history and the agent:
+
+```bash
+nesva-cli mail job 1 --to ~/Archive/Mail --schedule daily --time 03:00
+```
+
+```
+Job 2 'Mail archive: you@example.com' archives you@example.com into /home/you/Archive/Mail.
+Schedule: Daily at 03:00 (Europe/Ljubljana)
+Run it now with 'nesva-cli jobs run 2', or let nesva-agent run it on schedule.
+```
+
+It is an ordinary job: `nesva-cli jobs list` shows it, `jobs run 2` runs it, `history list` keeps
+every run, and `nesva-agent` runs it with the window closed. In the desktop application the same
+job is created from the **Mail** page (**Sync now** offers to create it, **Schedule job...** opens
+the editor).
+
+### Then protect the archive with Restic
+
+The .eml files are only a copy. To get versioned, encrypted snapshots of them - the thing that
+survives a deletion or a ransomware encryption - point a Restic backup at the archive directory:
+
+**Desktop:** Mail page -> **Back up archive with Restic...** -> pick a repository and a password in
+the job editor it opens.
+**CLI:** create the job in the job editor once, or reuse the same flow as any backup job:
+
+```bash
+nesva-cli repository init <job-id> --password-stdin   # password goes to the keyring
+nesva-cli jobs run <job-id>
+nesva-cli snapshots list <job-id>
+```
+
+Retention applies as usual (`retention preview <job-id>` then `retention apply <job-id> --prune`),
+so the archive keeps daily snapshots without growing forever.
+
 - `Ctrl-C` is safe: the delta cursor only moves past messages that were actually handled.
 
 If a run is interrupted or bounded with `--max-messages`, the next run continues from the same

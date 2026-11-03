@@ -9,6 +9,7 @@
 
 #include "nesva/db/database.hpp"
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/jobs/mail_job_runner.hpp"
 
 namespace nesva::jobs {
 
@@ -58,6 +59,9 @@ protected:
             BackupRunner runner(database, progressCallback);
             report_ = runner.run(job_, options_, cancellation_, trigger_, resticExecutable_,
                                  passwordOptions_);
+        } else if (job_.isMail()) {
+            MailJobRunner runner(database, progressCallback);
+            report_ = runner.run(job_, options_, cancellation_, trigger_);
         } else {
             ArchiveRunner runner(database, progressCallback);
             report_ = runner.run(job_, provider_, options_, cancellation_, trigger_,

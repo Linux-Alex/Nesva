@@ -32,6 +32,7 @@
 #include <QtCore/QTimer>
 
 #include "dialogs/job_editor_dialog.hpp"
+#include "widgets/elided_label.hpp"
 #include "dialogs/snapshot_browser_dialog.hpp"
 #include "pages/snapshots_page.hpp"
 #include "nesva/backup/restic.hpp"
@@ -43,6 +44,7 @@
 #include "models/job_list_model.hpp"
 #include "nesva/core/paths.hpp"
 #include "nesva/jobs/archive_runner.hpp"
+#include "nesva/mail/mail_store.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/scheduler/schedule.hpp"
 #include "support/test_fixtures.hpp"
@@ -51,6 +53,7 @@ using namespace nesva;
 using nesva::ui::AppContext;
 using nesva::ui::EventListModel;
 using nesva::ui::JobListModel;
+using nesva::ui::ElidedLabel;
 using nesva::ui::MainWindow;
 using nesva::ui::Page;
 
@@ -99,6 +102,8 @@ private slots:
     void eventModelCombinesJobAndApplicationEvents();
     void mainWindowExposesEveryPage();
     void settingsPageOffersTheRcloneInstaller();
+    void mailPageShowsAccountsAndFolderCounts();
+    void statusTextDoesNotResizeTheJobsTable();
     void settingsPageScrollsInsteadOfSqueezing();
     void mainWindowSwitchesPages();
     void mainWindowThemeIsApplied();
@@ -248,6 +253,113 @@ void GuiSmokeTest::settingsPageScrollsInsteadOfSqueezing() {
     }
 }
 
+void GuiSmokeTest::statusTextDoesNotResizeTheJobsTable() {
+    // A long run message used to wrap, grow its row and push the table down
+    // while a job was running. The status lines must never change the layout.
+    jobs::JobStore store(context_->database());
+    jobs::ArchiveJob job;
+    job.name = QStringLiteral("Layout job");
+    job.mode = QStringLiteral("archive");
+    job.destinationPath = directory_->filePath(QStringLiteral("destination"));
+    job.sources = {{0, directory_->path(), QStringLiteral("source")}};
+    QVERIFY(store.createJob(job));
+
+    MainWindow window(*context_);
+    window.resize(1100, 700);
+    window.show();
+
+    int jobsIndex = -1;
+    for (int index = 0; index < window.pageCount(); ++index) {
+        if (window.pageTitleAt(index) == QStringLiteral("Backup Jobs")) {
+            jobsIndex = index;
+            break;
+        }
+    }
+    QVERIFY(jobsIndex >= 0);
+    window.selectPage(jobsIndex);
+    QCoreApplication::processEvents();
+
+    Page* page = window.pageAt(jobsIndex);
+    QVERIFY(page != nullptr);
+    auto* table = page->findChild<QTableView*>();
+    QVERIFY(table != nullptr);
+    QVERIFY(table->isVisible());
+
+    const QRect before = table->geometry();
+    const QList<ElidedLabel*> labels = page->findChildren<ElidedLabel*>();
+    QVERIFY(!labels.isEmpty());
+    const QString longMessage =
+        QStringLiteral("Running Documents archive: transferred 1204 files, skipped 88 unchanged "
+                       "files, 0 failed - /home/aleks/Documents/deeply/nested/folder/file.txt");
+    for (ElidedLabel* label : labels) {
+        label->setText(longMessage);
+    }
+    QCoreApplication::processEvents();
+
+    QCOMPARE(table->geometry(), before);
+    // The whole text is still reachable, through the tooltip.
+    QCOMPARE(labels.first()->toolTip(), longMessage);
+    QCOMPARE(labels.first()->text(), longMessage);
+}
+
+void GuiSmokeTest::mailPageShowsAccountsAndFolderCounts() {
+    // The Mail page is where a connected mailbox becomes a schedulable job, so
+    // it has to show the account and the per-folder counters it works from.
+    mail::MailStore mailStore(context_->database());
+    mail::MailAccount account;
+    account.displayName = QStringLiteral("Test mailbox");
+    account.tenantId = QStringLiteral("tenant");
+    account.clientId = QStringLiteral("client");
+    account.accountIdentifier = QStringLiteral("user@example.com");
+    const Result<qint64> accountId = mailStore.upsertAccount(account);
+    QVERIFY(accountId.hasValue());
+
+    mail::MailFolderInfo inbox;
+    inbox.id = QStringLiteral("inbox");
+    inbox.displayName = QStringLiteral("Inbox");
+    inbox.path = QStringLiteral("Inbox");
+    inbox.totalItemCount = 42;
+    QVERIFY(mailStore.storeFolders(accountId.value(), {inbox}).ok());
+
+    MainWindow window(*context_);
+    window.show();
+
+    int mailIndex = -1;
+    for (int index = 0; index < window.pageCount(); ++index) {
+        if (window.pageTitleAt(index) == QStringLiteral("Mail")) {
+            mailIndex = index;
+            break;
+        }
+    }
+    QVERIFY2(mailIndex >= 0, "the Mail page must exist in the sidebar");
+    window.selectPage(mailIndex);
+    QCoreApplication::processEvents();
+
+    Page* page = window.pageAt(mailIndex);
+    QVERIFY(page != nullptr);
+    auto* accounts = page->findChild<QComboBox*>(QStringLiteral("mailAccount"));
+    QVERIFY(accounts != nullptr);
+    QVERIFY(accounts->count() >= 1);
+    QVERIFY(accounts->itemText(0).contains(QStringLiteral("user@example.com")));
+
+    auto* folders = page->findChild<QTableView*>(QStringLiteral("mailFolders"));
+    QVERIFY(folders != nullptr);
+    QVERIFY2(folders->model()->rowCount() == 1, "the folder table must list the stored folder");
+    QCOMPARE(folders->model()->index(0, 0).data().toString(), QStringLiteral("Inbox"));
+    QCOMPARE(folders->model()->index(0, 1).data().toString(), QStringLiteral("42"));
+
+    // The Restic shortcut must exist: it is how the archive gets versioned,
+    // encrypted copies rather than only a plain directory.
+    bool hasResticAction = false;
+    for (QPushButton* button : page->findChildren<QPushButton*>()) {
+        if (button->text().contains(QStringLiteral("Restic"))) {
+            hasResticAction = true;
+            break;
+        }
+    }
+    QVERIFY(hasResticAction);
+}
+
 void GuiSmokeTest::settingsPageOffersTheRcloneInstaller() {
     // The install button and the tool status must be reachable from the real
     // window: this is the control the user asked for, so its absence is a bug.
@@ -278,13 +390,14 @@ void GuiSmokeTest::settingsPageOffersTheRcloneInstaller() {
 
 void GuiSmokeTest::mainWindowExposesEveryPage() {
     MainWindow window(*context_);
-    QCOMPARE(window.pageCount(), 8);
+    QCOMPARE(window.pageCount(), 9);
 
     const QStringList expected = {
-        QStringLiteral("Dashboard"),   QStringLiteral("Backup Jobs"),
-        QStringLiteral("Storage"),     QStringLiteral("Archive Explorer"),
-        QStringLiteral("Snapshots"),   QStringLiteral("Restore"),
-        QStringLiteral("Activity"),    QStringLiteral("Settings"),
+        QStringLiteral("Dashboard"), QStringLiteral("Backup Jobs"),
+        QStringLiteral("Storage"),   QStringLiteral("Archive Explorer"),
+        QStringLiteral("Mail"),      QStringLiteral("Snapshots"),
+        QStringLiteral("Restore"),   QStringLiteral("Activity"),
+        QStringLiteral("Settings"),
     };
     for (int index = 0; index < expected.size(); ++index) {
         QCOMPARE(window.pageTitleAt(index), expected.at(index));
@@ -298,7 +411,7 @@ void GuiSmokeTest::mainWindowSwitchesPages() {
 
     auto* navigation = window.findChild<QListWidget*>(QStringLiteral("navigation"));
     QVERIFY2(navigation != nullptr, "navigation sidebar must exist");
-    QCOMPARE(navigation->count(), 8);
+    QCOMPARE(navigation->count(), 9);
 
     for (int index = 0; index < window.pageCount(); ++index) {
         window.selectPage(index);

@@ -268,8 +268,8 @@ Status JobStore::deleteProvider(qint64 id) {
 Result<QVector<ArchiveJob>> JobStore::listJobs() const {
     Result<QSqlQuery> query = database_.select(QStringLiteral(
         "SELECT id, name, mode, storage_provider_id, COALESCE(destination_path, ''), enabled, "
-        "COALESCE(bandwidth_limit_kib, 0), verification_options_json, retention_policy_json "
-        "FROM backup_jobs ORDER BY name"));
+        "COALESCE(bandwidth_limit_kib, 0), verification_options_json, retention_policy_json, "
+        "source_kind, COALESCE(mail_account_id, 0) FROM backup_jobs ORDER BY name"));
     if (!query) {
         return query.error();
     }
@@ -294,6 +294,11 @@ Result<QVector<ArchiveJob>> JobStore::listJobs() const {
             verification.value(QStringLiteral("check_after_backup")).toBool(false);
         job.retention = backup::retentionFromJson(
             QJsonDocument::fromJson(rows.value(8).toString().toUtf8()).object());
+        job.sourceKind = columnText(rows, 9);
+        if (job.sourceKind.isEmpty()) {
+            job.sourceKind = QStringLiteral("filesystem");
+        }
+        job.mailAccountId = rows.value(10).toLongLong();
         jobs.append(job);
     }
 
@@ -355,6 +360,21 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
         return makeErrorValue(ErrorCode::InvalidArgument,
                               "a backup job needs a Restic repository location");
     }
+    if (job.isMail()) {
+        if (job.mailAccountId <= 0) {
+            return makeErrorValue(ErrorCode::InvalidArgument,
+                                  "a mail job needs a Microsoft 365 account");
+        }
+        if (job.mode == QStringLiteral("backup")) {
+            return makeErrorValue(ErrorCode::InvalidArgument,
+                                  "a mail job archives messages; back up the archive directory "
+                                  "with a separate backup job");
+        }
+        if (job.destinationPath.trimmed().isEmpty()) {
+            return makeErrorValue(ErrorCode::InvalidArgument,
+                                  "a mail job needs a destination directory for the .eml files");
+        }
+    }
 
     const QString timestamp = db::Database::currentTimestampUtc();
     db::Transaction transaction(database_);
@@ -366,8 +386,8 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
     QSqlQuery insert(database_.handle());
     insert.prepare(QStringLiteral(
         "INSERT INTO backup_jobs (name, mode, storage_provider_id, destination_path, enabled, "
-        "bandwidth_limit_kib, verification_options_json, retention_policy_json, created_at, "
-        "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "bandwidth_limit_kib, verification_options_json, retention_policy_json, source_kind, "
+        "mail_account_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     insert.addBindValue(job.name.trimmed());
     insert.addBindValue(job.mode);
     if (job.storageProviderId) {
@@ -381,6 +401,8 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
     insert.addBindValue(QString::fromUtf8(QJsonDocument(verification).toJson(QJsonDocument::Compact)));
     insert.addBindValue(QString::fromUtf8(
         QJsonDocument(backup::retentionToJson(job.retention)).toJson(QJsonDocument::Compact)));
+    insert.addBindValue(job.isMail() ? QStringLiteral("mail") : QStringLiteral("filesystem"));
+    insert.addBindValue(job.isMail() ? QVariant(job.mailAccountId) : QVariant());
     insert.addBindValue(timestamp);
     insert.addBindValue(timestamp);
     if (!insert.exec()) {
@@ -439,6 +461,11 @@ Status JobStore::updateJob(const ArchiveJob& job) {
     if (job.mode != QStringLiteral("archive") && job.mode != QStringLiteral("backup")) {
         return makeError(ErrorCode::InvalidArgument, "unknown job mode: " + job.mode.toStdString());
     }
+    if (job.isMail() && job.mode == QStringLiteral("backup")) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "a mail job archives messages; back up the archive directory with a "
+                         "separate backup job");
+    }
 
     const QString timestamp = db::Database::currentTimestampUtc();
     db::Transaction transaction(database_);
@@ -451,7 +478,8 @@ Status JobStore::updateJob(const ArchiveJob& job) {
     update.prepare(QStringLiteral(
         "UPDATE backup_jobs SET name = ?, mode = ?, storage_provider_id = ?, "
         "destination_path = ?, enabled = ?, bandwidth_limit_kib = ?, "
-        "verification_options_json = ?, retention_policy_json = ?, updated_at = ? WHERE id = ?"));
+        "verification_options_json = ?, retention_policy_json = ?, source_kind = ?, "
+        "mail_account_id = ?, updated_at = ? WHERE id = ?"));
     update.addBindValue(job.name.trimmed());
     update.addBindValue(job.mode);
     if (job.storageProviderId) {
@@ -465,6 +493,8 @@ Status JobStore::updateJob(const ArchiveJob& job) {
     update.addBindValue(QString::fromUtf8(QJsonDocument(verification).toJson(QJsonDocument::Compact)));
     update.addBindValue(QString::fromUtf8(
         QJsonDocument(backup::retentionToJson(job.retention)).toJson(QJsonDocument::Compact)));
+    update.addBindValue(job.isMail() ? QStringLiteral("mail") : QStringLiteral("filesystem"));
+    update.addBindValue(job.isMail() ? QVariant(job.mailAccountId) : QVariant());
     update.addBindValue(timestamp);
     update.addBindValue(job.id);
     if (!update.exec()) {

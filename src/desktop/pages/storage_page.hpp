@@ -13,6 +13,7 @@ class QTableView;
 namespace nesva::ui {
 
 class AppContext;
+class ElidedLabel;
 
 /// Storage connection manager: local folders and Rclone remotes, with an
 /// explicit connection test.
@@ -36,8 +37,8 @@ private:
     QStandardItemModel* model_ = nullptr;
     QTableView* view_ = nullptr;
     QLabel* emptyState_ = nullptr;
-    QLabel* errorLabel_ = nullptr;
-    QLabel* statusLabel_ = nullptr;
+    ElidedLabel* errorLabel_ = nullptr;
+    ElidedLabel* statusLabel_ = nullptr;
     QPushButton* testButton_ = nullptr;
     QPushButton* removeButton_ = nullptr;
 };

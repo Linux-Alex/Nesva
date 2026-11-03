@@ -35,6 +35,7 @@
 #include "nesva/config/settings_store.hpp"
 #include "nesva/jobs/backup_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/mail/mail_store.hpp"
 #include "nesva/scan/file_scanner.hpp"
 #include "nesva/scheduler/schedule.hpp"
 
@@ -69,7 +70,22 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
                               "snapshots in a repository."));
     form->addRow(tr("Mode"), modeCombo_);
 
+    sourceKind_ = new QComboBox(this);
+    sourceKind_->setObjectName(QStringLiteral("jobSourceKind"));
+    sourceKind_->addItem(tr("Files and folders"), QStringLiteral("filesystem"));
+    sourceKind_->addItem(tr("Microsoft 365 mailbox (messages as .eml)"), QStringLiteral("mail"));
+    form->addRow(tr("Content"), sourceKind_);
+
+    mailAccountRow_ = new QWidget(this);
+    auto* mailAccountLayout = new QHBoxLayout(mailAccountRow_);
+    mailAccountLayout->setContentsMargins(0, 0, 0, 0);
+    mailAccount_ = new QComboBox(mailAccountRow_);
+    mailAccount_->setObjectName(QStringLiteral("jobMailAccount"));
+    mailAccountLayout->addWidget(mailAccount_, 1);
+    form->addRow(tr("Account"), mailAccountRow_);
+
     auto* sourceRow = new QWidget(this);
+    sourceRow_ = sourceRow;
     auto* sourceLayout = new QHBoxLayout(sourceRow);
     sourceLayout->setContentsMargins(0, 0, 0, 0);
     sourceList_ = new QListWidget(sourceRow);
@@ -304,6 +320,22 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
         }
     }
 
+    // Microsoft 365 accounts that can be archived.
+    mail::MailStore mailStore(context_.database());
+    const Result<QVector<mail::MailAccount>> accounts = mailStore.accounts();
+    if (accounts) {
+        for (const mail::MailAccount& account : accounts.value()) {
+            mailAccount_->addItem(
+                tr("%1 (%2 folders)").arg(account.accountIdentifier).arg(0), account.id);
+        }
+    }
+    if (mailAccount_->count() == 0) {
+        mailAccount_->addItem(tr("No Microsoft 365 account is connected"), qint64(0));
+        mailAccount_->setEnabled(false);
+    }
+
+    connect(sourceKind_, &QComboBox::currentIndexChanged, this, [this](int) { updateSourceUi(); });
+
     // Load values.
     if (existing_) {
         nameEdit_->setText(existing_->name);
@@ -346,6 +378,19 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
     }
     connect(modeCombo_, &QComboBox::currentIndexChanged, this, [this](int) { updateModeUi(); });
     updateModeUi();
+
+    // ---- content source ----------------------------------------------------
+    if (existing_ && existing_->isMail()) {
+        const int index = sourceKind_->findData(QStringLiteral("mail"));
+        if (index >= 0) {
+            sourceKind_->setCurrentIndex(index);
+        }
+        const int accountIndex = mailAccount_->findData(existing_->mailAccountId);
+        if (accountIndex >= 0) {
+            mailAccount_->setCurrentIndex(accountIndex);
+        }
+    }
+    updateSourceUi();
 
     // ---- schedule values ---------------------------------------------------
     jobs::JobStore scheduleStore(context_.database());
@@ -426,6 +471,27 @@ JobEditorDialog::JobEditorDialog(AppContext& context, std::optional<jobs::Archiv
     }
 }
 
+void JobEditorDialog::updateSourceUi() {
+    const bool mail = sourceKind_->currentData().toString() == QStringLiteral("mail");
+    sourceRow_->setVisible(!mail);
+    mailAccountRow_->setVisible(mail);
+    exclusionsEdit_->setEnabled(!mail);
+    if (mail) {
+        // Mail is written as files, so the destination is always a local
+        // directory; a storage provider makes no sense for the exporter itself.
+        const int localIndex = destinationKind_->findData(QVariant());
+        if (localIndex >= 0 && destinationKind_->currentIndex() != localIndex) {
+            destinationKind_->setCurrentIndex(localIndex);
+        }
+        destinationKind_->setEnabled(false);
+        destinationPathEdit_->setEnabled(true);
+        browseButton_->setEnabled(true);
+    } else {
+        destinationKind_->setEnabled(true);
+        destinationKindChanged();
+    }
+}
+
 void JobEditorDialog::destinationKindChanged() {
     const bool local = !destinationKind_->currentData().isValid();
     destinationPathEdit_->setVisible(local);
@@ -485,6 +551,12 @@ jobs::ArchiveJob JobEditorDialog::buildJob() const {
     job.enabled = enabledCheck_->isChecked();
     job.bandwidthLimitKiB = bandwidthSpin_->value();
     job.verifyChecksum = verifyCheck_->isChecked();
+    job.sourceKind = sourceKind_->currentData().toString() == QStringLiteral("mail")
+                         ? QStringLiteral("mail")
+                         : QStringLiteral("filesystem");
+    if (job.isMail()) {
+        job.mailAccountId = mailAccount_->currentData().toLongLong();
+    }
 
     if (job.isBackup()) {
         job.destinationPath = repositoryEdit_->text().trimmed();
@@ -494,6 +566,10 @@ jobs::ArchiveJob JobEditorDialog::buildJob() const {
         job.retention.keepMonthly = keepMonthlySpin_->value();
         job.retention.keepYearly = keepYearlySpin_->value();
         job.checkAfterBackup = checkAfterBackupCheck_->isChecked();
+    } else if (job.isMail()) {
+        // The .eml files go into a plain directory; Restic can back that up
+        // afterwards as its own job.
+        job.destinationPath = QDir::cleanPath(destinationPathEdit_->text().trimmed());
     } else {
         const std::optional<jobs::StorageProviderRecord> provider = selectedProvider();
         if (provider) {
@@ -532,11 +608,18 @@ bool JobEditorDialog::validate(QString* error) const {
         *error = tr("The job needs a name.");
         return false;
     }
-    if (sourceList_->count() == 0) {
+    const bool mail = sourceKind_->currentData().toString() == QStringLiteral("mail");
+    if (mail) {
+        if (mailAccount_->currentData().toLongLong() <= 0) {
+            *error = tr("Connect a Microsoft 365 account first (nesva-cli mail connect, or the "
+                        "Mail page).");
+            return false;
+        }
+    } else if (sourceList_->count() == 0) {
         *error = tr("Add at least one source folder.");
         return false;
     }
-    for (int row = 0; row < sourceList_->count(); ++row) {
+    for (int row = 0; !mail && row < sourceList_->count(); ++row) {
         const QString path = sourceList_->item(row)->text();
         if (!QFileInfo(path).isDir()) {
             *error = tr("Source folder does not exist: %1").arg(path);

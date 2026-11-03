@@ -37,6 +37,7 @@
 #include "nesva/security/secret_store.hpp"
 #include "nesva/jobs/backup_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/jobs/mail_job_runner.hpp"
 #include "nesva/scheduler/schedule.hpp"
 #include "nesva/providers/provider_factory.hpp"
 #include "nesva/tools/tool_installer.hpp"
@@ -916,6 +917,10 @@ int commandJobsRun(Context& context, const Options& options) {
         report = backupRunner.run(loaded.value().job, runOptions, cancellation,
                                   QStringLiteral("cli"), resticExecutable,
                                   passwordOptionsFromFlags(options, context));
+    } else if (loaded.value().job.isMail()) {
+        jobs::MailJobRunner mailRunner(context.database, progressCallback);
+        report = mailRunner.run(loaded.value().job, runOptions, cancellation,
+                                QStringLiteral("cli"));
     } else {
         jobs::ArchiveRunner runner(context.database, progressCallback);
         report = runner.run(loaded.value().job, loaded.value().provider, runOptions, cancellation,
@@ -2072,6 +2077,7 @@ int commandMail(Context& context, const Options& options) {
         output.line(QStringLiteral("mail estimate <account-id>"));
         output.line(QStringLiteral("mail sync <account-id> --to <directory> [--full] [--max-messages N]"));
         output.line(QStringLiteral("mail status <account-id>"));
+        output.line(QStringLiteral("mail job <account-id> --to <directory> [--schedule daily] [--time 03:00]"));
         return output.flush(stdout, kExitSuccess);
     }
 
@@ -2371,6 +2377,89 @@ int commandMail(Context& context, const Options& options) {
             output.line(QStringLiteral("The expected size is unknown until a sync has downloaded "
                                        "something."));
         }
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    if (sub == QStringLiteral("job")) {
+        // Creates (or updates) a mail archival job: an ordinary job, so the
+        // scheduler, the agent, retries and history all apply to it.
+        const QString destination = options.flags.value(QStringLiteral("to"));
+        if (destination.trimmed().isEmpty()) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               "mail job requires --to <directory> for the .eml files"),
+                kExitUsage);
+        }
+        const Result<mail::MailAccount> mailAccount = store.account(accountId);
+        if (!mailAccount) {
+            return output.flushError(mailAccount.error(), kExitNotFound);
+        }
+
+        jobs::JobStore jobStore(context.database);
+        jobs::ArchiveJob job;
+        job.name = QStringLiteral("Mail archive: %1").arg(mailAccount.value().accountIdentifier);
+        job.mode = QStringLiteral("archive");
+        job.sourceKind = QStringLiteral("mail");
+        job.mailAccountId = accountId;
+        job.destinationPath = QDir::cleanPath(destination);
+        job.verifyChecksum = true;
+
+        // Reuse the existing job when one already archives this account, so the
+        // command is idempotent rather than piling up duplicates.
+        qint64 jobId = 0;
+        const Result<QVector<jobs::ArchiveJob>> existingJobs = jobStore.listJobs();
+        if (existingJobs) {
+            for (const jobs::ArchiveJob& candidate : existingJobs.value()) {
+                if (candidate.isMail() && candidate.mailAccountId == accountId) {
+                    jobId = candidate.id;
+                    job.id = candidate.id;
+                    break;
+                }
+            }
+        }
+        if (jobId > 0) {
+            const Status updated = jobStore.updateJob(job);
+            if (!updated.ok()) {
+                return output.flushError(updated.error(), kExitFailure);
+            }
+        } else {
+            const Result<qint64> created = jobStore.createJob(job);
+            if (!created) {
+                return output.flushError(created.error(), kExitFailure);
+            }
+            jobId = created.value();
+        }
+
+        const QString scheduleKind = options.flags.value(QStringLiteral("schedule"),
+                                                         QStringLiteral("manual"));
+        sched::ScheduleSpec spec;
+        spec.kind = sched::triggerKindFromString(scheduleKind).value_or(sched::TriggerKind::Manual);
+        spec.timezone = QTimeZone::systemTimeZoneId();
+        if (options.flags.contains(QStringLiteral("time"))) {
+            const QTime time = QTime::fromString(options.flags.value(QStringLiteral("time")),
+                                                 QStringLiteral("HH:mm"));
+            if (time.isValid()) {
+                spec.timeOfDay = time;
+            }
+        }
+        const Status scheduled = jobStore.upsertSchedule(jobId, spec);
+        if (!scheduled.ok()) {
+            return output.flushError(scheduled.error(), kExitFailure);
+        }
+
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("job_id"), jobId);
+        output.add(QStringLiteral("job"), job.name);
+        output.add(QStringLiteral("destination"), job.destinationPath);
+        output.add(QStringLiteral("schedule"), sched::describe(spec));
+        output.line(QStringLiteral("Job %1 '%2' archives %3 into %4.")
+                        .arg(jobId)
+                        .arg(job.name, mailAccount.value().accountIdentifier,
+                             job.destinationPath));
+        output.line(QStringLiteral("Schedule: %1").arg(sched::describe(spec)));
+        output.line(QStringLiteral("Run it now with 'nesva-cli jobs run %1', or let nesva-agent "
+                                   "run it on schedule.")
+                        .arg(jobId));
         return output.flush(stdout, kExitSuccess);
     }
 

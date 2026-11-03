@@ -13,6 +13,8 @@
 #include "nesva/core/process_utils.hpp"
 #include "nesva/db/database.hpp"
 #include "nesva/jobs/job_store.hpp"
+#include "nesva/jobs/job_worker.hpp"
+#include "nesva/mail/mail_store.hpp"
 
 using namespace nesva;
 using nesva::db::Database;
@@ -36,6 +38,9 @@ private slots:
     void rejectsInvalidJobs();
     void acceptsBackupJobsWithRepository();
     void rejectsBackupJobWithoutRepository();
+    void storesMailArchiveJobs();
+    void workerDispatchesMailJobs();
+    void rejectsMailJobsWithoutAnAccountOrDestination();
     void storesLocalProvider();
     void preventsDuplicateRunningRuns();
     void finishesRunWithCounters();
@@ -173,6 +178,109 @@ void JobStoreTest::rejectsInvalidJobs() {
     const Result<qint64> created = store_->createJob(sourceless);
     QVERIFY(!created);
     QCOMPARE(static_cast<int>(created.error().code()), static_cast<int>(ErrorCode::InvalidArgument));
+}
+
+void JobStoreTest::storesMailArchiveJobs() {
+    // A mail job is an ordinary job whose content comes from a mailbox, so the
+    // scheduler, the agent and the run history treat it like any other job.
+    mail::MailStore mailStore(*database_);
+    mail::MailAccount account;
+    account.displayName = QStringLiteral("Test mailbox");
+    account.tenantId = QStringLiteral("tenant");
+    account.clientId = QStringLiteral("client");
+    account.accountIdentifier = QStringLiteral("user@example.com");
+    const Result<qint64> accountId = mailStore.upsertAccount(account);
+    QVERIFY2(accountId.hasValue(), accountId.hasValue() ? ""
+                                                        : accountId.error().toDisplayString().c_str());
+
+    ArchiveJob job;
+    job.name = QStringLiteral("Mail archive");
+    job.mode = QStringLiteral("archive");
+    job.sourceKind = QStringLiteral("mail");
+    job.mailAccountId = accountId.value();
+    job.destinationPath = directory_->filePath(QStringLiteral("mail"));
+    const Result<qint64> created = store_->createJob(job);
+    QVERIFY2(created.hasValue(), created.hasValue() ? ""
+                                                    : created.error().toDisplayString().c_str());
+
+    const Result<ArchiveJob> reloaded = store_->getJob(created.value());
+    QVERIFY(reloaded.hasValue());
+    QVERIFY(reloaded.value().isMail());
+    QCOMPARE(reloaded.value().mailAccountId, accountId.value());
+    QCOMPARE(reloaded.value().mode, QStringLiteral("archive"));
+    QCOMPARE(reloaded.value().destinationPath, job.destinationPath);
+
+    // Switching an existing job back to filesystem sources must clear the mail
+    // account, otherwise the runner would keep choosing the mail path.
+    ArchiveJob converted = reloaded.value();
+    converted.sourceKind = QStringLiteral("filesystem");
+    converted.mailAccountId = 0;
+    converted.sources = {{0, directory_->path(), QStringLiteral("source")}};
+    QVERIFY(store_->updateJob(converted).ok());
+    const Result<ArchiveJob> afterUpdate = store_->getJob(created.value());
+    QVERIFY(afterUpdate.hasValue());
+    QVERIFY(!afterUpdate.value().isMail());
+    QCOMPARE(afterUpdate.value().mailAccountId, qint64(0));
+}
+
+void JobStoreTest::workerDispatchesMailJobs() {
+    // The worker must reach the mail runner for a mail job, not the filesystem
+    // scanner: without a stored token it has to fail on the token, not on
+    // "no sources configured".
+    mail::MailStore mailStore(*database_);
+    mail::MailAccount account;
+    account.displayName = QStringLiteral("Test mailbox");
+    account.tenantId = QStringLiteral("tenant-that-does-not-exist");
+    account.clientId = QStringLiteral("client");
+    account.accountIdentifier = QStringLiteral("worker-test@example.com");
+    const Result<qint64> accountId = mailStore.upsertAccount(account);
+    QVERIFY(accountId.hasValue());
+
+    ArchiveJob job;
+    job.name = QStringLiteral("Mail archive");
+    job.mode = QStringLiteral("archive");
+    job.sourceKind = QStringLiteral("mail");
+    job.mailAccountId = accountId.value();
+    job.destinationPath = directory_->filePath(QStringLiteral("mail"));
+    const Result<qint64> created = store_->createJob(job);
+    QVERIFY(created.hasValue());
+    job.id = created.value(); // the runners record the run against this id
+
+    jobs::JobWorker worker(database_->filePath());
+    QSignalSpy completed(&worker, &jobs::JobWorker::completed);
+    const Status started = worker.start(job, std::nullopt, jobs::RunOptions{}, QStringLiteral("rclone"),
+                                        QStringLiteral("test"));
+    QVERIFY2(started.ok(), started.ok() ? "" : started.error().message().c_str());
+    QVERIFY(completed.wait(15000));
+
+    const auto report = completed.first().at(0).value<jobs::RunReport>();
+    QCOMPARE(report.status, QStringLiteral("failed"));
+    QVERIFY2(!report.errors.isEmpty(), "the failure must be reported");
+    const QString error = report.errors.first();
+    QVERIFY2(error.contains(QStringLiteral("refresh token")) || error.contains(QStringLiteral("credential")),
+             qPrintable(error));
+    QVERIFY2(!error.contains(QStringLiteral("no sources configured")), qPrintable(error));
+}
+
+void JobStoreTest::rejectsMailJobsWithoutAnAccountOrDestination() {
+    ArchiveJob job;
+    job.name = QStringLiteral("Mail archive");
+    job.mode = QStringLiteral("archive");
+    job.sourceKind = QStringLiteral("mail");
+    job.mailAccountId = 0;
+    job.destinationPath = directory_->filePath(QStringLiteral("mail"));
+    QVERIFY(!store_->createJob(job));
+
+    job.mailAccountId = 1;
+    job.destinationPath.clear();
+    QVERIFY(!store_->createJob(job));
+
+    // A mail job archives messages; versioned copies come from a Restic backup
+    // job over the archive directory, so the combination is refused instead of
+    // silently doing something else.
+    job.destinationPath = directory_->filePath(QStringLiteral("mail"));
+    job.mode = QStringLiteral("backup");
+    QVERIFY(!store_->createJob(job));
 }
 
 void JobStoreTest::acceptsBackupJobsWithRepository() {

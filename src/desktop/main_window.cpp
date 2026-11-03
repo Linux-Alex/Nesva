@@ -35,6 +35,7 @@
 #include "pages/archive_page.hpp"
 #include "pages/dashboard_page.hpp"
 #include "pages/jobs_page.hpp"
+#include "pages/mail_page.hpp"
 #include "pages/page.hpp"
 #include "pages/placeholder_page.hpp"
 #include "pages/restore_page.hpp"
@@ -192,6 +193,7 @@ void MainWindow::createPages() {
         {QStringLiteral("Backup Jobs"), Glyph::Jobs},
         {QStringLiteral("Storage"), Glyph::Storage},
         {QStringLiteral("Archive Explorer"), Glyph::Archive},
+        {QStringLiteral("Mail"), Glyph::Mail},
         {QStringLiteral("Snapshots"), Glyph::Snapshots},
         {QStringLiteral("Restore"), Glyph::Restore},
         {QStringLiteral("Activity"), Glyph::Activity},
@@ -202,6 +204,7 @@ void MainWindow::createPages() {
     pages_.append(new JobsPage(context_, this));
     pages_.append(new StoragePage(context_, this));
     pages_.append(new ArchivePage(context_, this));
+    pages_.append(new MailPage(context_, this));
     pages_.append(new SnapshotsPage(context_, this));
     pages_.append(new RestorePage(context_, this));
     pages_.append(new ActivityPage(context_, this));

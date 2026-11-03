@@ -13,6 +13,7 @@ class QTableView;
 namespace nesva::ui {
 
 class AppContext;
+class ElidedLabel;
 class JobListModel;
 
 /// Lists archive jobs and drives their execution.
@@ -39,8 +40,8 @@ private:
     JobListModel* model_ = nullptr;
     QTableView* view_ = nullptr;
     QLabel* emptyState_ = nullptr;
-    QLabel* errorLabel_ = nullptr;
-    QLabel* runLabel_ = nullptr;
+    ElidedLabel* errorLabel_ = nullptr;
+    ElidedLabel* runLabel_ = nullptr;
     QProgressBar* runProgress_ = nullptr;
     QPushButton* newButton_ = nullptr;
     QPushButton* editButton_ = nullptr;

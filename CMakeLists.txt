@@ -77,6 +77,7 @@ add_library(nesva_core STATIC
   src/core/http.cpp
   src/mail/mail_store.cpp
   src/mail/oauth.cpp
+  src/mail/session.cpp
   src/security/credential_manager_windows.cpp
   src/security/secret_service_linux.cpp
   src/security/secret_store.cpp
@@ -85,6 +86,7 @@ add_library(nesva_core STATIC
   src/jobs/backup_runner.cpp
   src/jobs/job_store.cpp
   src/jobs/job_worker.cpp
+  src/jobs/mail_job_runner.cpp
   include/nesva/jobs/job_worker.hpp
   src/tools/tool_installer.cpp
   src/providers/local_provider.cpp
@@ -145,6 +147,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/snapshot_restore_dialog.cpp
   src/desktop/dialogs/tool_install_dialog.hpp
   src/desktop/dialogs/tool_install_dialog.cpp
+  src/desktop/widgets/elided_label.hpp
+  src/desktop/widgets/elided_label.cpp
   src/desktop/models/job_list_model.hpp
   src/desktop/models/job_list_model.cpp
   src/desktop/models/event_list_model.hpp
@@ -166,6 +170,7 @@ qt_add_library(nesva_ui STATIC
   src/desktop/pages/activity_page.hpp
   src/desktop/pages/activity_page.cpp
   src/desktop/pages/settings_page.hpp
+  src/desktop/pages/mail_page.cpp
   src/desktop/pages/settings_page.cpp
   src/desktop/pages/placeholder_page.hpp
   src/desktop/pages/placeholder_page.cpp
