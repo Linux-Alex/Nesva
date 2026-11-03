@@ -495,27 +495,38 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
                 report.counters.bytesTransferred += entry.sizeBytes;
 
                 // "Upload succeeded" is not the same as "the bytes are there".
-                // Ask the provider for the stored hash and compare it with the
-                // file we sent; only a match is recorded as verified.
+                // The local hash is always computed (it is a disk read, and the
+                // manifest keeps it), but asking the provider for its copy is a
+                // separate round trip - on slow backends that can cost more than
+                // the upload itself, so it is only done when verification is on.
+                const Result<QString> localHash = sha256File(entry.absolutePath);
                 QString remoteSha = transferred.value().sha256;
+                if (remoteSha.isEmpty() && !localHash) {
+                    remoteSha.clear();
+                }
                 if (job.verifyChecksum && remoteSha.isEmpty()) {
                     const Result<QString> remote = destination.provider->checksum(remoteRelative);
-                    if (remote && !remote.value().isEmpty()) {
-                        const Result<QString> local = sha256File(entry.absolutePath);
-                        if (local && local.value().compare(remote.value(), Qt::CaseInsensitive) == 0) {
-                            remoteSha = local.value();
-                        } else if (local && !remote.value().isEmpty()) {
+                    if (remote && !remote.value().isEmpty() && localHash) {
+                        if (localHash.value().compare(remote.value(), Qt::CaseInsensitive) == 0) {
+                            remoteSha = localHash.value();
+                        } else {
                             ++report.counters.filesFailed;
                             appendError(report,
                                         QStringLiteral("%1: the stored copy does not match the "
                                                        "file that was sent (expected %2, got %3)")
-                                            .arg(remoteRelative, local.value(), remote.value()));
+                                            .arg(remoteRelative, localHash.value(),
+                                                 remote.value()));
                             record.state = QStringLiteral("failed");
                             record.skipReason = QStringLiteral("checksum mismatch after upload");
                             store_.recordManifestEntry(job.id, report.runId, record);
                             continue;
                         }
                     }
+                }
+                if (remoteSha.isEmpty() && localHash) {
+                    // No remote confirmation: keep the local hash so the manifest
+                    // can still be used to verify a restore.
+                    remoteSha = localHash.value();
                 }
                 record.state =
                     remoteSha.isEmpty() ? QStringLiteral("transferred") : QStringLiteral("verified");

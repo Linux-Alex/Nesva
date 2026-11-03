@@ -957,6 +957,9 @@ int commandJobsCreate(Context& context, const Options& options) {
         job.destinationPath = options.flags.value(QStringLiteral("to"));
     }
     job.allowExistingDestination = options.flags.contains(QStringLiteral("allow-existing"));
+    // Slow cloud APIs charge a full round trip per file for the remote hash;
+    // --no-verify keeps the local hash but skips that call.
+    job.verifyChecksum = !options.flags.contains(QStringLiteral("no-verify"));
     if (options.flags.contains(QStringLiteral("exclude"))) {
         for (const QString& pattern :
              options.repeatedFlags.value(QStringLiteral("exclude"), {})) {

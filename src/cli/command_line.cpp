@@ -30,9 +30,13 @@ namespace {
 /// Flags that never take a separate value; every other option accepts both
 /// "--flag value" and "--flag=value".
 const QStringList& booleanFlags() {
-    static const QStringList flags = {QStringLiteral("json"),    QStringLiteral("verbose"),
-                                      QStringLiteral("quiet"),   QStringLiteral("help"),
-                                      QStringLiteral("version"), QStringLiteral("no-console-log")};
+    static const QStringList flags = {
+        QStringLiteral("json"),       QStringLiteral("verbose"),   QStringLiteral("quiet"),
+        QStringLiteral("help"),       QStringLiteral("version"),   QStringLiteral("install"),
+        QStringLiteral("system"),     QStringLiteral("no-console-log"),
+        QStringLiteral("dry-run"),    QStringLiteral("full"),      QStringLiteral("overwrite"),
+        QStringLiteral("rename"),     QStringLiteral("no-verify"), QStringLiteral("prune"),
+        QStringLiteral("force"),      QStringLiteral("allow-existing")};
     return flags;
 }
 
