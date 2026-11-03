@@ -269,7 +269,8 @@ Result<QVector<ArchiveJob>> JobStore::listJobs() const {
     Result<QSqlQuery> query = database_.select(QStringLiteral(
         "SELECT id, name, mode, storage_provider_id, COALESCE(destination_path, ''), enabled, "
         "COALESCE(bandwidth_limit_kib, 0), verification_options_json, retention_policy_json, "
-        "source_kind, COALESCE(mail_account_id, 0) FROM backup_jobs ORDER BY name"));
+        "source_kind, COALESCE(mail_account_id, 0), allow_existing_destination "
+        "FROM backup_jobs ORDER BY name"));
     if (!query) {
         return query.error();
     }
@@ -299,6 +300,7 @@ Result<QVector<ArchiveJob>> JobStore::listJobs() const {
             job.sourceKind = QStringLiteral("filesystem");
         }
         job.mailAccountId = rows.value(10).toLongLong();
+        job.allowExistingDestination = rows.value(11).toBool();
         jobs.append(job);
     }
 
@@ -387,7 +389,8 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
     insert.prepare(QStringLiteral(
         "INSERT INTO backup_jobs (name, mode, storage_provider_id, destination_path, enabled, "
         "bandwidth_limit_kib, verification_options_json, retention_policy_json, source_kind, "
-        "mail_account_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "mail_account_id, allow_existing_destination, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     insert.addBindValue(job.name.trimmed());
     insert.addBindValue(job.mode);
     if (job.storageProviderId) {
@@ -403,6 +406,7 @@ Result<qint64> JobStore::createJob(const ArchiveJob& job) {
         QJsonDocument(backup::retentionToJson(job.retention)).toJson(QJsonDocument::Compact)));
     insert.addBindValue(job.isMail() ? QStringLiteral("mail") : QStringLiteral("filesystem"));
     insert.addBindValue(job.isMail() ? QVariant(job.mailAccountId) : QVariant());
+    insert.addBindValue(job.allowExistingDestination ? 1 : 0);
     insert.addBindValue(timestamp);
     insert.addBindValue(timestamp);
     if (!insert.exec()) {
@@ -479,7 +483,7 @@ Status JobStore::updateJob(const ArchiveJob& job) {
         "UPDATE backup_jobs SET name = ?, mode = ?, storage_provider_id = ?, "
         "destination_path = ?, enabled = ?, bandwidth_limit_kib = ?, "
         "verification_options_json = ?, retention_policy_json = ?, source_kind = ?, "
-        "mail_account_id = ?, updated_at = ? WHERE id = ?"));
+        "mail_account_id = ?, allow_existing_destination = ?, updated_at = ? WHERE id = ?"));
     update.addBindValue(job.name.trimmed());
     update.addBindValue(job.mode);
     if (job.storageProviderId) {
@@ -495,6 +499,7 @@ Status JobStore::updateJob(const ArchiveJob& job) {
         QJsonDocument(backup::retentionToJson(job.retention)).toJson(QJsonDocument::Compact)));
     update.addBindValue(job.isMail() ? QStringLiteral("mail") : QStringLiteral("filesystem"));
     update.addBindValue(job.isMail() ? QVariant(job.mailAccountId) : QVariant());
+    update.addBindValue(job.allowExistingDestination ? 1 : 0);
     update.addBindValue(timestamp);
     update.addBindValue(job.id);
     if (!update.exec()) {
@@ -845,6 +850,67 @@ Result<QMap<QString, ManifestSnapshot>> JobStore::lastSuccessfulManifest(qint64 
         manifest.insert(rows.value(0).toString(), snapshot);
     }
     return manifest;
+}
+
+Result<std::optional<qint64>> JobStore::latestRunId(qint64 jobId) const {
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral("SELECT MAX(id) FROM job_runs WHERE job_id = ? AND status IN "
+                       "('succeeded', 'failed')"),
+        {QVariant(jobId)});
+    if (!query) {
+        return query.error();
+    }
+    QSqlQuery rows = std::move(query).take();
+    if (!rows.next() || rows.value(0).isNull()) {
+        return std::optional<qint64>{};
+    }
+    return std::optional<qint64>(rows.value(0).toLongLong());
+}
+
+Result<int> JobStore::pruneManifestHistory(qint64 jobId, int keepRuns) {
+    if (keepRuns < 1) {
+        keepRuns = 1;
+    }
+    Result<QSqlQuery> query = database_.select(
+        QStringLiteral(
+            "SELECT DISTINCT job_run_id FROM file_manifest WHERE job_id = ? "
+            "ORDER BY job_run_id DESC"),
+        {QVariant(jobId)});
+    if (!query) {
+        return query.error();
+    }
+    QVector<qint64> runIds;
+    QSqlQuery rows = std::move(query).take();
+    while (rows.next()) {
+        runIds.append(rows.value(0).toLongLong());
+    }
+    if (runIds.size() <= keepRuns) {
+        return 0;
+    }
+
+    db::Transaction transaction(database_);
+    int removed = 0;
+    for (int index = keepRuns; index < runIds.size(); ++index) {
+        const qint64 runId = runIds.at(index);
+        for (const QString& statement :
+             {QStringLiteral("DELETE FROM file_manifest WHERE job_id = ? AND job_run_id = ?"),
+              QStringLiteral("DELETE FROM archive_objects WHERE job_id = ? AND job_run_id = ?")}) {
+            QSqlQuery deletion(database_.handle());
+            deletion.prepare(statement);
+            deletion.addBindValue(jobId);
+            deletion.addBindValue(runId);
+            if (!deletion.exec()) {
+                return makeErrorValue(ErrorCode::DatabaseError, "cannot prune run history",
+                                      deletion.lastError().text().toStdString());
+            }
+            removed += deletion.numRowsAffected();
+        }
+    }
+    const Status committed = transaction.commit();
+    if (!committed) {
+        return committed.error();
+    }
+    return removed;
 }
 
 Result<QVector<ManifestRecord>> JobStore::latestManifest(qint64 jobId) const {

@@ -27,6 +27,7 @@
 #include "nesva/core/logging.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/providers/provider_factory.hpp"
+#include "nesva/tools/tool_launcher.hpp"
 
 namespace nesva::ui {
 
@@ -41,6 +42,10 @@ StoragePage::StoragePage(AppContext& context, QWidget* parent)
     toolbar->setSpacing(6);
     auto* addLocalButton = new QPushButton(QStringLiteral("Add local folder..."), this);
     auto* addRcloneButton = new QPushButton(QStringLiteral("Add Rclone remote..."), this);
+    auto* configureRcloneButton = new QPushButton(QStringLiteral("Configure Rclone..."), this);
+    configureRcloneButton->setToolTip(QStringLiteral("Opens 'rclone config' in a terminal for "
+                                                     "provider credentials"));
+    toolbar->addWidget(configureRcloneButton);
     testButton_ = new QPushButton(QStringLiteral("Test connection"), this);
     removeButton_ = new QPushButton(QStringLiteral("Remove"), this);
     toolbar->addWidget(addLocalButton);
@@ -87,6 +92,18 @@ StoragePage::StoragePage(AppContext& context, QWidget* parent)
     connect(refreshButton, &QPushButton::clicked, this, [this] { refresh(); });
     connect(addLocalButton, &QPushButton::clicked, this, &StoragePage::addLocalProvider);
     connect(addRcloneButton, &QPushButton::clicked, this, &StoragePage::addRcloneProvider);
+    connect(configureRcloneButton, &QPushButton::clicked, this, [this] {
+        const Result<QString> terminal =
+            tools::openInTerminal(QStringLiteral("rclone"), {QStringLiteral("config")});
+        if (!terminal) {
+            QMessageBox::warning(this, QStringLiteral("Rclone"),
+                                 QString::fromStdString(terminal.error().toDisplayString()));
+            return;
+        }
+        statusLabel_->setText(QStringLiteral("Opened 'rclone config' in %1; add the remote here "
+                                             "when you are done.")
+                                  .arg(terminal.value()));
+    });
     connect(testButton_, &QPushButton::clicked, this, &StoragePage::testSelected);
     connect(removeButton_, &QPushButton::clicked, this, &StoragePage::removeSelected);
     connect(view_->selectionModel(), &QItemSelectionModel::selectionChanged, this,

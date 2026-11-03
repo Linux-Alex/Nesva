@@ -360,6 +360,15 @@ QStringList migrationV4Statements() {
     };
 }
 
+QStringList migrationV7Statements() {
+    return {
+        // A job may only write into a destination it already owns unless the
+        // user explicitly acknowledged that the path contains other files.
+        QStringLiteral("ALTER TABLE backup_jobs ADD COLUMN allow_existing_destination INTEGER "
+                       "NOT NULL DEFAULT 0"),
+    };
+}
+
 QStringList migrationV6Statements() {
     return {
         // A job's content can come from a filesystem tree or from a Microsoft 365
@@ -449,6 +458,13 @@ const std::vector<Migration>& allMigrations() {
             QStringLiteral("A job's content may come from a Microsoft 365 mailbox, so mail "
                            "archival can be scheduled and run by the agent like any other job."),
             migrationV6Statements(),
+        },
+        Migration{
+            7,
+            QStringLiteral("destination-safety"),
+            QStringLiteral("Archive jobs record whether the user allowed writing into a "
+                           "destination that already holds foreign files."),
+            migrationV7Statements(),
         },
     };
     return migrations;

@@ -7,6 +7,10 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QSet>
 
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
+
 namespace nesva::scan {
 namespace {
 
@@ -32,7 +36,70 @@ bool isLink(const QFileInfo& info) {
     return info.isSymLink() || info.isJunction();
 }
 
+/// Windows marks cloud placeholders with FILE_ATTRIBUTE_OFFLINE or one of the
+/// recall-on-access attributes; reading such a file downloads it. Other
+/// platforms have no equivalent, so the portable answer is "no".
+bool isCloudPlaceholderDefault(const QString& absolutePath) {
+#if defined(Q_OS_WIN)
+    const std::wstring wide = QDir::toNativeSeparators(absolutePath).toStdWString();
+    const DWORD attributes = ::GetFileAttributesW(wide.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+#ifdef FILE_ATTRIBUTE_RECALL_ON_OPEN
+    constexpr DWORD kRecallOnOpen = FILE_ATTRIBUTE_RECALL_ON_OPEN;
+#else
+    constexpr DWORD kRecallOnOpen = 0x00040000;
+#endif
+#ifdef FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+    constexpr DWORD kRecallOnDataAccess = FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS;
+#else
+    constexpr DWORD kRecallOnDataAccess = 0x00400000;
+#endif
+    return (attributes &
+            (static_cast<DWORD>(FILE_ATTRIBUTE_OFFLINE) | kRecallOnOpen | kRecallOnDataAccess)) != 0;
+#else
+    Q_UNUSED(absolutePath);
+    return false;
+#endif
+}
+
+/// Cloud sync roots: reparse points on Windows, plus the known folder names that
+/// appear on every platform.
+bool isCloudRootDefault(const QString& absolutePath) {
+#if defined(Q_OS_WIN)
+    const std::wstring wide = QDir::toNativeSeparators(absolutePath).toStdWString();
+    const DWORD attributes = ::GetFileAttributesW(wide.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES &&
+        (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+        return true;
+    }
+#else
+    Q_UNUSED(absolutePath);
+#endif
+    const QString name = QFileInfo(absolutePath).fileName();
+    static const QStringList kCloudNames = {
+        QStringLiteral("iCloudDrive"), QStringLiteral("OneDrive"),   QStringLiteral("Dropbox"),
+        QStringLiteral("Google Drive"), QStringLiteral("pCloudDrive"), QStringLiteral("Nextcloud"),
+        QStringLiteral("MEGAsync"),
+    };
+    for (const QString& known : kCloudNames) {
+        if (name.compare(known, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return name.startsWith(QStringLiteral("OneDrive - "), Qt::CaseInsensitive);
+}
+
 } // namespace
+
+bool isCloudPlaceholder(const QString& absolutePath) {
+    return isCloudPlaceholderDefault(absolutePath);
+}
+
+bool isCloudSyncRoot(const QString& absolutePath) {
+    return isCloudRootDefault(absolutePath);
+}
 
 bool isInsideAnyRoot(const QString& candidate, const QStringList& roots) {
     if (candidate.isEmpty() || roots.isEmpty()) {
@@ -164,6 +231,16 @@ Result<ScanResult> scanSources(const QVector<ScanSource>& sources, const ScanOpt
                                                QStringLiteral("symlink directory not followed")});
                         continue;
                     }
+                    if (options.skipCloudRoots) {
+                        const auto probe = options.cloudRootProbe ? options.cloudRootProbe
+                                                                  : isCloudSyncRoot;
+                        if (probe(entry.absoluteFilePath())) {
+                            result.skipped.append(
+                                {entry.absoluteFilePath(),
+                                 QStringLiteral("cloud sync folder not followed")});
+                            continue;
+                        }
+                    }
                     if (isInsideAnyRoot(entry.absoluteFilePath(), excludedRoots)) {
                         result.skipped.append({entry.absoluteFilePath(),
                                                QStringLiteral("destination or excluded root")});
@@ -193,6 +270,18 @@ Result<ScanResult> scanSources(const QVector<ScanSource>& sources, const ScanOpt
                 if (!options.includeHidden && entry.isHidden()) {
                     result.skipped.append({entry.absoluteFilePath(), QStringLiteral("hidden file")});
                     continue;
+                }
+
+                if (options.skipCloudPlaceholders) {
+                    // Reading a placeholder hydrates it: the file would be
+                    // downloaded from iCloud/OneDrive during the backup.
+                    const auto probe = options.placeholderProbe ? options.placeholderProbe
+                                                                : isCloudPlaceholder;
+                    if (probe(entry.absoluteFilePath())) {
+                        result.skipped.append({entry.absoluteFilePath(),
+                                               QStringLiteral("cloud placeholder not downloaded")});
+                        continue;
+                    }
                 }
 
                 ScanEntry scanned;

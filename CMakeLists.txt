@@ -58,6 +58,7 @@ qt_standard_project_setup(REQUIRES 6.5)
 add_library(nesva_core STATIC
   src/core/app_info.cpp
   src/core/error.cpp
+  src/core/disk_space.cpp
   src/core/external_tool.cpp
   src/core/hashing.cpp
   src/core/logging.cpp
@@ -69,6 +70,7 @@ add_library(nesva_core STATIC
   src/database/database.cpp
   src/database/migrations.cpp
   src/database/settings_store.cpp
+  src/agent/autostart.cpp
   src/agent/client.cpp
   src/agent/protocol.cpp
   src/backup/restic.cpp
@@ -80,6 +82,7 @@ add_library(nesva_core STATIC
   src/mail/session.cpp
   src/security/credential_manager_windows.cpp
   src/security/secret_service_linux.cpp
+  src/security/identity.cpp
   src/security/secret_store.cpp
   src/jobs/archive_restore.cpp
   src/jobs/archive_runner.cpp
@@ -89,6 +92,7 @@ add_library(nesva_core STATIC
   src/jobs/mail_job_runner.cpp
   include/nesva/jobs/job_worker.hpp
   src/tools/tool_installer.cpp
+  src/tools/tool_launcher.cpp
   src/providers/local_provider.cpp
   src/providers/provider_factory.cpp
   src/providers/rclone_provider.cpp
@@ -145,6 +149,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/snapshot_browser_dialog.cpp
   src/desktop/dialogs/snapshot_restore_dialog.hpp
   src/desktop/dialogs/snapshot_restore_dialog.cpp
+  src/desktop/dialogs/mail_connect_dialog.hpp
+  src/desktop/dialogs/mail_connect_dialog.cpp
   src/desktop/dialogs/tool_install_dialog.hpp
   src/desktop/dialogs/tool_install_dialog.cpp
   src/desktop/widgets/elided_label.hpp
@@ -236,7 +242,7 @@ endif()
 # ---------------------------------------------------------------------------
 # Install rules
 # ---------------------------------------------------------------------------
-install(TARGETS nesva nesva-cli
+install(TARGETS nesva nesva-cli nesva-agent
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -266,7 +272,10 @@ set(CPACK_PACKAGE_INSTALL_DIRECTORY "Nesva")
 set(CPACK_STRIP_FILES TRUE)
 
 if(WIN32)
-  set(CPACK_GENERATOR "WIX")
+  # NSIS rather than WIX: it does not depend on the Windows Installer
+  # toolchain being installed on the build machine. Unsigned either way.
+  set(CPACK_GENERATOR "NSIS;ZIP")
+  set(CPACK_NSIS_INSTALLED_ICON_NAME "nesva.exe")
 elseif(UNIX)
   set(CPACK_GENERATOR "DEB")
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "The Nesva Authors <security@nesva.invalid>")

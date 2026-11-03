@@ -3,6 +3,8 @@
 
 #include "settings_page.hpp"
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QDir>
 #include <QtCore/QSignalBlocker>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -13,12 +15,16 @@
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QFileDialog>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QMessageBox>
+#include <QtWidgets/QLineEdit>
 #include <QtWidgets/QVBoxLayout>
 
 #include "app_context.hpp"
+#include "dialogs/mail_connect_dialog.hpp"
 #include "dialogs/tool_install_dialog.hpp"
+#include "nesva/agent/autostart.hpp"
 #include "nesva/agent/client.hpp"
 #include "nesva/core/external_tool.hpp"
 #include "nesva/core/paths.hpp"
@@ -49,6 +55,7 @@ SettingsPage::SettingsPage(AppContext& context, QWidget* parent)
       context_(context) {
     buildAppearanceSection();
     buildToolsSection();
+    buildMailSection();
     buildLoggingSection();
     buildSafetySection();
     buildBehaviourSection();
@@ -272,6 +279,97 @@ void SettingsPage::buildBehaviourSection() {
     body()->addWidget(card);
 }
 
+void SettingsPage::buildMailSection() {
+    QVBoxLayout* cardLayout = nullptr;
+    QFrame* card = makeCard(this, QStringLiteral("Microsoft 365"), cardLayout);
+
+    auto* form = new QFormLayout();
+    mailTenantEdit_ = new QLineEdit(card);
+    mailTenantEdit_->setObjectName(QStringLiteral("settingsMailTenant"));
+    mailTenantEdit_->setPlaceholderText(QStringLiteral("Directory (tenant) ID"));
+    form->addRow(QStringLiteral("Tenant ID"), mailTenantEdit_);
+
+    mailClientEdit_ = new QLineEdit(card);
+    mailClientEdit_->setObjectName(QStringLiteral("settingsMailClient"));
+    mailClientEdit_->setPlaceholderText(QStringLiteral("Application (client) ID"));
+    form->addRow(QStringLiteral("Client ID"), mailClientEdit_);
+
+    auto* destinationRow = new QWidget(card);
+    auto* destinationLayout = new QHBoxLayout(destinationRow);
+    destinationLayout->setContentsMargins(0, 0, 0, 0);
+    mailDestinationEdit_ = new QLineEdit(destinationRow);
+    mailDestinationEdit_->setObjectName(QStringLiteral("settingsMailDestination"));
+    mailDestinationEdit_->setPlaceholderText(QStringLiteral("Default folder for archived .eml files"));
+    auto* browse = new QPushButton(QStringLiteral("Browse..."), destinationRow);
+    destinationLayout->addWidget(mailDestinationEdit_, 1);
+    destinationLayout->addWidget(browse);
+    form->addRow(QStringLiteral("Archive folder"), destinationRow);
+    cardLayout->addLayout(form);
+
+    auto* hint = new QLabel(
+        QStringLiteral("Register the app in Entra ID as a public client (no secret): platform "
+                       "<b>Mobile and desktop applications</b> with redirect URI "
+                       "<b>http://localhost</b>, <b>Allow public client flows</i> = Yes, delegated "
+                       "permissions <b>Mail.Read</b> and <b>User.Read</b>. Then press Connect to "
+                       "sign in; the refresh token is kept in the system keyring."),
+        card);
+    hint->setObjectName(QStringLiteral("pageSubtitle"));
+    hint->setWordWrap(true);
+    hint->setTextFormat(Qt::RichText);
+    cardLayout->addWidget(hint);
+
+    auto* buttons = new QHBoxLayout();
+    auto* saveButton = new QPushButton(QStringLiteral("Save"), card);
+    auto* connectButton = new QPushButton(QStringLiteral("Connect account..."), card);
+    buttons->addWidget(saveButton);
+    buttons->addWidget(connectButton);
+    buttons->addStretch(1);
+    cardLayout->addLayout(buttons);
+
+    connect(saveButton, &QPushButton::clicked, this, [this] { saveMailSettings(); });
+    connect(browse, &QPushButton::clicked, this, [this] {
+        const QString directory = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("Choose the folder for archived .eml files"));
+        if (!directory.isEmpty()) {
+            mailDestinationEdit_->setText(QDir::cleanPath(directory));
+        }
+    });
+    connect(connectButton, &QPushButton::clicked, this, [this] {
+        saveMailSettings();
+        MailConnectDialog dialog(context_, this);
+        dialog.exec();
+        if (dialog.connectedAccountId() > 0) {
+            savedLabel_->setText(QStringLiteral("Connected %1.").arg(dialog.connectedAccount()));
+            savedLabel_->setVisible(true);
+        }
+    });
+
+    body()->addWidget(card);
+
+    mailTenantEdit_->setText(
+        context_.settings()
+            .getString(QString::fromUtf8(config::keys::kMailTenantId), QString())
+            .valueOr(QString()));
+    mailClientEdit_->setText(
+        context_.settings()
+            .getString(QString::fromUtf8(config::keys::kMailClientId), QString())
+            .valueOr(QString()));
+    mailDestinationEdit_->setText(
+        context_.settings()
+            .getString(QString::fromUtf8(config::keys::kMailDestination), QString())
+            .valueOr(QString()));
+}
+
+void SettingsPage::saveMailSettings() {
+    context_.settings().setString(QString::fromUtf8(config::keys::kMailTenantId),
+                                 mailTenantEdit_->text().trimmed());
+    context_.settings().setString(QString::fromUtf8(config::keys::kMailClientId),
+                                 mailClientEdit_->text().trimmed());
+    context_.settings().setString(QString::fromUtf8(config::keys::kMailDestination),
+                                 QDir::cleanPath(mailDestinationEdit_->text().trimmed()));
+    showSaved();
+}
+
 void SettingsPage::buildToolsSection() {
     QVBoxLayout* cardLayout = nullptr;
     QFrame* card = makeCard(this, QStringLiteral("External tools"), cardLayout);
@@ -364,13 +462,49 @@ void SettingsPage::buildAgentSection() {
     hint->setTextFormat(Qt::RichText);
     cardLayout->addWidget(hint);
 
+    auto* autostartLabel = new QLabel(card);
+    autostartLabel->setObjectName(QStringLiteral("pageSubtitle"));
+    autostartLabel->setText(QStringLiteral("Autostart: %1")
+                                .arg(agent::autostartDescription()));
+    autostartLabel->setWordWrap(true);
+    cardLayout->addWidget(autostartLabel);
+
     auto* buttons = new QHBoxLayout();
     auto* refreshButton = new QPushButton(QStringLiteral("Refresh status"), card);
     auto* stopButton = new QPushButton(QStringLiteral("Stop agent"), card);
+    auto* installButton = new QPushButton(QStringLiteral("Install autostart"), card);
+    auto* removeButton = new QPushButton(QStringLiteral("Remove autostart"), card);
     buttons->addWidget(refreshButton);
     buttons->addWidget(stopButton);
+    buttons->addWidget(installButton);
+    buttons->addWidget(removeButton);
     buttons->addStretch(1);
     cardLayout->addLayout(buttons);
+
+    connect(installButton, &QPushButton::clicked, this, [this, autostartLabel] {
+        const QString executable = QCoreApplication::applicationDirPath() + QStringLiteral("/")
+#if defined(Q_OS_WIN)
+                                   + QStringLiteral("nesva-agent.exe");
+#else
+                                   + QStringLiteral("nesva-agent");
+#endif
+        const Result<QString> installed = agent::installAutostart(executable);
+        if (!installed) {
+            QMessageBox::warning(this, QStringLiteral("Background agent"),
+                                 QString::fromStdString(installed.error().toDisplayString()));
+        } else {
+            autostartLabel->setText(QStringLiteral("Autostart: %1").arg(installed.value()));
+        }
+    });
+    connect(removeButton, &QPushButton::clicked, this, [this, autostartLabel] {
+        const Result<QString> removed = agent::removeAutostart();
+        if (!removed) {
+            QMessageBox::warning(this, QStringLiteral("Background agent"),
+                                 QString::fromStdString(removed.error().toDisplayString()));
+        } else {
+            autostartLabel->setText(QStringLiteral("Autostart: %1").arg(removed.value()));
+        }
+    });
 
     connect(refreshButton, &QPushButton::clicked, this, [this] { refreshAgentStatus(); });
     connect(stopButton, &QPushButton::clicked, this, [this] {

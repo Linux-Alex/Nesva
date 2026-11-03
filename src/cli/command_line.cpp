@@ -16,7 +16,8 @@ const QStringList& knownCommands() {
         QStringLiteral("storage"), QStringLiteral("history"), QStringLiteral("archive"),
         QStringLiteral("verify"),  QStringLiteral("agent"),   QStringLiteral("schedule"),
         QStringLiteral("repository"), QStringLiteral("snapshots"), QStringLiteral("retention"),
-        QStringLiteral("mail"),    QStringLiteral("tools"),
+        QStringLiteral("mail"),    QStringLiteral("tools"),   QStringLiteral("rclone"),
+        QStringLiteral("maintenance"),
         QStringLiteral("backup"),  QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
@@ -79,7 +80,8 @@ Options parseArguments(const QStringList& arguments) {
         // id, ...). Keep it in sync with usageText().
         static const QStringList subcommands = {
             "accounts", "add",      "apply",     "cancel",   "check",    "connect", "estimate",
-            "folders",  "help",     "info",      "init",     "job",      "list",    "locks",
+            "install",  "uninstall", "configure", "folders", "help",    "info",     "init",
+            "job",      "list",    "locks",
             "preview",
             "rclone",   "reload",   "restore",   "run",      "set-password", "show", "status",
             "stop",     "sync",     "test",      "unlock"};

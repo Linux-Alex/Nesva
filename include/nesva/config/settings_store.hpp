@@ -60,6 +60,11 @@ inline constexpr const char* kMinimizeToTray = "ui.minimize_to_tray";
 inline constexpr const char* kNotificationsEnabled = "ui.notifications";
 inline constexpr const char* kBackupPasswordSource = "backup.password_source";
 inline constexpr const char* kBackupPasswordFile = "backup.password_file";
+/// Entra ID application registration used to sign in to Microsoft 365.
+inline constexpr const char* kMailTenantId = "mail.tenant_id";
+inline constexpr const char* kMailClientId = "mail.client_id";
+/// Default directory for archived .eml files.
+inline constexpr const char* kMailDestination = "mail.destination";
 } // namespace keys
 
 } // namespace nesva::config

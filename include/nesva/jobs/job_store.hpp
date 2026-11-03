@@ -71,6 +71,11 @@ struct ArchiveJob {
     QString sourceKind = QStringLiteral("filesystem");
     qint64 mailAccountId = 0; ///< mail_accounts.id, for sourceKind == "mail"
 
+    /// Allow writes into a destination that already contains files Nesva did
+    /// not put there. Off by default: a wrong destination path must not
+    /// overwrite somebody's existing cloud data.
+    bool allowExistingDestination = false;
+
     bool isBackup() const { return mode == QStringLiteral("backup"); }
     bool isMail() const { return sourceKind == QStringLiteral("mail"); }
     bool isValid() const {
@@ -203,6 +208,15 @@ public:
     /// Manifest of the newest run that produced entries, for browsing and
     /// restore planning.
     Result<QVector<ManifestRecord>> latestManifest(qint64 jobId) const;
+
+    /// Most recent run id for a job, when one exists. Used to tell "this
+    /// destination is ours" from "somebody else's files are here".
+    Result<std::optional<qint64>> latestRunId(qint64 jobId) const;
+
+    /// Keeps the manifest and object rows of the newest p keepRuns runs and
+    /// deletes the rest. Without it the database grows by one full manifest per
+    /// run, on the system disk.
+    Result<int> pruneManifestHistory(qint64 jobId, int keepRuns = 5);
 
     Status recordManifestEntry(qint64 jobId, qint64 runId, const ManifestRecord& record);
     Status recordArchiveObject(qint64 jobId, qint64 runId, const QString& remotePath,

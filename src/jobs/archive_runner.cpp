@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "nesva/core/disk_space.hpp"
+#include "nesva/core/hashing.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/core/paths.hpp"
 #include "nesva/db/database.hpp"
@@ -175,6 +177,46 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
         }
     }
 
+    // ---- destination safety ------------------------------------------------
+    // Writing into a destination that already holds files Nesva did not put
+    // there can overwrite somebody's existing cloud data. Require an explicit
+    // acknowledgement the first time.
+    if (!options.dryRun && !job.allowExistingDestination) {
+        const Result<std::optional<qint64>> previousRun = store_.latestRunId(job.id);
+        const bool nesvaOwned = previousRun && previousRun.value().has_value();
+        if (!nesvaOwned) {
+            const Result<QVector<providers::RemoteEntry>> existing =
+                destination.provider->listFiles(QString(), false);
+            if (!existing) {
+                report.status = QStringLiteral("failed");
+                appendError(report,
+                            QStringLiteral("cannot check the destination before writing: %1")
+                                .arg(QString::fromStdString(existing.error().toDisplayString())));
+                store_.finishRun(report.runId, report.status, report.counters, existing.error());
+                return report;
+            }
+            if (!existing.value().isEmpty()) {
+                const Error guarded(
+                    ErrorCode::PermissionDenied,
+                    "the destination already contains files that Nesva did not create",
+                    QStringLiteral("%1 has %2 entries. Point the job at an empty or dedicated "
+                                   "folder, or enable 'allow an existing destination' for this "
+                                   "job if overwriting same-named files there is intended.")
+                        .arg(destination.provider->location())
+                        .arg(existing.value().size())
+                        .toStdString());
+                report.status = QStringLiteral("failed");
+                appendError(report, QString::fromStdString(guarded.toDisplayString()));
+                store_.finishRun(report.runId, report.status, report.counters, guarded);
+                store_.appendJobEvent(job.id, report.runId, LogLevel::Error,
+                                      QStringLiteral("archive"),
+                                      QStringLiteral("Refused to write into a non-empty "
+                                                     "destination that Nesva does not own"));
+                return report;
+            }
+        }
+    }
+
     // ---- scan -------------------------------------------------------------
     scan::ScanOptions scanOptions;
     scanOptions.exclusions = rules.value();
@@ -257,6 +299,20 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
     progress.bytesTotal = scanResult.totalBytes;
     progress.message = QStringLiteral("Preparing destination");
     emitProgress(progress);
+
+    // A local destination must be able to hold what is about to be written. The
+    // message names another disk when one has room, instead of failing halfway.
+    if (!options.dryRun && !destination.localExclusionRoot.isEmpty()) {
+        const Status space = requireFreeSpace(destination.localExclusionRoot,
+                                              scanResult.totalBytes,
+                                              QStringLiteral("archiving this job"));
+        if (!space.ok()) {
+            report.status = QStringLiteral("failed");
+            appendError(report, QString::fromStdString(space.error().toDisplayString()));
+            store_.finishRun(report.runId, report.status, report.counters, space.error());
+            return report;
+        }
+    }
 
     // ---- previous manifest ------------------------------------------------
     QMap<QString, ManifestSnapshot> previous;
@@ -376,12 +432,36 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
                 ++report.counters.filesProcessed;
                 ++report.uploads;
                 report.counters.bytesTransferred += entry.sizeBytes;
-                record.state = transferred.value().sha256.isEmpty() ? QStringLiteral("transferred")
-                                                                    : QStringLiteral("verified");
-                record.sha256 = transferred.value().sha256;
+
+                // "Upload succeeded" is not the same as "the bytes are there".
+                // Ask the provider for the stored hash and compare it with the
+                // file we sent; only a match is recorded as verified.
+                QString remoteSha = transferred.value().sha256;
+                if (job.verifyChecksum && remoteSha.isEmpty()) {
+                    const Result<QString> remote = destination.provider->checksum(remoteRelative);
+                    if (remote && !remote.value().isEmpty()) {
+                        const Result<QString> local = sha256File(entry.absolutePath);
+                        if (local && local.value().compare(remote.value(), Qt::CaseInsensitive) == 0) {
+                            remoteSha = local.value();
+                        } else if (local && !remote.value().isEmpty()) {
+                            ++report.counters.filesFailed;
+                            appendError(report,
+                                        QStringLiteral("%1: the stored copy does not match the "
+                                                       "file that was sent (expected %2, got %3)")
+                                            .arg(remoteRelative, local.value(), remote.value()));
+                            record.state = QStringLiteral("failed");
+                            record.skipReason = QStringLiteral("checksum mismatch after upload");
+                            store_.recordManifestEntry(job.id, report.runId, record);
+                            continue;
+                        }
+                    }
+                }
+                record.state =
+                    remoteSha.isEmpty() ? QStringLiteral("transferred") : QStringLiteral("verified");
+                record.sha256 = remoteSha;
                 store_.recordManifestEntry(job.id, report.runId, record);
                 store_.recordArchiveObject(job.id, report.runId, remoteRelative, entry.sizeBytes,
-                                           transferred.value().sha256,
+                                           remoteSha,
                                            record.state == QStringLiteral("verified")
                                                ? QStringLiteral("present")
                                                : QStringLiteral("unverified"));
@@ -410,6 +490,11 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
         if (++sincePersist >= kCounterPersistInterval) {
             sincePersist = 0;
             store_.updateRunCounters(report.runId, report.counters);
+    // Keep the database bounded: one manifest per run, forever, would grow on
+    // the system disk with every backup.
+    if (report.status == QStringLiteral("succeeded")) {
+        store_.pruneManifestHistory(job.id, 5);
+    }
         }
     }
 

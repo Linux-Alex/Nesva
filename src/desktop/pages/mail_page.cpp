@@ -21,6 +21,7 @@
 
 #include "app_context.hpp"
 #include "dialogs/job_editor_dialog.hpp"
+#include "dialogs/mail_connect_dialog.hpp"
 #include "job_executor.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/mail/mail_store.hpp"
@@ -49,11 +50,13 @@ MailPage::MailPage(AppContext& context, QWidget* parent)
     accountCombo_->setMinimumWidth(280);
     toolbar->addWidget(accountCombo_);
 
+    connectButton_ = new QPushButton(QStringLiteral("Connect account..."), this);
     refreshButton_ = new QPushButton(QStringLiteral("Refresh"), this);
     estimateButton_ = new QPushButton(QStringLiteral("Estimate"), this);
     syncButton_ = new QPushButton(QStringLiteral("Sync now"), this);
     jobButton_ = new QPushButton(QStringLiteral("Schedule job..."), this);
     resticButton_ = new QPushButton(QStringLiteral("Back up archive with Restic..."), this);
+    toolbar->addWidget(connectButton_);
     toolbar->addWidget(refreshButton_);
     toolbar->addWidget(estimateButton_);
     toolbar->addWidget(syncButton_);
@@ -93,7 +96,29 @@ MailPage::MailPage(AppContext& context, QWidget* parent)
     }
     body()->addWidget(view_, 1);
 
+    connect(connectButton_, &QPushButton::clicked, this, &MailPage::connectAccount);
     connect(refreshButton_, &QPushButton::clicked, this, [this] { refresh(); });
+    connect(model_, &QStandardItemModel::itemChanged, this, [this](QStandardItem* item) {
+        if (loadingFolders_ || item == nullptr || item->column() != 4) {
+            return;
+        }
+        const qint64 folderRowId = item->data(Qt::UserRole).toLongLong();
+        if (folderRowId <= 0) {
+            return;
+        }
+        mail::MailStore store(context_.database());
+        const bool enabled = item->checkState() == Qt::Checked;
+        const Status stored = store.setFolderSyncEnabled(folderRowId, enabled);
+        if (!stored.ok()) {
+            statusLabel_->setText(QString::fromStdString(stored.error().toDisplayString()));
+            return;
+        }
+        context_.recordEvent(LogLevel::Info, QStringLiteral("mail"),
+                             QStringLiteral("%1 folder %2")
+                                 .arg(enabled ? QStringLiteral("Included")
+                                              : QStringLiteral("Excluded"),
+                                      item->text()));
+    });
     connect(accountCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
         loadFolders();
         updateActionState();
@@ -135,6 +160,29 @@ MailPage::MailPage(AppContext& context, QWidget* parent)
                             .arg(report.counters.filesFailed));
                     loadFolders();
                     updateActionState();
+                    // An expired or revoked sign-in is the one failure the user
+                    // can fix from here, so offer exactly that.
+                    const bool needsSignIn =
+                        report.status == QStringLiteral("failed") &&
+                        std::any_of(report.errors.cbegin(), report.errors.cend(),
+                                    [](const QString& error) {
+                                        return error.contains(QStringLiteral("refresh token"),
+                                                              Qt::CaseInsensitive) ||
+                                               error.contains(QStringLiteral("sign-in"),
+                                                              Qt::CaseInsensitive) ||
+                                               error.contains(QStringLiteral("credential"),
+                                                              Qt::CaseInsensitive);
+                                    });
+                    if (needsSignIn) {
+                        const auto answer = QMessageBox::question(
+                            this, QStringLiteral("Microsoft 365"),
+                            QStringLiteral("The sign-in for this account is no longer valid. "
+                                           "Connect it again now?"),
+                            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                        if (answer == QMessageBox::Yes) {
+                            connectAccount();
+                        }
+                    }
                 });
     }
 
@@ -190,6 +238,14 @@ void MailPage::loadAccounts() {
     updateActionState();
 }
 
+void MailPage::connectAccount() {
+    MailConnectDialog dialog(context_, this);
+    if (dialog.exec() == QDialog::Accepted || dialog.connectedAccountId() > 0) {
+        loadAccounts();
+        statusLabel_->setText(QStringLiteral("Connected %1.").arg(dialog.connectedAccount()));
+    }
+}
+
 void MailPage::loadFolders() {
     model_->removeRows(0, model_->rowCount());
     const qint64 accountId = currentAccountId();
@@ -205,10 +261,8 @@ void MailPage::loadFolders() {
 
     qint64 total = 0;
     qint64 archived = 0;
+    loadingFolders_ = true;
     for (const mail::MailFolderStats& folder : stats.value()) {
-        if (!folder.syncEnabled) {
-            continue;
-        }
         total += folder.totalItems;
         archived += folder.exportedItems;
         QList<QStandardItem*> row;
@@ -219,9 +273,12 @@ void MailPage::loadFolders() {
         auto* include = new QStandardItem();
         include->setCheckable(true);
         include->setCheckState(folder.syncEnabled ? Qt::Checked : Qt::Unchecked);
+        include->setData(static_cast<qulonglong>(folder.folderRowId), Qt::UserRole);
+        include->setToolTip(QStringLiteral("Include this folder in the archive"));
         row.append(include);
         model_->appendRow(row);
     }
+    loadingFolders_ = false;
 
     if (statusLabel_->text().isEmpty()) {
         statusLabel_->setText(QStringLiteral("%1 messages in %2 folders; %3 archived, %4 to go.")

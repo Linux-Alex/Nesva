@@ -46,6 +46,7 @@ private:
         qint64 id = 0;
         QString name;
         QString mode;
+        QString sourceKind = QStringLiteral("filesystem");
         bool enabled = false;
         int sourceCount = 0;
         QString provider;

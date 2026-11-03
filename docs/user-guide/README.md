@@ -9,6 +9,8 @@ Start here:
 - [Tutorial: from install to a verified archive](tutorial.md) - the guided walkthrough, including
   the acceptance scenario to run after any change.
 - [Archiving Microsoft 365 mail](microsoft-365.md) - app registration, sign-in, sync, troubleshooting.
+- [Disaster recovery](disaster-recovery.md) - restoring your data on a new machine, and what is not
+  recoverable.
 
 ## What you can do today (version 0.5.0)
 

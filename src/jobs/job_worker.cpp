@@ -10,6 +10,7 @@
 #include "nesva/db/database.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/jobs/mail_job_runner.hpp"
+#include "nesva/security/identity.hpp"
 
 namespace nesva::jobs {
 
@@ -100,6 +101,12 @@ Status JobWorker::start(const ArchiveJob& job, std::optional<StorageProviderReco
                         const PasswordOptions& passwordOptions) {
     if (thread_) {
         return makeError(ErrorCode::AlreadyExists, "a job is already running");
+    }
+    // A run started from a service context would archive the wrong profile and
+    // find no credentials; refuse before anything is recorded.
+    const Status identity = security::requireUserContext(QStringLiteral("job run"));
+    if (!identity.ok()) {
+        return identity.error();
     }
 
     thread_ = std::make_unique<Thread>(databasePath_, job, std::move(provider), options,

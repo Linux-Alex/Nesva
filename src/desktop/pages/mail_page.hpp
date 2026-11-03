@@ -38,6 +38,7 @@ public:
 private:
     void loadAccounts();
     void loadFolders();
+    void connectAccount();
     void estimate();
     void syncNow();
     void editJob();
@@ -53,6 +54,7 @@ private:
     ElidedLabel* statusLabel_ = nullptr;
     ElidedLabel* hintLabel_ = nullptr;
     QProgressBar* progress_ = nullptr;
+    QPushButton* connectButton_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
     QPushButton* estimateButton_ = nullptr;
     QPushButton* syncButton_ = nullptr;
@@ -60,6 +62,7 @@ private:
     QPushButton* resticButton_ = nullptr;
     QVector<mail::MailAccount> accounts_;
     bool busy_ = false;
+    bool loadingFolders_ = false;
 };
 
 } // namespace nesva::ui

@@ -1,28 +1,53 @@
-# Windows packaging
+# Windows: background agent and packaging
 
-Target platform: Windows 10/11 x64 (primary Nesva target).
+Nesva runs scheduled jobs through `nesva-agent`, a per-user background process. It must run as the
+user whose data is backed up - never as SYSTEM: SYSTEM has its own profile and cannot see the
+interactive user's keyring.
 
-## Phase 1 status
+## Autostart (no PowerShell, no scheduled task)
 
-The build itself is ready (`windows-msvc-release` preset, `WIN32_EXECUTABLE` application, CPack
-with the `WIX` generator configured). No installer is produced yet, and **no Windows build has
-been executed or verified** - the development machine is Linux. Windows CI
-(`.github/workflows/ci.yml`) is the first place a real MSVC build will run.
+Group policies frequently block PowerShell scripts and `schtasks`, so Nesva uses neither. The agent
+is registered as a **per-user Run entry**, which the Windows shell executes at logon in the
+interactive session, with the user's own token and without elevation:
 
-## Phase 6 scope
+```
+nesva-cli agent install      # writes HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+nesva-cli agent uninstall     # removes it again
+nesva-cli agent status        # is it running?
+```
 
-- WiX-based MSI (or an EXE wrapper) produced by CPack from a clean Release build;
-- Start menu entry, optional desktop shortcut, uninstaller with per-user data preserved;
-- Qt runtime deployment through `windeployqt` (Core, Gui, Widgets, Sql, Network, the `qsqlite`
-  SQL driver plugin and the `platforms` plugins);
-- application data in `%LOCALAPPDATA%\Nesva` for mutable state; **never** in `Program Files`;
-- optional registration of `nesva-agent` as a per-user scheduled task
-  (`schtasks /Create /SC ONLOGON /RL LIMITED /TN NesvaAgent ...`). Windows SYSTEM does not have
-  access to an interactive user's cloud credentials or keyring, so the agent must run in the
-  user's own context;
-- code signing documentation and checksums for every published artifact.
+The same is available in the desktop application: **Settings -> Background agent -> Install
+autostart**.
 
-## Cross-compilation note
+* No elevation is required and none is requested.
+* No PowerShell, no WScript, no scheduled task, so script-blocking group policies do not apply.
+* The value points at the absolute path of `nesva-agent.exe`, so an update that moves the
+  executable has to run `agent install` again.
+* Removing Nesva does not delete the Run entry; run `nesva-cli agent uninstall` first.
 
-Cross-building Qt 6 Widgets applications from Linux to Windows is not supported by this project.
-Windows artifacts are produced on Windows (CI runner or a developer machine).
+## Requirements
+
+* Rclone is not bundled. Install it from **Settings -> External tools -> Install Rclone...**: it
+  shows every step, verifies the published SHA-256 and needs no admin rights.
+* Restic is not bundled either; download the official binary, verify its checksum and put it on
+  `PATH` (or point to it in Settings).
+* Rclone needs the remote to exist: **Storage -> Configure Rclone...** opens `rclone config` in a
+  terminal.
+
+## Verifying an installation
+
+```
+nesva-cli doctor
+nesva-cli agent install
+nesva-cli agent status
+nesva.exe --gui-selftest=%TEMP%\nesva-shots
+```
+
+`doctor` reports the user context (and warns when the process runs as a service account), the data
+directory, free space and both external tools.
+
+## Packaging
+
+There is no signed installer yet. Build from source with the `windows-msvc-release` preset, or use
+the artefacts of the CI job `windows-msvc`. A CPack NSIS target exists in the top-level CMakeLists,
+but it has not been built or tested on Windows in this repository, and the binaries are unsigned.

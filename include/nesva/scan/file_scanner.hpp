@@ -45,7 +45,31 @@ struct ScanOptions {
 
     /// Emit a progress snapshot every N files scanned (0 disables callbacks).
     int progressInterval = 64;
+
+    /// Skip files that exist only as cloud placeholders (iCloud Drive, OneDrive,
+    /// Dropbox "online-only" files). Reading one hydrates it from the cloud,
+    /// which can fill the disk and start a mass download - so they are skipped
+    /// and reported instead. On by default.
+    bool skipCloudPlaceholders = true;
+
+    /// Skip directories that are cloud-sync roots (iCloud Drive, OneDrive, ...):
+    /// archiving one means archiving somebody else's cloud copy, and reading it
+    /// can pull the whole account down. On by default.
+    bool skipCloudRoots = true;
+
+    /// Test seam: overrides the platform placeholder probe. Empty means "use the
+    /// real one" (Windows file attributes; nothing is a placeholder elsewhere).
+    std::function<bool(const QString& absolutePath)> placeholderProbe;
+
+    /// Test seam: overrides the cloud-root probe.
+    std::function<bool(const QString& absolutePath)> cloudRootProbe;
 };
+
+/// True when the path is a cloud placeholder rather than local content.
+bool isCloudPlaceholder(const QString& absolutePath);
+
+/// True when the path is a cloud-sync root directory that must not be walked.
+bool isCloudSyncRoot(const QString& absolutePath);
 
 struct ScanEntry {
     QString absolutePath;

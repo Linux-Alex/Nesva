@@ -8,6 +8,48 @@ All notable changes to Nesva are documented here. The format follows
 
 ### Added
 
+### Added (17-item pass for the Windows deployment)
+
+- **Microsoft 365 in the GUI.** Settings -> *Microsoft 365* holds the Entra application details
+  (tenant id, client id, default archive folder) and a **Connect account** dialog that runs the
+  browser sign-in off the UI thread, shows the sign-in URL, and writes the refresh token to the
+  keyring. The shared `mail::connectAccount` makes the CLI and the dialog behave identically.
+- **Mail page fixes**: the folder *Include* checkbox now persists through
+  `MailStore::setFolderSyncEnabled` (it was checkable but ignored), an expired sign-in offers
+  "Connect again" instead of a dead end, and the job list shows mail jobs as `mail` / `mailbox`.
+- **Cloud placeholder protection** (`src/scan/file_scanner.cpp`): files carrying
+  `FILE_ATTRIBUTE_OFFLINE`/recall attributes are skipped with a recorded reason instead of being
+  hydrated, and cloud sync roots (iCloud Drive, OneDrive, Dropbox, ... - reparse points on Windows
+  plus known names) are not walked at all. Both default to on.
+- **Identity guard** (`src/security/identity.cpp`): the process reads its own token/SID. Running as
+  SYSTEM/LocalService/NetworkService (or root) is refused before a job starts, with an explanation;
+  `nesva-cli doctor` reports the user context.
+- **Destination safety**: a job refuses to write into a destination that already contains files
+  Nesva did not create, unless the job explicitly allows it (schema v7,
+  `allow_existing_destination`). This is what keeps a wrong path from overwriting existing cloud
+  data.
+- **Upload verification**: after each upload the provider is asked for the stored SHA-256 and the
+  file is recorded as `verified` only on a match (`archive_runner`); a mismatch fails that file
+  instead of reporting success.
+- **Disk-space guard with relocation advice** (`src/core/disk_space.cpp`): a local destination is
+  checked before the transfer, and the error names another volume with room instead of failing
+  halfway.
+- **Manifest pruning**: the last 5 runs per job are kept, older manifest and object rows are deleted
+  after a successful run, and `nesva-cli maintenance` prunes on demand.
+- **Agent autostart without PowerShell**: `nesva-cli agent install|uninstall` and the Settings card.
+  Linux writes a systemd user unit and enables it; Windows writes the per-user
+  `HKCU\\...\\CurrentVersion\\Run` value - no PowerShell, no `schtasks`, no elevation, so
+  script-blocking group policies do not apply. The PowerShell registration script is gone.
+- **`nesva-cli rclone configure`** and a **Configure Rclone...** button on the Storage page open
+  `rclone config` in a terminal, because it is inherently interactive.
+- **`nesva-cli repository passwd`**: rotates a Restic repository password (add key, prove the new
+  password opens the repository, only then remove the old key, then update the keyring).
+- **CPack**: `nesva-agent` joins the install set; Windows packages with NSIS/ZIP instead of WIX.
+- **`docs/user-guide/disaster-recovery.md`**: what to keep, how to restore without Nesva, and what
+  is not recoverable.
+- **`tst_safety`**: service-account refusal, cloud placeholder skip, cloud root skip, disk-space
+  guard. Test suite: 24 binaries.
+
 - **Mail archival is a job.** A job can now take its content from a Microsoft 365 mailbox
   (`source_kind = 'mail'`, schema v6), so scheduled mail archiving gets the scheduler, retries,
   run history, notifications and the agent's single-run guard without a special case.

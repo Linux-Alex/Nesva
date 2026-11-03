@@ -8,6 +8,7 @@
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QLineEdit;
 
 namespace nesva::ui {
 
@@ -29,6 +30,8 @@ private:
     void buildSafetySection();
     void buildBehaviourSection();
     void buildToolsSection();
+    void buildMailSection();
+    void saveMailSettings();
     void refreshToolsStatus();
     void buildAgentSection();
     void refreshAgentStatus();
@@ -43,6 +46,9 @@ private:
     QCheckBox* notificationsCheck_ = nullptr;
     QLabel* agentStatusValue_ = nullptr;
     QLabel* toolsStatusValue_ = nullptr;
+    QLineEdit* mailTenantEdit_ = nullptr;
+    QLineEdit* mailClientEdit_ = nullptr;
+    QLineEdit* mailDestinationEdit_ = nullptr;
     QLabel* savedLabel_ = nullptr;
     QLabel* dataRootValue_ = nullptr;
     QLabel* databaseValue_ = nullptr;

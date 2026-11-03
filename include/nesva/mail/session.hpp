@@ -6,11 +6,16 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 
+#include <functional>
 #include <memory>
 
 #include "nesva/core/result.hpp"
 #include "nesva/mail/graph.hpp"
 #include "nesva/mail/mail_store.hpp"
+
+namespace nesva::db {
+class Database;
+}
 
 namespace nesva::mail {
 
@@ -24,6 +29,25 @@ Result<QByteArray> loadRefreshToken(const QString& tenantId, const QString& upn)
 
 /// Stores (or rotates) the refresh token in the OS keyring.
 Status storeRefreshToken(const QString& tenantId, const QString& upn, const QString& token);
+
+/// What a completed sign-in produced.
+struct MailConnection {
+    qint64 accountId = 0;
+    QString accountIdentifier; ///< user principal name as Microsoft reports it
+    QString displayName;
+    int folders = 0;
+};
+
+/// Runs the full "connect an account" flow: interactive browser sign-in with
+/// PKCE, refresh token into the keyring, then the account and its folder tree
+/// into the database. Shared by the CLI and the desktop dialog so both behave
+/// identically.
+///
+/// param onUrl Called with the sign-in URL so a caller can show it.
+Result<MailConnection> connectAccount(db::Database& database, const QString& upn,
+                                      const QString& tenantId, const QString& clientId,
+                                      const std::function<void(const QString&)>& onUrl,
+                                      int timeoutMs = 300000);
 
 /// Builds an authenticated Graph client for a stored account.
 ///

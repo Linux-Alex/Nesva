@@ -41,11 +41,13 @@ QVariant JobListModel::data(const QModelIndex& index, int role) const {
     case NameColumn:
         return row.name;
     case ModeColumn:
-        return row.mode;
+        // A mail job archives a mailbox, which reads as "archive" otherwise.
+        return row.sourceKind == QStringLiteral("mail") ? QStringLiteral("mail") : row.mode;
     case EnabledColumn:
         return row.enabled ? QStringLiteral("yes") : QStringLiteral("no");
     case SourcesColumn:
-        return QString::number(row.sourceCount);
+        return row.sourceKind == QStringLiteral("mail") ? QStringLiteral("mailbox")
+                                                        : QString::number(row.sourceCount);
     case DestinationColumn:
         return row.destination.isEmpty() ? row.provider : row.destination;
     case LastRunColumn:
@@ -90,7 +92,7 @@ QVariant JobListModel::headerData(int section, Qt::Orientation orientation, int 
 QString JobListModel::refresh() {
     Result<QSqlQuery> query = database_.select(QStringLiteral(
         "SELECT j.id, j.name, j.mode, j.enabled, COALESCE(sp.name, ''), "
-        "COALESCE(j.destination_path, ''), "
+        "COALESCE(j.destination_path, ''), COALESCE(j.source_kind, 'filesystem'), "
         "(SELECT COUNT(*) FROM backup_sources s WHERE s.job_id = j.id), "
         "COALESCE((SELECT r.status FROM job_runs r WHERE r.job_id = j.id ORDER BY r.id DESC LIMIT 1), ''), "
         "COALESCE((SELECT r.finished_at FROM job_runs r WHERE r.job_id = j.id ORDER BY r.id DESC LIMIT 1), ''), "
@@ -111,10 +113,11 @@ QString JobListModel::refresh() {
         row.enabled = rows.value(3).toBool();
         row.provider = rows.value(4).toString();
         row.destination = rows.value(5).toString();
-        row.sourceCount = rows.value(6).toInt();
-        row.lastStatus = rows.value(7).toString();
-        row.lastFinished = rows.value(8).toString();
-        row.nextRun = rows.value(9).toString();
+        row.sourceKind = rows.value(6).toString();
+        row.sourceCount = rows.value(7).toInt();
+        row.lastStatus = rows.value(8).toString();
+        row.lastFinished = rows.value(9).toString();
+        row.nextRun = rows.value(10).toString();
         loaded.append(row);
     }
 

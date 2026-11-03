@@ -3,8 +3,10 @@
 
 #include "commands.hpp"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -29,18 +31,23 @@
 #include "nesva/db/database.hpp"
 #include "nesva/jobs/archive_restore.hpp"
 #include "nesva/jobs/archive_runner.hpp"
+#include "nesva/agent/autostart.hpp"
 #include "nesva/agent/client.hpp"
 #include "nesva/backup/restic.hpp"
 #include "nesva/mail/exporter.hpp"
 #include "nesva/mail/graph.hpp"
 #include "nesva/mail/mail_store.hpp"
+#include "nesva/mail/session.hpp"
+#include "nesva/security/identity.hpp"
 #include "nesva/security/secret_store.hpp"
 #include "nesva/jobs/backup_runner.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/jobs/mail_job_runner.hpp"
+#include <QtCore/QProcess>
 #include "nesva/scheduler/schedule.hpp"
 #include "nesva/providers/provider_factory.hpp"
 #include "nesva/tools/tool_installer.hpp"
+#include "nesva/tools/tool_launcher.hpp"
 
 namespace nesva::cli {
 namespace {
@@ -467,6 +474,50 @@ CheckResult makeCheck(const QString& name, const QString& status, const QString&
     return CheckResult{name, status, detail};
 }
 
+int commandRclone(Context& context, const Options& options) {
+    Q_UNUSED(context);
+    Output output(options.json);
+    // rclone's own configuration is interactive, so Nesva cannot drive it; it
+    // opens a terminal instead of pretending to wrap it.
+    if (options.subcommand.isEmpty() || options.subcommand == QStringLiteral("configure")) {
+        const Result<QString> terminal =
+            tools::openInTerminal(QStringLiteral("rclone"), {QStringLiteral("config")});
+        if (!terminal) {
+            return output.flushError(terminal.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("terminal"), terminal.value());
+        output.line(QStringLiteral("Opened 'rclone config' in %1.").arg(terminal.value()));
+        output.line(QStringLiteral("Create or edit the remote there, then add it on the Storage "
+                                   "page (for example icloud:)."));
+        return output.flush(stdout, kExitSuccess);
+    }
+    return output.flushError(
+        makeErrorValue(ErrorCode::InvalidArgument, "unknown rclone subcommand"), kExitUsage);
+}
+
+int commandMaintenance(Context& context, const Options& options) {
+    Output output(options.json);
+    jobs::JobStore store(context.database);
+    const Result<QVector<jobs::ArchiveJob>> jobs = store.listJobs();
+    if (!jobs) {
+        return output.flushError(jobs.error(), kExitFailure);
+    }
+    int pruned = 0;
+    for (const jobs::ArchiveJob& job : jobs.value()) {
+        const Result<int> removed = store.pruneManifestHistory(job.id, 5);
+        if (removed) {
+            pruned += removed.value();
+        }
+    }
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("rows_removed"), pruned);
+    output.line(QStringLiteral("Pruned %1 manifest and object row(s); the last 5 runs per job are "
+                               "kept.")
+                    .arg(pruned));
+    return output.flush(stdout, kExitSuccess);
+}
+
 int commandTools(Context& context, const Options& options) {
     Output output(options.json);
     config::SettingsStore settings(context.database);
@@ -639,6 +690,20 @@ int commandDoctor(Context& context, const Options& options) {
                                 QStringLiteral("%1 of %2").arg(schemaVersion.value()).arg(latest)));
     }
 
+    {
+        const security::ProcessIdentity identity = security::currentProcessIdentity();
+        checks.append(makeCheck(QStringLiteral("user context"),
+                                identity.serviceAccount ? QStringLiteral("warning")
+                                                        : QStringLiteral("ok"),
+                                identity.serviceAccount
+                                    ? QStringLiteral("%1 (%2) - Nesva is per-user; run it as the "
+                                                     "user whose data is backed up")
+                                          .arg(identity.userName, identity.detail)
+                                    : QStringLiteral("%1 (SID/uid %2%3)")
+                                          .arg(identity.userName, identity.userId,
+                                               identity.elevated ? QStringLiteral(", elevated")
+                                                                 : QString())));
+    }
     const QStorageInfo storage(Paths::dataRoot());
     if (storage.isValid() && storage.isReady()) {
         const qint64 available = storage.bytesAvailable();
@@ -1446,6 +1511,45 @@ int commandAgent(Context& context, const Options& options) {
         return output.flush(stdout, kExitSuccess);
     }
 
+    if (subcommand == QStringLiteral("install") || subcommand == QStringLiteral("uninstall")) {
+        const bool install = subcommand == QStringLiteral("install");
+        if (install) {
+            QString executable = options.flags.value(QStringLiteral("executable"));
+            if (executable.isEmpty()) {
+                // Look next to the running CLI first, then on PATH.
+                const QString sibling =
+                    QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(
+#if defined(Q_OS_WIN)
+                        QStringLiteral("nesva-agent.exe")
+#else
+                        QStringLiteral("nesva-agent")
+#endif
+                    );
+                executable = QFileInfo::exists(sibling)
+                                 ? sibling
+                                 : QStandardPaths::findExecutable(QStringLiteral("nesva-agent"));
+            }
+            const Result<QString> installed = agent::installAutostart(executable);
+            if (!installed) {
+                return output.flushError(installed.error(), kExitFailure);
+            }
+            output.add(QStringLiteral("ok"), true);
+            output.add(QStringLiteral("autostart"), installed.value());
+            output.line(QStringLiteral("Autostart installed: %1").arg(installed.value()));
+            output.line(QStringLiteral("Scheduled jobs now run without the window, in your own "
+                                       "session. Check with 'nesva-cli agent status'."));
+            return output.flush(stdout, kExitSuccess);
+        }
+        const Result<QString> removed = agent::removeAutostart();
+        if (!removed) {
+            return output.flushError(removed.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("autostart"), removed.value());
+        output.line(QStringLiteral("Autostart removed: %1").arg(removed.value()));
+        return output.flush(stdout, kExitSuccess);
+    }
+
     if (subcommand == QStringLiteral("stop")) {
         const Status stopped = client.shutdown();
         if (!stopped.ok()) {
@@ -1578,6 +1682,122 @@ int commandRepository(Context& context, const Options& options) {
             .valueOr(QStringLiteral("restic"));
 
     const QString& action = sub.isEmpty() ? QStringLiteral("init") : sub;
+
+    if (action == QStringLiteral("passwd")) {
+        // Rotate the repository password. Restic cannot take a new password as
+        // an argument, so the sequence is: add a key (new password on stdin),
+        // prove it opens the repository, only then remove the old key, and
+        // finally replace the copy in the keyring.
+        const Result<QByteArray> newPassword = readPasswordFromStdin(options);
+        if (!newPassword || newPassword.value().size() < 8) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument,
+                               "repository passwd reads the new password from stdin (min 8 chars)"),
+                kExitUsage);
+        }
+        const QString repository = job.value().destinationPath;
+        const Result<QByteArray> oldPassword =
+            jobs::loadRepositoryPassword(repository, passwordOptions);
+        if (!oldPassword) {
+            return output.flushError(oldPassword.error(), kExitFailure);
+        }
+        const Result<QString> oldFile = backup::createPasswordFile(oldPassword.value());
+        const Result<QString> newFile = backup::createPasswordFile(newPassword.value());
+        if (!oldFile || !newFile) {
+            if (oldFile) {
+                QFile::remove(oldFile.value());
+            }
+            return output.flushError(oldFile ? newFile.error() : oldFile.error(), kExitFailure);
+        }
+        const auto cleanup = [&] {
+            QFile::remove(oldFile.value());
+            QFile::remove(newFile.value());
+        };
+        const auto runRestic = [&](const QString& passwordFile, const QStringList& arguments,
+                                   const QByteArray& stdinData) {
+            QProcess process;
+            process.start(resticExecutable, QStringList{QStringLiteral("--repo"), repository,
+                                                        QStringLiteral("--password-file"),
+                                                        passwordFile} + arguments);
+            if (!process.waitForStarted(10000)) {
+                return QPair<int, QString>{-1, QStringLiteral("cannot start restic")};
+            }
+            if (!stdinData.isEmpty()) {
+                process.write(stdinData + '\n');
+                process.closeWriteChannel();
+            }
+            process.waitForFinished(300000);
+            QString error = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+            return QPair<int, QString>{process.exitCode(), error};
+        };
+
+        const auto added = runRestic(oldFile.value(),
+                                     {QStringLiteral("key"), QStringLiteral("add")},
+                                     newPassword.value());
+        if (added.first != 0) {
+            cleanup();
+            return output.flushError(
+                makeErrorValue(ErrorCode::ExternalToolFailed, "restic could not add a new key",
+                               added.second.toStdString()),
+                kExitFailure);
+        }
+        const auto verified = runRestic(newFile.value(),
+                                        {QStringLiteral("snapshots"), QStringLiteral("--json")},
+                                        {});
+        if (verified.first != 0) {
+            cleanup();
+            return output.flushError(
+                makeErrorValue(ErrorCode::ExternalToolFailed,
+                               "the new password does not open the repository; the old key was "
+                               "kept",
+                               verified.second.toStdString()),
+                kExitFailure);
+        }
+
+        QString oldKeyId;
+        {
+            QProcess list;
+            list.start(resticExecutable,
+                       {QStringLiteral("--repo"), repository, QStringLiteral("--password-file"),
+                        oldFile.value(), QStringLiteral("key"), QStringLiteral("list"),
+                        QStringLiteral("--json")});
+            if (list.waitForStarted(10000) && list.waitForFinished(60000) &&
+                list.exitCode() == 0) {
+                const QJsonDocument document =
+                    QJsonDocument::fromJson(list.readAllStandardOutput());
+                for (const QJsonValue& value : document.array()) {
+                    if (value.toObject().value(QStringLiteral("current")).toBool(false)) {
+                        oldKeyId = value.toObject().value(QStringLiteral("id")).toString();
+                    }
+                }
+            }
+        }
+        QString removed;
+        if (!oldKeyId.isEmpty()) {
+            const auto removal = runRestic(newFile.value(),
+                                           {QStringLiteral("key"), QStringLiteral("remove"),
+                                            oldKeyId},
+                                           {});
+            if (removal.first == 0) {
+                removed = oldKeyId.left(8);
+            }
+        }
+
+        const Status stored =
+            jobs::storeRepositoryPassword(repository, passwordOptions, newPassword.value());
+        cleanup();
+        if (!stored.ok()) {
+            return output.flushError(stored.error(), kExitFailure);
+        }
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("old_key_removed"), removed);
+        output.line(QStringLiteral("Repository password changed and stored in the keyring."));
+        output.line(removed.isEmpty()
+                        ? QStringLiteral("The previous key could not be removed automatically; "
+                                         "check 'restic key list'.")
+                        : QStringLiteral("The previous key %1 was removed.").arg(removed));
+        return output.flush(stdout, kExitSuccess);
+    }
 
     if (action == QStringLiteral("init") || action == QStringLiteral("set-password")) {
         Result<QByteArray> password = readPasswordFromStdin(options);
@@ -2007,11 +2227,14 @@ MailConfig mailConfigFromSettings(Context& context, const Options& options) {
     config::SettingsStore settings(context.database);
     MailConfig configuration;
     configuration.tenantId =
-        settings.getString(QStringLiteral("mail.tenant_id"), QString()).valueOr(QString());
+        settings.getString(QString::fromUtf8(config::keys::kMailTenantId), QString())
+            .valueOr(QString());
     configuration.clientId =
-        settings.getString(QStringLiteral("mail.client_id"), QString()).valueOr(QString());
+        settings.getString(QString::fromUtf8(config::keys::kMailClientId), QString())
+            .valueOr(QString());
     configuration.destination =
-        settings.getString(QStringLiteral("mail.destination"), QString()).valueOr(QString());
+        settings.getString(QString::fromUtf8(config::keys::kMailDestination), QString())
+            .valueOr(QString());
     if (options.flags.contains(QStringLiteral("tenant"))) {
         configuration.tenantId = options.flags.value(QStringLiteral("tenant"));
     }
@@ -2024,45 +2247,11 @@ MailConfig mailConfigFromSettings(Context& context, const Options& options) {
     return configuration;
 }
 
-QString mailTokenAccount(const QString& tenantId, const QString& upn) {
-    return QStringLiteral("msgraph/%1/%2").arg(tenantId, upn);
-}
-
-Result<QByteArray> loadMailToken(const QString& tenantId, const QString& upn) {
-    std::unique_ptr<security::SecretStore> secrets = security::createSecretStore();
-    if (!secrets->isAvailable()) {
-        return makeErrorValue(ErrorCode::Unsupported, "no credential store is available",
-                              secrets->unavailableReason().toStdString());
-    }
-    return secrets->lookup(QStringLiteral("nesva"), mailTokenAccount(tenantId, upn));
-}
-
-Status storeMailToken(const QString& tenantId, const QString& upn, const QString& token) {
-    std::unique_ptr<security::SecretStore> secrets = security::createSecretStore();
-    if (!secrets->isAvailable()) {
-        return makeError(ErrorCode::Unsupported, "no credential store is available",
-                         secrets->unavailableReason().toStdString());
-    }
-    return secrets->store(QStringLiteral("nesva"), mailTokenAccount(tenantId, upn),
-                          token.toUtf8());
-}
-
-/// Builds an authenticated Graph client for a stored account.
+/// Builds an authenticated Graph client for a stored account. The keyring
+/// handling lives in mail::session, shared with the desktop application.
 Result<std::shared_ptr<mail::GraphClient>> openGraph(Context& context, const mail::MailAccount& account) {
     Q_UNUSED(context);
-    const Result<QByteArray> token = loadMailToken(account.tenantId, account.accountIdentifier);
-    if (!token) {
-        return makeErrorValue(ErrorCode::PermissionDenied,
-                              "no Microsoft 365 refresh token is stored for this account",
-                              QString::fromStdString(token.error().message()).toStdString());
-    }
-    mail::OAuthConfig oauth;
-    oauth.tenantId = account.tenantId;
-    oauth.clientId = account.clientId;
-    auto transport = std::make_shared<net::QNetworkHttpTransport>();
-    auto provider = std::make_shared<mail::TokenProvider>(
-        oauth, QString::fromUtf8(token.value()), transport);
-    return std::make_shared<mail::GraphClient>(provider, transport);
+    return mail::openGraphClient(account);
 }
 
 int commandMail(Context& context, const Options& options) {
@@ -2093,85 +2282,32 @@ int commandMail(Context& context, const Options& options) {
                 kExitUsage);
         }
 
-        mail::OAuthConfig oauth;
-        oauth.tenantId = configuration.tenantId;
-        oauth.clientId = configuration.clientId;
-
-        const Result<mail::TokenSet> tokens = mail::interactiveAuthorize(
-            oauth, std::make_shared<net::QNetworkHttpTransport>(), 300000,
+        const Result<mail::MailConnection> connection = mail::connectAccount(
+            context.database, upn, configuration.tenantId, configuration.clientId,
             [](const QString& url) {
                 // Print immediately: the user has to act on this while the
                 // command waits for the browser redirect.
-                std::fprintf(stderr, "\nOpen this URL in a browser to sign in:\n%s\n\n", qPrintable(url));
+                std::fprintf(stderr, "\nOpen this URL in a browser to sign in:\n%s\n\n",
+                             qPrintable(url));
                 std::fprintf(stderr, "Waiting for the sign-in to complete...\n");
                 std::fflush(stderr);
             });
-        if (!tokens) {
+        if (!connection) {
             std::fprintf(stderr,
-                         "\nAn authorization code can be redeemed only once; "
-                         "run this command again to start a fresh sign-in.\n");
+                         "\nIf the sign-in itself succeeded, an authorization code can be "
+                         "redeemed only once; run this command again.\n");
             std::fflush(stderr);
-            return output.flushError(tokens.error(), kExitFailure);
-        }
-        if (tokens.value().refreshToken.isEmpty()) {
-            return output.flushError(
-                makeErrorValue(ErrorCode::PermissionDenied,
-                               "Microsoft did not return a refresh token; the offline_access "
-                               "scope must be granted"),
-                kExitFailure);
-        }
-
-        const Status stored =
-            storeMailToken(configuration.tenantId, upn, tokens.value().refreshToken);
-        if (!stored.ok()) {
-            return output.flushError(stored.error(), kExitFailure);
-        }
-
-        mail::OAuthConfig verifyConfig = oauth;
-        auto transport = std::make_shared<net::QNetworkHttpTransport>();
-        auto provider = std::make_shared<mail::TokenProvider>(
-            verifyConfig, tokens.value().refreshToken, transport);
-        provider->setRefreshToken(tokens.value().refreshToken);
-        auto client = std::make_shared<mail::GraphClient>(provider, transport);
-
-        const Result<QJsonObject> me = client->me();
-        const QString resolvedUpn = me
-                                        ? me.value().value(QStringLiteral("userPrincipalName")).toString()
-                                        : upn;
-        mail::MailStore store(context.database);
-        mail::MailAccount account;
-        account.displayName = me ? me.value().value(QStringLiteral("displayName")).toString()
-                                 : upn;
-        if (account.displayName.isEmpty()) {
-            account.displayName = upn;
-        }
-        account.tenantId = configuration.tenantId;
-        account.clientId = configuration.clientId;
-        account.accountIdentifier = resolvedUpn;
-        account.scopes = oauth.scopes.join(QLatin1Char(' '));
-        account.status = QStringLiteral("connected");
-        const Result<qint64> accountId = store.upsertAccount(account);
-        if (!accountId) {
-            return output.flushError(accountId.error(), kExitFailure);
-        }
-
-        const Result<QVector<mail::MailFolderInfo>> folders = client->mailFolders();
-        if (!folders) {
-            return output.flushError(folders.error(), kExitFailure);
-        }
-        const Status stored2 = store.storeFolders(accountId.value(), folders.value());
-        if (!stored2.ok()) {
-            return output.flushError(stored2.error(), kExitFailure);
+            return output.flushError(connection.error(), kExitFailure);
         }
 
         output.add(QStringLiteral("ok"), true);
-        output.add(QStringLiteral("account_id"), accountId.value());
-        output.add(QStringLiteral("account"), resolvedUpn);
-        output.add(QStringLiteral("folders"), static_cast<int>(folders.value().size()));
+        output.add(QStringLiteral("account_id"), connection.value().accountId);
+        output.add(QStringLiteral("account"), connection.value().accountIdentifier);
+        output.add(QStringLiteral("folders"), connection.value().folders);
         output.line(QStringLiteral("Connected %1 (account id %2, %3 folders discovered).")
-                        .arg(resolvedUpn)
-                        .arg(accountId.value())
-                        .arg(folders.value().size()));
+                        .arg(connection.value().accountIdentifier)
+                        .arg(connection.value().accountId)
+                        .arg(connection.value().folders));
         output.line(QStringLiteral("The refresh token is stored in the system keyring, never in the database."));
         return output.flush(stdout, kExitSuccess);
     }
@@ -2619,12 +2755,17 @@ int run(int argc, char** argv) {
     if (command == QStringLiteral("status")) {
         return commandStatus(context, options);
     }
+    if (command == QStringLiteral("doctor")) {
+        return commandDoctor(context, options);
+    }
     if (command == QStringLiteral("tools")) {
         return commandTools(context, options);
     }
-
-    if (command == QStringLiteral("doctor")) {
-        return commandDoctor(context, options);
+    if (command == QStringLiteral("rclone")) {
+        return commandRclone(context, options);
+    }
+    if (command == QStringLiteral("maintenance")) {
+        return commandMaintenance(context, options);
     }
     if (command == QStringLiteral("history")) {
         if (subcommand.isEmpty() || subcommand == QStringLiteral("list")) {
