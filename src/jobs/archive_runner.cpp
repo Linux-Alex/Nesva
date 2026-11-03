@@ -148,6 +148,42 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
     }
     ResolvedDestination destination = std::move(resolved).take();
 
+    // Reachability and authentication are checked once per run. Without this a
+    // stale iCloud session fails every single file with the same confusing
+    // error; instead the provider is marked as needing re-authentication (the
+    // dashboard and the Storage page surface that) and the run stops.
+    if (!options.dryRun && providerRecord.has_value() && providerRecord->isRcloneBacked()) {
+        const Status reachable = destination.provider->testConnection();
+        if (!reachable.ok()) {
+            const QString detail = QString::fromStdString(reachable.error().toDisplayString());
+            const QString lowered = detail.toLower();
+            const bool authIssue = lowered.contains(QStringLiteral("401")) ||
+                                   lowered.contains(QStringLiteral("unauthoris")) ||
+                                   lowered.contains(QStringLiteral("unauthoriz")) ||
+                                   lowered.contains(QStringLiteral("2fa")) ||
+                                   lowered.contains(QStringLiteral("two-factor")) ||
+                                   lowered.contains(QStringLiteral("session")) ||
+                                   lowered.contains(QStringLiteral("token")) ||
+                                   lowered.contains(QStringLiteral("authentication")) ||
+                                   lowered.contains(QStringLiteral("auth"));
+            store_.updateProviderStatus(providerRecord->id,
+                                        authIssue ? QStringLiteral("auth_required")
+                                                  : QStringLiteral("error"),
+                                        detail);
+            report.status = QStringLiteral("failed");
+            appendError(report,
+                        authIssue
+                            ? QStringLiteral("%1 needs to be signed in again: %2. Open Storage -> "
+                                             "Configure / re-authenticate... and enter a fresh "
+                                             "two-factor code.")
+                                  .arg(providerRecord->name, detail)
+                            : QStringLiteral("%1 is not reachable: %2")
+                                  .arg(providerRecord->name, detail));
+            return report;
+        }
+        store_.updateProviderStatus(providerRecord->id, QStringLiteral("ok"));
+    }
+
     // ---- run bookkeeping --------------------------------------------------
     // The run row is created before scanning so that a cancelled or failed
     // scan still shows up in history and blocks duplicate execution.

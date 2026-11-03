@@ -147,6 +147,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/dialogs/history_dialog.cpp
   src/desktop/dialogs/snapshot_browser_dialog.hpp
   src/desktop/dialogs/snapshot_browser_dialog.cpp
+  src/desktop/dialogs/rclone_config_dialog.hpp
+  src/desktop/dialogs/rclone_config_dialog.cpp
   src/desktop/dialogs/snapshot_restore_dialog.hpp
   src/desktop/dialogs/snapshot_restore_dialog.cpp
   src/desktop/dialogs/entra_help_dialog.hpp

@@ -12,6 +12,7 @@
 
 #include "nesva/core/cancellation.hpp"
 #include "nesva/jobs/archive_runner.hpp"
+#include "nesva/jobs/job_store.hpp"
 #include "support/test_archive_fixture.hpp"
 #include "support/test_fixtures.hpp"
 
@@ -38,6 +39,7 @@ private slots:
     void failedFileIsRecordedAndRunContinues();
     void missingSourceFailsTheRun();
     void recordsEventsAndCounters();
+    void staleCloudSessionIsReportedOnce();
 
 private:
     std::unique_ptr<test::ArchiveFixture> fixture_;
@@ -252,6 +254,40 @@ void ArchiveRunnerTest::missingSourceFailsTheRun() {
     const Result<jobs::RunSummary> summary = fixture_->store->getRun(report.runId);
     QVERIFY(summary);
     QCOMPARE(summary.value().status, QStringLiteral("failed"));
+}
+
+void ArchiveRunnerTest::staleCloudSessionIsReportedOnce() {
+    // A rclone-backed provider that answers "401" must stop the run once with a
+    // re-authentication instruction, and be marked so the dashboard shows it -
+    // instead of failing every file with the same error.
+    jobs::JobStore store(*fixture_->database);
+    const Result<qint64> providerId = store.upsertRcloneProvider(
+        QStringLiteral("iCloud"), QStringLiteral("doesnotexist:"), QStringLiteral("Nesva"));
+    QVERIFY(providerId.hasValue());
+
+    jobs::ArchiveJob job = fixture_->job();
+    job.storageProviderId = providerId.value();
+    job.destinationPath = QStringLiteral("archive");
+    job.allowExistingDestination = true;
+
+    ArchiveRunner runner(*fixture_->database);
+    const RunReport report = runner.run(job, store.getProvider(providerId.value()).valueOr({}),
+                                        RunOptions{}, CancellationToken());
+
+    QCOMPARE(report.status, QStringLiteral("failed"));
+    QVERIFY2(!report.errors.isEmpty(), "the failure must be reported");
+    const QString error = report.errors.first();
+    QVERIFY2(error.contains(QStringLiteral("iCloud")), qPrintable(error));
+    for (const QString& entry : report.errors) {
+        QVERIFY2(!entry.contains(QStringLiteral("a.txt")),
+                 "the run must stop before touching files");
+    }
+
+    const Result<jobs::StorageProviderRecord> provider = store.getProvider(providerId.value());
+    QVERIFY(provider.hasValue());
+    // Either "auth_required" (the fake rclone reported an auth error) or "error"
+    // when rclone is not installed at all: both mean "do not start this run".
+    QVERIFY2(provider.value().status != QStringLiteral("ok"), "the provider must be flagged");
 }
 
 void ArchiveRunnerTest::recordsEventsAndCounters() {

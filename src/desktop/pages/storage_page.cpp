@@ -27,7 +27,7 @@
 #include "nesva/core/logging.hpp"
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/providers/provider_factory.hpp"
-#include "nesva/tools/tool_launcher.hpp"
+#include "dialogs/rclone_config_dialog.hpp"
 
 namespace nesva::ui {
 
@@ -42,9 +42,11 @@ StoragePage::StoragePage(AppContext& context, QWidget* parent)
     toolbar->setSpacing(6);
     auto* addLocalButton = new QPushButton(QStringLiteral("Add local folder..."), this);
     auto* addRcloneButton = new QPushButton(QStringLiteral("Add Rclone remote..."), this);
-    auto* configureRcloneButton = new QPushButton(QStringLiteral("Configure Rclone..."), this);
-    configureRcloneButton->setToolTip(QStringLiteral("Opens 'rclone config' in a terminal for "
-                                                     "provider credentials"));
+    auto* configureRcloneButton = new QPushButton(QStringLiteral("Configure / re-authenticate..."), this);
+    configureRcloneButton->setToolTip(QStringLiteral("Guided 'rclone config': the walkthrough on "
+                                                     "the left, the live session on the right. "
+                                                     "Also used when iCloud asks for a new "
+                                                     "two-factor code."));
     toolbar->addWidget(configureRcloneButton);
     testButton_ = new QPushButton(QStringLiteral("Test connection"), this);
     removeButton_ = new QPushButton(QStringLiteral("Remove"), this);
@@ -93,16 +95,25 @@ StoragePage::StoragePage(AppContext& context, QWidget* parent)
     connect(addLocalButton, &QPushButton::clicked, this, &StoragePage::addLocalProvider);
     connect(addRcloneButton, &QPushButton::clicked, this, &StoragePage::addRcloneProvider);
     connect(configureRcloneButton, &QPushButton::clicked, this, [this] {
-        const Result<QString> terminal =
-            tools::openInTerminal(QStringLiteral("rclone"), {QStringLiteral("config")});
-        if (!terminal) {
-            QMessageBox::warning(this, QStringLiteral("Rclone"),
-                                 QString::fromStdString(terminal.error().toDisplayString()));
-            return;
+        // The wizard runs rclone config in an embedded session: the walkthrough
+        // on the left, the live questions on the right.
+        QString remote = QStringLiteral("icloud");
+        const int row = view_->currentIndex().row();
+        if (row >= 0) {
+            const QString configured =
+                model_->item(row, 3) != nullptr ? model_->item(row, 3)->text() : QString();
+            const QString trimmed = configured.section(QLatin1Char(':'), 0, 0).trimmed();
+            if (!trimmed.isEmpty() && !trimmed.contains(QLatin1Char('/'))) {
+                remote = trimmed;
+            }
         }
-        statusLabel_->setText(QStringLiteral("Opened 'rclone config' in %1; add the remote here "
-                                             "when you are done.")
-                                  .arg(terminal.value()));
+        RcloneConfigDialog dialog(context_, remote, this);
+        dialog.exec();
+        if (dialog.configured()) {
+            refresh();
+            statusLabel_->setText(QStringLiteral("Remote '%1' configured. Add it as a storage "
+                                                 "provider if it is not listed yet.").arg(remote));
+        }
     });
     connect(testButton_, &QPushButton::clicked, this, &StoragePage::testSelected);
     connect(removeButton_, &QPushButton::clicked, this, &StoragePage::removeSelected);

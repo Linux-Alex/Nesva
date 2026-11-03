@@ -6,6 +6,18 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (cloud credentials)
+
+- **Guided rclone configuration** (`RcloneConfigDialog`): Storage ->
+  **Configure / re-authenticate...** opens a split view - the walkthrough on the left, a live
+  `rclone config` session on the right with the transcript, an answer line and quick-choice
+  buttons parsed from rclone's own prompts. The Apple ID password and the two-factor code are
+  typed there and go straight into rclone's configuration; Nesva never stores them.
+- **Stale cloud sessions are detected once, not per file.** Before a run with an rclone-backed
+  provider, Nesva probes the destination; an authentication failure marks the provider
+  `auth_required` (the dashboard and storage list show it) and stops the run with "re-authenticate
+  and enter a fresh two-factor code" instead of failing every file.
+
 ### Added (UI polish)
 
 - **Dashboard cards flow instead of shrinking.** A `FlowLayout` wraps them onto further rows when
