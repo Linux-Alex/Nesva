@@ -5,6 +5,7 @@ the packaged installation in Phase 6; nothing here claims a capability the softw
 
 Start here:
 
+- [GUI tour](gui-tour.md) - what every page does and the five-minute path through them.
 - [Tutorial: from install to a verified archive](tutorial.md) - the guided walkthrough, including
   the acceptance scenario to run after any change.
 - [Archiving Microsoft 365 mail](microsoft-365.md) - app registration, sign-in, sync, troubleshooting.
