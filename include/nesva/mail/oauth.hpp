@@ -94,6 +94,14 @@ QByteArray buildRefreshRequestBody(const OAuthConfig& config, const QString& ref
 /// Parses a v2.0 token endpoint response (success or error).
 Result<TokenSet> parseTokenResponse(const QByteArray& body);
 
+/// Turns a known Entra ID `AADSTS` code in an error response into an actionable
+/// fix for the person configuring the app registration. Returns an empty string
+/// when the code is unknown, so callers can fall back to the raw description.
+///
+/// The messages name the setting to change; they never suggest loosening
+/// security (for example, supplying a client secret to a desktop client).
+QString aadFixHint(const QString& errorResponseBody);
+
 /// Opens the system browser. Returns false when no handler is available.
 bool openBrowser(const QString& url);
 

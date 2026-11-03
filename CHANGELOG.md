@@ -6,6 +6,17 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Actionable Microsoft Entra diagnostics.** A rejected token request now leads with the fix for
+  the `AADSTS` code (public client flows disabled, redirect URI mismatch, missing consent,
+  account not assigned, expired or reused code, single-page-app misconfiguration) and keeps
+  Microsoft's raw text and trace id after it. The desktop client never suggests supplying a
+  client secret.
+- **`docs/user-guide/microsoft-365.md`**: user-scoped app registration walkthrough (including the
+  `Allow public client flows` requirement), connection, sync semantics and a troubleshooting
+  table for the `AADSTS` codes encountered in practice.
+
 ### Fixed
 
 - **HTTP transport discarded every error response.** Qt reports an HTTP 4xx/5xx as a

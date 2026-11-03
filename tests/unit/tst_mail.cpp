@@ -140,6 +140,7 @@ private slots:
     void honoursStatusErrors();
     void httpErrorStatusKeepsBodyAndHeaders();
     void unreachableHostHasNoStatusCode();
+    void aadHintsExplainCommonMisconfigurations();
 
 private:
     qint64 seedAccountAndFolders() {
@@ -356,6 +357,23 @@ void MailTest::honoursStatusErrors() {
     // The folder error is reported, nothing is silently treated as success.
     QVERIFY(!report.value().errors.isEmpty());
     QCOMPARE(report.value().exported, 0);
+}
+
+void MailTest::aadHintsExplainCommonMisconfigurations() {
+    // A desktop public client must never be told to supply a secret: the
+    // 7000218 hint has to point at the registration setting instead.
+    const QString confidential = mail::aadFixHint(QStringLiteral(
+        R"({"error":"invalid_client","error_description":"AADSTS7000218: The request body must contain the following parameter: 'client_assertion' or 'client_secret'."})"));
+    QVERIFY(confidential.contains(QStringLiteral("Allow public client flows")));
+    QVERIFY(confidential.contains(QStringLiteral("Mobile and desktop applications")));
+
+    const QString redirect = mail::aadFixHint(QStringLiteral(
+        R"({"error":"invalid_grant","error_description":"AADSTS50011: The redirect URI specified in the request does not match."})"));
+    QVERIFY(redirect.contains(QStringLiteral("http://localhost")));
+
+    QVERIFY(mail::aadFixHint(QStringLiteral(R"({"error":"invalid_grant"})")).isEmpty());
+    QVERIFY(mail::aadFixHint(QStringLiteral(R"({"error_description":"AADSTS999999: unknown"})"))
+                .isEmpty());
 }
 
 void MailTest::httpErrorStatusKeepsBodyAndHeaders() {

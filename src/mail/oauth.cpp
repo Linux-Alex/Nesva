@@ -254,6 +254,56 @@ QByteArray buildRefreshRequestBody(const OAuthConfig& config, const QString& ref
     return form.toString(QUrl::FullyEncoded).toUtf8();
 }
 
+QString aadFixHint(const QString& errorResponseBody) {
+    // Ordered from the most specific configuration mistakes to the generic
+    // ones: the first code found in the body wins.
+    struct Hint {
+        const char* code;
+        const char* text;
+    };
+    static constexpr Hint kHints[] = {
+        {"AADSTS7000218",
+         "Entra treats this app registration as a confidential client. In the app registration open "
+         "Authentication, set 'Allow public client flows' to Yes, and keep the loopback redirect "
+         "under the 'Mobile and desktop applications' platform (never under 'Web'). Nesva is a "
+         "public client on purpose and never uses a client secret."},
+        {"AADSTS50011",
+         "The redirect URI is not registered for this app. Add http://localhost under "
+         "'Mobile and desktop applications' in the app registration's Authentication page."},
+        {"AADSTS900971",
+         "The app registration has no reply address. Add http://localhost under 'Mobile and "
+         "desktop applications' in the Authentication page."},
+        {"AADSTS700016",
+         "The client id is not registered in this tenant. Check --client and --tenant."},
+        {"AADSTS65001",
+         "Consent for Mail.Read is missing. Grant tenant-wide admin consent for the app, or "
+         "consent again interactively."},
+        {"AADSTS50105",
+         "The signed-in account is not assigned to this application. Assign the account under "
+         "Enterprise applications, or turn 'Assignment required' off."},
+        {"AADSTS70008",
+         "The authorization code expired. Run the sign-in again."},
+        {"AADSTS54005",
+         "The authorization code was already redeemed. Run the sign-in again."},
+        {"AADSTS7000215",
+         "The client sent an invalid secret. Nesva must never send one: remove the secret and "
+         "enable 'Allow public client flows'."},
+        {"AADSTS7000222",
+         "The client secret expired. Nesva must never need a secret: enable 'Allow public client "
+         "flows' and do not configure one."},
+        {"AADSTS9002326",
+         "The app registration is configured as a single-page application. Register the loopback "
+         "redirect under 'Mobile and desktop applications' instead."},
+    };
+
+    for (const Hint& hint : kHints) {
+        if (errorResponseBody.contains(QLatin1String(hint.code))) {
+            return QString::fromUtf8(hint.text);
+        }
+    }
+    return {};
+}
+
 Result<TokenSet> parseTokenResponse(const QByteArray& body) {
     QJsonParseError parseError{};
     const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
@@ -366,13 +416,18 @@ Result<TokenSet> interactiveAuthorize(const OAuthConfig& config,
         const QJsonObject error = QJsonDocument::fromJson(response.body).object();
         const QString description =
             error.value(QStringLiteral("error_description")).toString();
+        const QString raw = QString::number(response.statusCode) + QStringLiteral(": ") +
+                            (description.isEmpty() ? QString::fromUtf8(response.body.left(300))
+                                                   : description);
         logWarn("mail.oauth", QStringLiteral("the token request was rejected"),
                 QJsonObject{{QStringLiteral("status"), response.statusCode}});
-        return makeErrorValue(ErrorCode::PermissionDenied,
-                              "the token request failed",
-                              QString::number(response.statusCode).toStdString() + ": " +
-                                  (description.isEmpty() ? response.body.left(300).toStdString()
-                                                         : description.toStdString()));
+        // Lead with the fix: the raw AADSTS text is unreadable on its own, but
+        // it carries the trace id support needs, so it is kept after it.
+        const QString hint = aadFixHint(QString::fromUtf8(response.body));
+        const QString detail =
+            hint.isEmpty() ? raw : hint + QStringLiteral(" Entra reported ") + raw;
+        return makeErrorValue(ErrorCode::PermissionDenied, "the token request failed",
+                              detail.toStdString());
     }
     return parseTokenResponse(response.body);
 }
@@ -393,11 +448,24 @@ Result<TokenSet> refreshTokens(const OAuthConfig& config, const QString& refresh
         net::HttpVerb::Post, tokenUrl, headers, buildRefreshRequestBody(config, refreshToken),
         30000);
     if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (response.statusCode == 0) {
+            return makeErrorValue(ErrorCode::ExternalToolFailed,
+                                  "the token endpoint could not be reached",
+                                  response.error.toStdString());
+        }
         const QJsonObject error = QJsonDocument::fromJson(response.body).object();
+        const QString description =
+            error.value(QStringLiteral("error_description")).toString();
+        const QString hint = aadFixHint(QString::fromUtf8(response.body));
+        QString detail = description;
+        if (detail.isEmpty()) {
+            detail = QString::fromUtf8(response.body.left(300));
+        }
+        if (!hint.isEmpty()) {
+            detail = hint + QStringLiteral(" Entra reported ") + detail;
+        }
         return makeErrorValue(ErrorCode::PermissionDenied, "the refresh token was rejected",
-                              error.value(QStringLiteral("error_description"))
-                                  .toString()
-                                  .toStdString());
+                              detail.toStdString());
     }
     return parseTokenResponse(response.body);
 }
