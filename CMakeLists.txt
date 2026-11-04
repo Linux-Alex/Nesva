@@ -228,7 +228,10 @@ set_target_properties(nesva-cli PROPERTIES OUTPUT_NAME "nesva-cli")
 # ---------------------------------------------------------------------------
 # nesva-agent  (background scheduler and runner, executable "nesva-agent")
 # ---------------------------------------------------------------------------
-add_executable(nesva-agent
+# qt_add_executable, not add_executable: with WIN32_EXECUTABLE below the target
+# needs Qt's WinMain entry point (Qt6::EntryPointPrivate) to call main(), and
+# qt_add_executable links it the same way it already does for the desktop binary.
+qt_add_executable(nesva-agent
   src/agent/main.cpp
   src/agent/agent_service.hpp
   src/agent/agent_service.cpp
