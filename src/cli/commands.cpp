@@ -282,18 +282,27 @@ bool directoryIsWritable(const QString& path, QString* detail) {
         }
         return false;
     }
-    QTemporaryFile probe(directory.absoluteFilePath(QStringLiteral(".nesva-write-probe-XXXXXX")));
-    if (!probe.open()) {
-        if (detail != nullptr) {
-            *detail = probe.errorString();
+    // A plain file with a predictable name, not QTemporaryFile: on Windows the
+    // temporary-file object may already have removed the file by the time this
+    // returns, and "remove failed" for a file that no longer exists reported a
+    // writable directory as broken.
+    const QString probePath = directory.absoluteFilePath(
+        QStringLiteral(".nesva-write-probe-%1").arg(QCoreApplication::applicationPid()));
+    {
+        QFile probe(probePath);
+        if (!probe.open(QIODevice::WriteOnly)) {
+            if (detail != nullptr) {
+                *detail = probe.errorString();
+            }
+            return false;
         }
-        return false;
+        probe.write("nesva");
+        probe.flush();
+        probe.close();
     }
-    probe.write("nesva");
-    probe.flush();
-    const QString name = probe.fileName();
-    probe.close();
-    const bool removed = QFile::remove(name);
+    // Missing counts as removed: something else (an indexer, antivirus) may have
+    // taken it, and the directory is still writable.
+    const bool removed = !QFile::exists(probePath) || QFile::remove(probePath);
     if (!removed && detail != nullptr) {
         *detail = QStringLiteral("probe file could not be removed");
     }
