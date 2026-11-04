@@ -13,6 +13,11 @@
 #
 # Runs at install time (also inside CPack), so DESTDIR and CMAKE_INSTALL_PREFIX
 # are set. The Qt location is baked in at configure time.
+#
+# cmake_minimum_required is not optional here: a script run with cmake -P starts
+# with every policy at its oldest setting, and IN_LIST below is an error without
+# CMP0057 set to NEW.
+cmake_minimum_required(VERSION 3.25)
 
 set(qt_source "@NESVA_QT_RUNTIME_DIR@")
 if(NOT qt_source OR NOT IS_DIRECTORY "${qt_source}")
