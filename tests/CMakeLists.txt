@@ -42,7 +42,11 @@ nesva_add_unit_test(tst_backup_runner unit/tst_backup_runner.cpp)
 nesva_add_unit_test(tst_mail unit/tst_mail.cpp)
 nesva_add_unit_test(tst_tool_installer unit/tst_tool_installer.cpp)
 nesva_add_unit_test(tst_safety unit/tst_safety.cpp)
-target_link_libraries(tst_secret_store PRIVATE Qt6::DBus)
+# The Secret Service backend only exists on UNIX, so the DBus half of this test
+# only links there (Windows uses the Credential Manager backend).
+if(UNIX)
+  target_link_libraries(tst_secret_store PRIVATE Qt6::DBus)
+endif()
 
 # Starts the real nesva-agent binary and talks to it over its socket.
 nesva_add_unit_test(tst_agent_integration unit/tst_agent_integration.cpp)
