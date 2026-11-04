@@ -10,8 +10,10 @@
 #include "nesva/core/logging.hpp"
 
 #if defined(Q_OS_WIN)
-#include <sddl.h> // ConvertSidToStringSidW lives here
+// windows.h first: sddl.h depends on its types.
 #include <windows.h>
+
+#include <sddl.h> // ConvertSidToStringSidW lives here
 #else
 #include <unistd.h>
 #endif
