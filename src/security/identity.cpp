@@ -6,18 +6,23 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QStringList>
 
+#include <string>
 #include <utility>
 
 #include "nesva/core/logging.hpp"
 
 #if defined(Q_OS_WIN)
-// windows.h first: sddl.h depends on its types.
+// windows.h first: sddl.h and aclapi.h depend on its types.
 #include <windows.h>
 
-#include <sddl.h> // ConvertSidToStringSidW lives here
+#include <aclapi.h> // SetNamedSecurityInfoW, GetNamedSecurityInfoW
+#include <sddl.h>   // ConvertSidToStringSidW, ConvertStringSidToSidW
 #else
 #include <unistd.h>
 #endif
+
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 
 namespace nesva::security {
 namespace {
@@ -128,6 +133,109 @@ Status requireUserContext(const QString& component) {
                        "profile, the keyring and the schedule are all per-user.")
             .arg(identity.detail, component)
             .toStdString());
+}
+
+namespace {
+
+#if defined(Q_OS_WIN)
+/// Owns a SID allocated by ConvertStringSidToSidW.
+struct OwnedSid {
+    PSID sid = nullptr;
+    ~OwnedSid() {
+        if (sid != nullptr) {
+            ::LocalFree(sid);
+        }
+    }
+    OwnedSid() = default;
+    OwnedSid(const OwnedSid&) = delete;
+    OwnedSid& operator=(const OwnedSid&) = delete;
+};
+#endif
+
+} // namespace
+
+Status restrictFileToCurrentUser(const QString& path) {
+    if (path.isEmpty()) {
+        return makeError(ErrorCode::InvalidArgument, "no path given to restrict");
+    }
+#if defined(Q_OS_WIN)
+    const ProcessIdentity identity = currentProcessIdentity();
+    OwnedSid owner;
+    if (identity.userId.isEmpty() ||
+        ::ConvertStringSidToSidW(reinterpret_cast<LPCWSTR>(identity.userId.utf16()),
+                                 &owner.sid) == 0) {
+        return makeError(ErrorCode::PermissionDenied,
+                         "cannot resolve the current user's security identifier",
+                         identity.userId.toStdString());
+    }
+
+    EXPLICIT_ACCESSW access{};
+    access.grfAccessPermissions = FILE_ALL_ACCESS;
+    access.grfAccessMode = SET_ACCESS;
+    access.grfInheritance = NO_INHERITANCE;
+    access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    access.Trustee.TrusteeType = TRUSTEE_IS_USER;
+    access.Trustee.ptstrName = reinterpret_cast<LPWSTR>(owner.sid);
+
+    PACL acl = nullptr;
+    if (::SetEntriesInAclW(1, &access, nullptr, &acl) != ERROR_SUCCESS) {
+        return makeError(ErrorCode::PermissionDenied, "cannot build a private access list",
+                         path.toStdString());
+    }
+    const std::wstring native = QDir::toNativeSeparators(path).toStdWString();
+    const DWORD status =
+        ::SetNamedSecurityInfoW(const_cast<LPWSTR>(native.c_str()), SE_FILE_OBJECT,
+                                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                nullptr, nullptr, acl, nullptr);
+    ::LocalFree(acl);
+    if (status != ERROR_SUCCESS) {
+        return makeError(ErrorCode::PermissionDenied, "cannot restrict the file to this user",
+                         QStringLiteral("%1: error %2").arg(path).arg(status).toStdString());
+    }
+    return Status();
+#else
+    if (!QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
+        return makeError(ErrorCode::PermissionDenied, "cannot restrict the file to this user",
+                         path.toStdString());
+    }
+    return Status();
+#endif
+}
+
+bool fileIsOwnerOnly(const QString& path) {
+    const QFileInfo info(path);
+    if (!info.exists()) {
+        return false;
+    }
+#if defined(Q_OS_WIN)
+    // Ask the DACL directly: Qt derives permissions() from the read-only attribute
+    // on Windows and reports a fixed set that says nothing about other users.
+    PSID ownerSid = nullptr;
+    PACL dacl = nullptr;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    const std::wstring native = QDir::toNativeSeparators(path).toStdWString();
+    if (::GetNamedSecurityInfoW(const_cast<LPWSTR>(native.c_str()), SE_FILE_OBJECT,
+                                DACL_SECURITY_INFORMATION, &ownerSid, nullptr, &dacl, nullptr,
+                                &descriptor) != ERROR_SUCCESS) {
+        return false;
+    }
+    bool restricted = false;
+    if (dacl != nullptr && dacl->AceCount == 1) {
+        LPVOID ace = nullptr;
+        if (::GetAce(dacl, 0, &ace) != 0) {
+            const auto* header = static_cast<ACCESS_ALLOWED_ACE*>(ace);
+            restricted = (header->Header.AceType == ACCESS_ALLOWED_ACE_TYPE);
+        }
+    }
+    ::LocalFree(descriptor);
+    return restricted;
+#else
+    const QFileDevice::Permissions permissions = info.permissions();
+    const QFileDevice::Permissions others =
+        QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup |
+        QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+    return (permissions & others) == 0;
+#endif
 }
 
 void setIdentityProviderForTests(IdentityProvider provider) {

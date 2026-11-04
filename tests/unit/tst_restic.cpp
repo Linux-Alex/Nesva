@@ -17,6 +17,7 @@
 #include "nesva/backup/restic.hpp"
 #include "nesva/core/external_tool.hpp"
 #include "nesva/core/paths.hpp"
+#include "nesva/security/identity.hpp"
 #include "support/test_fixtures.hpp"
 
 using namespace nesva;
@@ -386,8 +387,25 @@ void ResticTest::createsRestrictedPasswordFile() {
     QVERIFY(path);
     const QFileInfo info(path.value());
     QVERIFY(info.exists());
+#if defined(Q_OS_WIN)
+    // NTFS has no POSIX bits: QFileInfo::permissions() reports a fixed set for any
+    // writable file, so what protects the secret is the DACL. The file must carry
+    // exactly one access entry and non-inherited protection.
+    QVERIFY2(security::fileIsOwnerOnly(path.value()),
+             qPrintable(QStringLiteral("the password file at %1 is readable by other accounts")
+                            .arg(path.value())));
+#else
     QVERIFY(!(info.permissions() & QFileDevice::ReadGroup));
     QVERIFY(!(info.permissions() & QFileDevice::ReadOther));
+    QVERIFY(security::fileIsOwnerOnly(path.value()));
+    // A file in the same directory without the restriction is readable by the
+    // group, which is what makes the assertion above meaningful.
+    const QString loose = directory_->filePath(QStringLiteral("loose.txt"));
+    QVERIFY(test::writeFile(loose, "secret"));
+    QVERIFY(QFile::setPermissions(loose, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                            QFileDevice::ReadGroup));
+    QVERIFY(!security::fileIsOwnerOnly(loose));
+#endif
     QCOMPARE(test::readFile(path.value()), QByteArray("very-secret"));
     QFile::remove(path.value());
 }

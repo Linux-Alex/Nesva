@@ -18,6 +18,7 @@
 #include "nesva/core/external_tool.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/core/paths.hpp"
+#include "nesva/security/identity.hpp"
 
 namespace nesva::backup {
 namespace {
@@ -812,6 +813,15 @@ Result<QString> createPasswordFile(const QByteArray& password) {
     file.flush();
     const QString path = file.fileName();
     file.close();
+
+    // POSIX mode bits are not enough on Windows, where the cached file inherits a
+    // DACL that other users can read. Fail closed rather than hand restic a
+    // password file anyone on the machine can open.
+    const Status restricted = security::restrictFileToCurrentUser(path);
+    if (!restricted) {
+        QFile::remove(path);
+        return restricted.error();
+    }
     return path;
 }
 

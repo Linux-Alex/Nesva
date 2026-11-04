@@ -3,6 +3,7 @@
 
 #include "elided_label.hpp"
 
+#include <QtCore/QEvent>
 #include <QtGui/QPainter>
 #include <QtWidgets/QSizePolicy>
 
@@ -15,6 +16,21 @@ ElidedLabel::ElidedLabel(QWidget* parent) : QLabel(parent) {
     setMinimumWidth(1);
     setTextInteractionFlags(Qt::NoTextInteraction);
     QLabel::setText(QString());
+    applyLineHeight();
+}
+
+void ElidedLabel::applyLineHeight() {
+    // Fixed, not merely preferred: a QLabel's height can still follow font metrics
+    // and platform styles between two layout passes, which moved the table below by
+    // a few pixels on Windows but not on Linux. One line, one height, everywhere.
+    setFixedHeight(fontMetrics().lineSpacing());
+}
+
+void ElidedLabel::changeEvent(QEvent* event) {
+    QLabel::changeEvent(event);
+    if (event->type() == QEvent::FontChange) {
+        applyLineHeight();
+    }
 }
 
 void ElidedLabel::setText(const QString& text) {

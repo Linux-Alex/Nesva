@@ -33,6 +33,20 @@ ProcessIdentity currentProcessIdentity();
 /// a run starts, so a SYSTEM-launched agent cannot archive the wrong profile.
 Status requireUserContext(const QString& component);
 
+/// Restricts a file to the current user only.
+///
+/// POSIX mode bits (0600) express this directly. Windows has no such bits: a file
+/// in %TEMP% or %LOCALAPPDATA% inherits a DACL that normally lets other users on
+/// the machine read it, so the DACL is replaced with a single entry for the
+/// current user and inheritance is switched off. Needed wherever Nesva writes a
+/// secret to disk, such as the temporary restic password file.
+Status restrictFileToCurrentUser(const QString& path);
+
+/// True when p path is readable only by the current user. On Windows this asks
+/// whether the DACL holds exactly one entry, for this user; on POSIX whether the
+/// group and other bits are clear.
+bool fileIsOwnerOnly(const QString& path);
+
 /// Test seam: replaces the platform probe.
 using IdentityProvider = std::function<ProcessIdentity()>;
 void setIdentityProviderForTests(IdentityProvider provider);

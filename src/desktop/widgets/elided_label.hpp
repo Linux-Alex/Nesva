@@ -31,8 +31,12 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    /// Keeps the row exactly one line high when a stylesheet changes the font.
+    void changeEvent(QEvent* event) override;
 
 private:
+    void applyLineHeight();
+
     QString fullText_;
 };
 

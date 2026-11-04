@@ -6,6 +6,26 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (Windows)
+
+- **Hidden entries follow one rule on every platform.** Windows marks hidden files with an
+  attribute and reports nothing for `.git` or `.env`, so a scan with `includeHidden = false`
+  archived them on Windows but skipped them on Linux. A leading dot now counts as hidden
+  everywhere, and hidden *directories* are skipped as a whole - previously they were walked even
+  on Linux, so `.git/objects` was read regardless of the setting.
+- **The restic password file is now owner-only on Windows.** NTFS has no POSIX mode bits, so the
+  temporary file holding the repository password inherited a DACL that other accounts on the
+  machine could read. Nesva now rewrites the DACL with a single entry for the current user and
+  switches inheritance off (`security::restrictFileToCurrentUser`); if that fails the file is
+  deleted and the run stops instead of continuing with a readable secret.
+- **The log file can be reclaimed.** Windows refuses to delete a file a process still holds open,
+  so an external log rotation or cleanup could not remove it. `FileSink::close()` releases the
+  handle and the next write reopens the file.
+- **Status lines have a structurally fixed height.** `ElidedLabel` set a fixed vertical size
+  *policy*, but a QLabel's height still followed font metrics between layout passes on Windows,
+  which moved the jobs table by a few pixels when a run message arrived. The height is now
+  `setFixedHeight` from the font metrics and re-applied on a font change.
+
 ### Added (external tools)
 
 - **Restic can now be installed from Nesva too.** The installer was rclone-only, so a machine
