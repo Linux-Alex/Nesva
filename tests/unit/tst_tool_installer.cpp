@@ -195,9 +195,13 @@ void ToolInstallerTest::installRefusesAnUnverifiedArchive() {
     QVERIFY(directory.isValid());
 
     ScriptedTransport transport;
-    transport.checksumBody = QByteArrayLiteral(
-        "0000000000000000000000000000000000000000000000000000000000000000  "
-        "rclone-v9.9.9-linux-amd64.zip\n");
+    // The list must name the asset this platform actually downloads, otherwise
+    // the installer fails while looking the file up instead of comparing hashes.
+    transport.checksumBody = QStringLiteral(
+                                 "0000000000000000000000000000000000000000000000000000000000000000"
+                                 "  %1\n")
+                                 .arg(ScriptedTransport::archiveName())
+                                 .toUtf8();
 
     const Result<tools::ToolInstallPlan> plan =
         tools::planRcloneInstall(tools::InstallScope::User, transport);
@@ -301,9 +305,11 @@ void ToolInstallerTest::resticInstallRefusesAnUnverifiedArchive() {
     QVERIFY(directory.isValid());
 
     ScriptedTransport transport;
-    transport.checksumBody = QByteArrayLiteral(
-        "1111111111111111111111111111111111111111111111111111111111111111  "
-        "restic_9.9.9_linux_amd64.bz2\n");
+    transport.checksumBody = QStringLiteral(
+                                 "1111111111111111111111111111111111111111111111111111111111111111"
+                                 "  %1\n")
+                                 .arg(ScriptedTransport::resticArchiveName())
+                                 .toUtf8();
 
     const Result<tools::ToolInstallPlan> plan =
         tools::planToolInstall(tools::ToolId::Restic, tools::InstallScope::User, transport);
@@ -356,7 +362,11 @@ void ToolInstallerTest::payloadIsFoundUnderItsReleaseAssetName() {
              bz2Payload);
 
     // A binary already carrying the tool's name always wins over the asset name.
+#if defined(Q_OS_WIN)
+    const QString exact = directory.filePath(QStringLiteral("restic.exe"));
+#else
     const QString exact = directory.filePath(QStringLiteral("restic"));
+#endif
     {
         QFile file(exact);
         QVERIFY(file.open(QIODevice::WriteOnly));

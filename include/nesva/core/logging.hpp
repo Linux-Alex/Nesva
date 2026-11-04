@@ -90,6 +90,10 @@ public:
 
     /// Opens (or reopens) the log file, creating parent directories.
     Status open();
+    /// Flushes and releases the file handle. Windows refuses to delete a file a
+    /// process still holds open, so closing is the only way an external tool can
+    /// remove or rotate the log; the next write reopens it.
+    void close();
     bool isOpen() const noexcept { return open_; }
     const QString& filePath() const noexcept { return filePath_; }
     const QString& lastError() const noexcept { return lastError_; }

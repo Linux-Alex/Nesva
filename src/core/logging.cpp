@@ -173,6 +173,15 @@ Status FileSink::open() {
     return Status();
 }
 
+void FileSink::close() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (open_) {
+        file_.flush();
+        file_.close();
+        open_ = false;
+    }
+}
+
 Status FileSink::rotateLocked(qint64 incomingBytes) {
     if (maxFileBytes_ <= 0 || bytesWritten_ <= 0 || maxBackupFiles_ <= 0) {
         return Status();

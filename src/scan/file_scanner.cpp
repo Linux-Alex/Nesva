@@ -32,6 +32,15 @@ QString canonicalOrAbsolute(const QString& path) {
     return normalisedPath(canonical.isEmpty() ? info.absoluteFilePath() : canonical);
 }
 
+/// True when an entry counts as hidden for c ScanOptions::includeHidden.
+///
+/// A leading dot is the Unix convention; Windows marks hidden entries with a file
+/// attribute instead and reports nothing for ".git" or ".env". Consulting both
+/// keeps one exclusion rule working on every platform.
+bool isHiddenEntry(const QFileInfo& info) {
+    return info.isHidden() || info.fileName().startsWith(QLatin1Char('.'));
+}
+
 bool isLink(const QFileInfo& info) {
     return info.isSymLink() || info.isJunction();
 }
@@ -226,6 +235,11 @@ Result<ScanResult> scanSources(const QVector<ScanSource>& sources, const ScanOpt
                 const bool link = isLink(entry);
 
                 if (entry.isDir()) {
+                    if (!options.includeHidden && isHiddenEntry(entry)) {
+                        result.skipped.append(
+                            {entry.absoluteFilePath(), QStringLiteral("hidden directory")});
+                        continue;
+                    }
                     if (link && !options.followSymlinks) {
                         result.skipped.append({entry.absoluteFilePath(),
                                                QStringLiteral("symlink directory not followed")});
@@ -267,7 +281,7 @@ Result<ScanResult> scanSources(const QVector<ScanSource>& sources, const ScanOpt
                     continue;
                 }
 
-                if (!options.includeHidden && entry.isHidden()) {
+                if (!options.includeHidden && isHiddenEntry(entry)) {
                     result.skipped.append({entry.absoluteFilePath(), QStringLiteral("hidden file")});
                     continue;
                 }

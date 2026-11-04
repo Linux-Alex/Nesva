@@ -197,7 +197,11 @@ void LoggingTest::reopenAfterExternalDeletion() {
     logger.log(LogLevel::Info, QStringLiteral("core.test"), QStringLiteral("first"));
     logger.flush();
 
-    QVERIFY(QFile::remove(path));
+    // Windows refuses to delete a file this process still holds open, so an
+    // external tool that removes or rotates the log must be able to make the sink
+    // let go of it first; a rotation closes it for the same reason.
+    sink->close();
+    QVERIFY2(QFile::remove(path), qPrintable(path));
     // The sink keeps writing even if the file disappeared (rotation/cleanup races).
     logger.log(LogLevel::Info, QStringLiteral("core.test"), QStringLiteral("second"));
     logger.flush();
