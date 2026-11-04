@@ -157,6 +157,13 @@ void ToolInstallDialog::renderPlan() {
 }
 
 void ToolInstallDialog::appendLog(const QString& line) {
+    // The installer reports from a worker thread through a queued call, so by the
+    // time it arrives the dialog may already be gone. The explicit check also
+    // stops GCC 13 from warning about a possible null dereference: the inlined
+    // call chain loses the constructor initialisation.
+    if (logView_ == nullptr) {
+        return;
+    }
     logView_->setVisible(true);
     logView_->appendPlainText(line);
 }

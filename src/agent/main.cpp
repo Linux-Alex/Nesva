@@ -27,9 +27,13 @@ void handleStopSignal(int) {
     g_stopRequested = 1;
 }
 
+#if defined(SIGHUP)
+// Only compiled where the reload signal exists (POSIX); on Windows the agent
+// reloads through its own schedule changes.
 void handleReloadSignal(int) {
     g_reloadRequested = 1;
 }
+#endif
 
 QString helpText() {
     return QStringLiteral(
