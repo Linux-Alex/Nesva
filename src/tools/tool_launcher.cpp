@@ -3,6 +3,7 @@
 
 #include "nesva/tools/tool_launcher.hpp"
 
+#include <QtCore/QDir>
 #include <QtCore/QProcess>
 #include <QtCore/QStandardPaths>
 

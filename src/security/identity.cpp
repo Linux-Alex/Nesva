@@ -4,6 +4,7 @@
 #include "nesva/security/identity.hpp"
 
 #include <QtCore/QJsonObject>
+#include <QtCore/QStringList>
 
 #include <utility>
 

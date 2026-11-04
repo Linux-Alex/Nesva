@@ -6,6 +6,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonObject>
 #include <QtCore/QProcess>
 #include <QtCore/QSaveFile>
 #include <QtCore/QSettings>
