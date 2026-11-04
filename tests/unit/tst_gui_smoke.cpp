@@ -296,7 +296,7 @@ void GuiSmokeTest::statusTextDoesNotResizeTheJobsTable() {
     QVERIFY(!labels.isEmpty());
     const QString longMessage =
         QStringLiteral("Running Documents archive: transferred 1204 files, skipped 88 unchanged "
-                       "files, 0 failed - /home/aleks/Documents/deeply/nested/folder/file.txt");
+                       "files, 0 failed - /home/you/Documents/deeply/nested/folder/file.txt");
     for (ElidedLabel* label : labels) {
         label->setText(longMessage);
     }

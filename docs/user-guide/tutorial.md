@@ -41,7 +41,7 @@ programs Nesva calls:
 TOOL    PATH                           VERSION
 ------  -----------------------------  ---------------------------------------------------
 rclone  -                              not installed (nesva-cli tools rclone --install)
-restic  /home/aleks/.local/bin/restic  restic 0.18.1 compiled with go1.25.1 on linux/amd64
+restic  /home/you/.local/bin/restic  restic 0.18.1 compiled with go1.25.1 on linux/amd64
 ```
 
 ---
@@ -60,17 +60,17 @@ nesva-cli tools rclone              # preview only, nothing is downloaded
 
 ```
 Installation plan - nothing has been downloaded, written or executed yet:
-  Rclone 1.75.2 -> /home/aleks/.local/bin/rclone (user scope)
+  Rclone 1.75.2 -> /home/you/.local/bin/rclone (user scope)
   1. Download rclone 1.75.2 to a private temporary directory
        https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-amd64.zip
   2. Compute its SHA-256 and compare it with the published checksum
        https://downloads.rclone.org/v1.75.2/SHA256SUMS
   3. Unpack the archive
        $ unzip -o <archive> -d <temporary directory>
-  4. Install the binary to /home/aleks/.local/bin/rclone
+  4. Install the binary to /home/you/.local/bin/rclone
        A plain file copy inside your own home directory: no password and no elevated privileges.
   5. Run the installed binary and record its path
-       $ /home/aleks/.local/bin/rclone version
+       $ /home/you/.local/bin/rclone version
 ```
 
 What the plan guarantees:
@@ -93,11 +93,11 @@ nesva-cli tools rclone --install
   Verifying the SHA-256 checksum
   Unpacking the archive
   Checking the installed binary
-Installed rclone 1.75.2 at /home/aleks/.local/bin/rclone (SHA-256 verified).
+Installed rclone 1.75.2 at /home/you/.local/bin/rclone (SHA-256 verified).
 Nesva now uses that path, so it works without changing PATH.
 ```
 
-`nesva-cli doctor` now reports `rclone: /home/aleks/.local/bin/rclone (rclone v1.75.2)`.
+`nesva-cli doctor` now reports `rclone: /home/you/.local/bin/rclone (rclone v1.75.2)`.
 
 ---
 

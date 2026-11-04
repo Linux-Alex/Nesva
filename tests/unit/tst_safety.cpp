@@ -62,7 +62,7 @@ void SafetyTest::serviceAccountCannotRunJobs() {
 
 void SafetyTest::userAccountRunsJobs() {
     security::ProcessIdentity user;
-    user.userName = QStringLiteral("ARCONT\\FUJS");
+    user.userName = QStringLiteral("EXAMPLE\\alice");
     user.userId = QStringLiteral("S-1-5-21-2827920605-2240180639-1320108958-1174");
     security::setIdentityProviderForTests([user] { return user; });
     QVERIFY(security::requireUserContext(QStringLiteral("job run")).ok());

@@ -43,7 +43,7 @@ MailConnectDialog::MailConnectDialog(AppContext& context, QWidget* parent)
     auto* form = new QFormLayout();
     accountEdit_ = new QLineEdit(this);
     accountEdit_->setObjectName(QStringLiteral("mailConnectAccount"));
-    accountEdit_->setPlaceholderText(QStringLiteral("fujs@arcont.si"));
+    accountEdit_->setPlaceholderText(QStringLiteral("you@example.com"));
     form->addRow(QStringLiteral("Account"), accountEdit_);
 
     tenantEdit_ = new QLineEdit(this);
