@@ -1058,7 +1058,7 @@ int commandJobsStatus(Context& context, const Options& options) {
     QString sql =
         QStringLiteral("SELECT r.id, r.job_id, COALESCE(j.name, ''), r.status, "
                        "COALESCE(r.started_at, ''), r.files_total, r.files_transferred, "
-                       "r.files_skipped, r.files_failed, r.bytes_transferred "
+                       "r.files_skipped, r.files_failed, r.bytes_transferred, r.bytes_total "
                        "FROM job_runs r LEFT JOIN backup_jobs j ON j.id = r.job_id ");
     QVariantList binds;
     if (!options.positional.isEmpty()) {
@@ -1096,6 +1096,7 @@ int commandJobsStatus(Context& context, const Options& options) {
     const qint64 skipped = row.value(7).toLongLong();
     const qint64 failed = row.value(8).toLongLong();
     const qint64 bytes = row.value(9).toLongLong();
+    const qint64 bytesTotal = row.value(10).toLongLong();
 
     const QDateTime startedAt = QDateTime::fromString(started, Qt::ISODateWithMs).toUTC();
     const double elapsedSeconds = startedAt.isValid()
@@ -1105,7 +1106,13 @@ int commandJobsStatus(Context& context, const Options& options) {
     const qint64 remaining = total > done ? total - done : 0;
     const qint64 etaSeconds =
         rate > 0 && remaining > 0 ? static_cast<qint64>(remaining / rate) : -1;
-    const double percent = total > 0 ? 100.0 * static_cast<double>(done) / total : 0.0;
+    // A batched upload counts bytes, not files, until it finishes: report the
+    // percentage that actually moves.
+    const bool byteBased = done == 0 && bytesTotal > 0;
+    const double percent = byteBased
+                               ? 100.0 * static_cast<double>(bytes) /
+                                     static_cast<double>(bytesTotal)
+                               : (total > 0 ? 100.0 * static_cast<double>(done) / total : 0.0);
 
     output.add(QStringLiteral("ok"), true);
     output.add(QStringLiteral("running"), status == QStringLiteral("running"));
@@ -1126,23 +1133,41 @@ int commandJobsStatus(Context& context, const Options& options) {
                     .arg(runId)
                     .arg(jobId)
                     .arg(jobName, status));
-    if (total > 0) {
-        output.line(QStringLiteral("Progress: %1/%2 files (%3%), %4 transferred, %5 failed, %6")
-                        .arg(done)
-                        .arg(total)
-                        .arg(QString::number(percent, 'f', 1))
-                        .arg(humanBytes(bytes))
-                        .arg(failed)
-                        .arg(skipped > 0 ? QStringLiteral("%1 unchanged").arg(skipped)
-                                         : QStringLiteral("time %1")
-                                               .arg(humanDuration(
-                                                   static_cast<qint64>(elapsedSeconds)))));
-        output.line(QStringLiteral("Speed:    %1 files/min (%2/s) - elapsed %3 - ETA %4")
-                        .arg(QString::number(rate * 60.0, 'f', 0))
-                        .arg(QString::number(rate, 'f', 1))
-                        .arg(humanDuration(static_cast<qint64>(elapsedSeconds)))
-                        .arg(etaSeconds >= 0 ? humanDuration(etaSeconds)
-                                             : QStringLiteral("unknown")));
+    if (total > 0 || bytesTotal > 0) {
+        if (byteBased) {
+            output.line(QStringLiteral("Progress: %1 of %2 (%3%) - %4 files queued, %5 failed")
+                            .arg(humanBytes(bytes), humanBytes(bytesTotal),
+                                 QString::number(percent, 'f', 1))
+                            .arg(total)
+                            .arg(failed));
+            const double bytesPerSecond = elapsedSeconds > 0 ? bytes / elapsedSeconds : 0.0;
+            const qint64 bytesEta =
+                bytesPerSecond > 0 && bytesTotal > bytes
+                    ? static_cast<qint64>((bytesTotal - bytes) / bytesPerSecond)
+                    : -1;
+            output.line(QStringLiteral("Speed:    %1/s - elapsed %2 - ETA %3")
+                            .arg(humanBytes(static_cast<qint64>(bytesPerSecond)),
+                                 humanDuration(static_cast<qint64>(elapsedSeconds)),
+                                 bytesEta >= 0 ? humanDuration(bytesEta)
+                                               : QStringLiteral("unknown")));
+        } else {
+            output.line(QStringLiteral("Progress: %1/%2 files (%3%), %4 transferred, %5 failed, %6")
+                            .arg(done)
+                            .arg(total)
+                            .arg(QString::number(percent, 'f', 1))
+                            .arg(humanBytes(bytes))
+                            .arg(failed)
+                            .arg(skipped > 0 ? QStringLiteral("%1 unchanged").arg(skipped)
+                                             : QStringLiteral("time %1")
+                                                   .arg(humanDuration(
+                                                       static_cast<qint64>(elapsedSeconds)))));
+            output.line(QStringLiteral("Speed:    %1 files/min (%2/s) - elapsed %3 - ETA %4")
+                            .arg(QString::number(rate * 60.0, 'f', 0))
+                            .arg(QString::number(rate, 'f', 1))
+                            .arg(humanDuration(static_cast<qint64>(elapsedSeconds)))
+                            .arg(etaSeconds >= 0 ? humanDuration(etaSeconds)
+                                                 : QStringLiteral("unknown")));
+        }
     } else {
         output.line(QStringLiteral("Still scanning (elapsed %1).")
                         .arg(humanDuration(static_cast<qint64>(elapsedSeconds))));
@@ -1174,6 +1199,7 @@ int commandJobsRun(Context& context, const Options& options) {
     jobs::RunOptions runOptions;
     runOptions.dryRun = options.flags.contains(QStringLiteral("dry-run"));
     runOptions.forceFullTransfer = options.flags.contains(QStringLiteral("force"));
+    runOptions.batchUpload = !options.flags.contains(QStringLiteral("no-batch"));
     if (options.flags.contains(QStringLiteral("retries"))) {
         bool ok = false;
         const int retries = options.flags.value(QStringLiteral("retries")).toInt(&ok);

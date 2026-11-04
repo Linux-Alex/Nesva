@@ -36,7 +36,8 @@ const QStringList& booleanFlags() {
         QStringLiteral("system"),     QStringLiteral("no-console-log"),
         QStringLiteral("dry-run"),    QStringLiteral("full"),      QStringLiteral("overwrite"),
         QStringLiteral("rename"),     QStringLiteral("no-verify"), QStringLiteral("prune"),
-        QStringLiteral("force"),      QStringLiteral("allow-existing")};
+        QStringLiteral("force"),      QStringLiteral("allow-existing"),
+        QStringLiteral("no-batch")};
     return flags;
 }
 

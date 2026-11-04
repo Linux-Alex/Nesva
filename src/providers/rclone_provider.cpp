@@ -4,6 +4,7 @@
 #include "nesva/providers/rclone_provider.hpp"
 
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -21,6 +22,8 @@ namespace nesva::providers {
 namespace {
 
 constexpr int kDefaultTimeoutMs = 120000;
+/// A batched copy of a large directory can legitimately take hours.
+constexpr int kBatchTimeoutMs = 12 * 60 * 60 * 1000;
 
 QString describeFailure(const ProcessOutcome& outcome, const QString& operation) {
     if (!outcome.started) {
@@ -197,6 +200,179 @@ Status RcloneProvider::testConnection() {
                              .toStdString());
     }
     return Status();
+}
+
+ProcessOutcome ProcessRunner::runStreaming(const QString& program, const QStringList& arguments,
+                                          const CancellationToken& cancellation, int timeoutMs,
+                                          const std::function<void(const QByteArray&)>& onOutput) {
+    ProcessOutcome outcome;
+    const QString resolved = resolveExecutable(program);
+    if (resolved.isEmpty()) {
+        outcome.started = false;
+        outcome.startError = QStringLiteral("executable not found: %1").arg(program);
+        outcome.exitCode = -1;
+        return outcome;
+    }
+
+    QProcess process;
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    process.start(resolved, arguments);
+    if (!process.waitForStarted(10000)) {
+        outcome.started = false;
+        outcome.startError = process.errorString();
+        outcome.exitCode = -1;
+        return outcome;
+    }
+
+    QElapsedTimer clock;
+    clock.start();
+    QByteArray buffer;
+    while (process.state() != QProcess::NotRunning) {
+        process.waitForReadyRead(200);
+        const QByteArray chunk = process.readAll();
+        if (!chunk.isEmpty()) {
+            buffer += chunk;
+            if (onOutput) {
+                onOutput(chunk);
+            }
+        }
+        if (cancellation.isCancelled()) {
+            outcome.cancelled = true;
+            process.kill();
+            process.waitForFinished(3000);
+            break;
+        }
+        if (clock.elapsed() > timeoutMs) {
+            outcome.timedOut = true;
+            process.kill();
+            process.waitForFinished(3000);
+            break;
+        }
+    }
+    process.waitForFinished(5000);
+    buffer += process.readAll();
+    outcome.standardOutput = buffer;
+    outcome.standardError = buffer;
+    outcome.exitCode = outcome.cancelled || outcome.timedOut
+                           ? -1
+                           : (process.exitStatus() == QProcess::NormalExit ? process.exitCode() : -1);
+    return outcome;
+}
+
+Status RcloneProvider::uploadTree(const QString& localRoot, const QString& remoteRelativeBase,
+                                  const TransferOptions& options,
+                                  const CancellationToken& cancellation,
+                                  const ProgressCallback& progress) {
+    const Result<QString> target = remoteTargetFor(remoteRelativeBase);
+    if (!target) {
+        return target.error();
+    }
+
+    QStringList arguments = {QStringLiteral("copy"), localRoot, target.value(),
+                             QStringLiteral("--transfers"),
+                             QString::number(options.batchTransfers > 0 ? options.batchTransfers : 4),
+                             QStringLiteral("--checkers"),
+                             QString::number(options.batchTransfers > 0 ? options.batchTransfers : 4),
+                             QStringLiteral("--stats"), QStringLiteral("1s"),
+                             QStringLiteral("--use-json-log"),
+                             QStringLiteral("--stats-log-level"), QStringLiteral("NOTICE")};
+    if (options.bandwidthLimitKiB > 0) {
+        arguments << QStringLiteral("--bwlimit")
+                  << QStringLiteral("%1k").arg(options.bandwidthLimitKiB);
+    }
+
+    // rclone prints one JSON object per stats tick; parse the "stats" block so
+    // the caller gets bytes/speed/ETA while the transfer is still running.
+    QByteArray pending;
+    const auto consume = [&pending, &progress](const QByteArray& chunk) {
+        pending += chunk;
+        int newline = pending.indexOf('\n');
+        while (newline >= 0) {
+            const QByteArray line = pending.left(newline);
+            pending.remove(0, newline + 1);
+            const QJsonDocument document = QJsonDocument::fromJson(line);
+            if (!document.isObject()) {
+                newline = pending.indexOf('\n');
+                continue;
+            }
+            const QJsonObject stats = document.object().value(QStringLiteral("stats")).toObject();
+            if (!stats.isEmpty() && progress) {
+                TransferProgress update;
+                update.bytesDone = static_cast<qint64>(stats.value(QStringLiteral("bytes")).toDouble(0));
+                update.bytesTotal =
+                    static_cast<qint64>(stats.value(QStringLiteral("totalBytes")).toDouble(0));
+                update.bytesPerSecond =
+                    static_cast<qint64>(stats.value(QStringLiteral("speed")).toDouble(0));
+                const QJsonValue eta = stats.value(QStringLiteral("eta"));
+                update.etaSeconds = eta.isDouble() ? static_cast<qint64>(eta.toDouble()) : -1;
+                const QJsonArray transferring = stats.value(QStringLiteral("transferring")).toArray();
+                if (!transferring.isEmpty()) {
+                    update.currentFile =
+                        transferring.first().toObject().value(QStringLiteral("name")).toString();
+                }
+                progress(update);
+            }
+            newline = pending.indexOf('\n');
+        }
+    };
+
+    const ProcessOutcome outcome =
+        runner_->runStreaming(executable_, arguments, cancellation, kBatchTimeoutMs, consume);
+    if (outcome.cancelled) {
+        return makeError(ErrorCode::Cancelled, "batch upload cancelled");
+    }
+    if (!outcome.started) {
+        return makeError(ErrorCode::ExternalToolFailed, "cannot start rclone", outcome.startError.toStdString());
+    }
+    if (outcome.timedOut) {
+        return makeError(ErrorCode::Timeout, "batch upload timed out");
+    }
+    if (outcome.exitCode != 0) {
+        return makeError(ErrorCode::ExternalToolFailed, "rclone copy failed",
+                         describeFailure(outcome, QStringLiteral("rclone copy")).toStdString());
+    }
+    return Status();
+}
+
+Status RcloneProvider::checkTree(const QString& localRoot, const QString& remoteRelativeBase,
+                                 bool sizeOnly, const CancellationToken& cancellation) {
+    const Result<QString> target = remoteTargetFor(remoteRelativeBase);
+    if (!target) {
+        return target.error();
+    }
+    QStringList arguments = {QStringLiteral("check"), localRoot, target.value(),
+                             QStringLiteral("--one-way"), QStringLiteral("--combined"),
+                             QStringLiteral("-")};
+    if (sizeOnly) {
+        arguments << QStringLiteral("--size-only");
+    }
+    const Result<ProcessOutcome> checked = runRclone(arguments, cancellation, kBatchTimeoutMs);
+    if (!checked) {
+        return checked.error();
+    }
+    const ProcessOutcome& outcome = checked.value();
+    if (!outcome.started) {
+        return makeError(ErrorCode::ExternalToolFailed, "cannot start rclone",
+                         outcome.startError.toStdString());
+    }
+    if (outcome.exitCode == 0) {
+        return Status();
+    }
+    // Exit code 1 means differences were found; list the first few.
+    QStringList differences;
+    const QStringList lines = QString::fromUtf8(outcome.standardOutput).split(QLatin1Char('\n'));
+    for (const QString& line : lines) {
+        if (line.startsWith(QLatin1Char('*')) || line.startsWith(QLatin1Char('-'))) {
+            differences.append(line.trimmed());
+            if (differences.size() >= 5) {
+                break;
+            }
+        }
+    }
+    return makeError(ErrorCode::IntegrityError, "the uploaded files do not match the source",
+                     (differences.isEmpty() ? QStringLiteral("rclone check reported differences")
+                                            : differences.join(QLatin1String("; ")))
+                         .toStdString());
 }
 
 Result<qint64> RcloneProvider::freeSpaceBytes() {

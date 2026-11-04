@@ -54,6 +54,10 @@ struct RunOptions {
     bool forceFullTransfer = false;
     int maxAttempts = 3;
     int retryBackoffMs = 400;
+    /// Upload a whole directory per rclone invocation instead of one process per
+    /// file. Much faster for many small files; on by default for rclone
+    /// destinations, disabled with "jobs run --no-batch".
+    bool batchUpload = true;
 };
 
 struct RunReport {

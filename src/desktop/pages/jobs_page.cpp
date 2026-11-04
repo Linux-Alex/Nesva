@@ -11,9 +11,11 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QTableView>
 
+#include <QtCore/QDateTime>
 #include <QtSql/QSqlQuery>
 
 #include "app_context.hpp"
+#include "nesva/core/disk_space.hpp"
 #include "widgets/elided_label.hpp"
 #include "nesva/agent/client.hpp"
 #include "dialogs/history_dialog.hpp"
@@ -167,7 +169,8 @@ void JobsPage::refresh() {
     const bool ownRun = context_.executor() != nullptr && context_.executor()->isRunning();
     if (!ownRun) {
         Result<QSqlQuery> running = context_.database().select(QStringLiteral(
-            "SELECT j.name, r.files_total, r.files_transferred, r.files_failed "
+            "SELECT j.name, r.files_total, r.files_transferred, r.files_failed, "
+            "r.bytes_total, r.bytes_transferred, COALESCE(r.started_at, '') "
             "FROM job_runs r JOIN backup_jobs j ON j.id = r.job_id "
             "WHERE r.status = 'running' ORDER BY r.id DESC LIMIT 1"));
         if (running) {
@@ -176,24 +179,51 @@ void JobsPage::refresh() {
                 const QString name = row.value(0).toString();
                 const qint64 total = row.value(1).toLongLong();
                 const qint64 done = row.value(2).toLongLong();
-                const qint64 failed = row.value(3).toLongLong();
-                if (total > 0) {
-                    runProgress_->setVisible(true);
+                Q_UNUSED(row.value(3).toLongLong()); // failed, reported on finish
+                const qint64 bytesTotal = row.value(4).toLongLong();
+                const qint64 bytesDone = row.value(5).toLongLong();
+                const QDateTime started =
+                    QDateTime::fromString(row.value(6).toString(), Qt::ISODateWithMs).toUTC();
+                const double elapsed = started.isValid()
+                                           ? static_cast<double>(started.secsTo(
+                                                 QDateTime::currentDateTimeUtc()))
+                                           : 0.0;
+
+                runProgress_->setVisible(true);
+                if (done > 0 && total > 0) {
+                    // Per-file progress (the per-file transfer path).
                     runProgress_->setRange(0, static_cast<int>(total));
                     runProgress_->setValue(static_cast<int>(done));
-                    runLabel_->setText(QStringLiteral("%1: %2/%3 files (%4%), %5 failed")
+                    const double rate = elapsed > 0 ? done / elapsed : 0.0;
+                    const qint64 eta = rate > 0 ? static_cast<qint64>((total - done) / rate) : -1;
+                    runLabel_->setText(QStringLiteral("%1: %2/%3 files (%4%) - %5/min - %6 left")
                                            .arg(name)
                                            .arg(done)
                                            .arg(total)
                                            .arg(QString::number(100.0 * done / total, 'f', 1))
-                                           .arg(failed));
+                                           .arg(QString::number(rate * 60.0, 'f', 0),
+                                                eta >= 0 ? QStringLiteral("about %1 min")
+                                                               .arg((eta + 59) / 60)
+                                                         : QStringLiteral("ETA unknown")));
+                } else if (bytesTotal > 0) {
+                    // Batched transfer: progress in bytes, which is what moves.
+                    const double percent = 100.0 * bytesDone / bytesTotal;
+                    runProgress_->setRange(0, 1000);
+                    runProgress_->setValue(static_cast<int>(percent * 10));
+                    const double speed = elapsed > 0 ? bytesDone / elapsed : 0.0;
+                    const qint64 eta =
+                        speed > 0 ? static_cast<qint64>((bytesTotal - bytesDone) / speed) : -1;
+                    runLabel_->setText(
+                        QStringLiteral("%1: %2 of %3 (%4%) - %5/s - %6 left")
+                            .arg(name, humanBytes(bytesDone), humanBytes(bytesTotal),
+                                 QString::number(percent, 'f', 1),
+                                 humanBytes(static_cast<qint64>(speed)),
+                                 eta >= 0 ? QStringLiteral("about %1 min").arg((eta + 59) / 60)
+                                          : QStringLiteral("ETA unknown")));
                 } else {
-                    runProgress_->setVisible(true);
                     runProgress_->setRange(0, 0);
                     runLabel_->setText(QStringLiteral("%1: scanning...").arg(name));
                 }
-            } else if (!ownRun) {
-                runProgress_->setVisible(false);
             }
         }
     }

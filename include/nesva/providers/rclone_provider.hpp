@@ -7,6 +7,7 @@
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
+#include <functional>
 #include <memory>
 
 #include "nesva/core/cancellation.hpp"
@@ -36,6 +37,19 @@ public:
 
     virtual ProcessOutcome run(const QString& program, const QStringList& arguments,
                                const CancellationToken& cancellation, int timeoutMs) = 0;
+
+    /// Runs a program and reports its output as it arrives, so a long transfer
+    /// can show live progress. The default implementation calls run() and
+    /// delivers the output once at the end, which is enough for scripted tests.
+    virtual ProcessOutcome runStreaming(const QString& program, const QStringList& arguments,
+                                        const CancellationToken& cancellation, int timeoutMs,
+                                        const std::function<void(const QByteArray&)>& onOutput) {
+        ProcessOutcome outcome = run(program, arguments, cancellation, timeoutMs);
+        if (onOutput && !outcome.standardOutput.isEmpty()) {
+            onOutput(outcome.standardOutput);
+        }
+        return outcome;
+    }
 };
 
 /// Production runner: QProcess, separate channels, no shell, kill on cancel.
@@ -43,6 +57,10 @@ class ProcessRunner final : public ExternalRunner {
 public:
     ProcessOutcome run(const QString& program, const QStringList& arguments,
                        const CancellationToken& cancellation, int timeoutMs) override;
+
+    ProcessOutcome runStreaming(const QString& program, const QStringList& arguments,
+                                const CancellationToken& cancellation, int timeoutMs,
+                                const std::function<void(const QByteArray&)>& onOutput) override;
 };
 
 /// Destination backed by an Rclone remote (SFTP, S3-compatible, WebDAV,
@@ -81,6 +99,11 @@ public:
                                            bool recursive) override;
     Result<QString> checksum(const QString& relativePath) override;
     Result<qint64> freeSpaceBytes() override;
+    Status uploadTree(const QString& localRoot, const QString& remoteRelativeBase,
+                      const TransferOptions& options, const CancellationToken& cancellation,
+                      const ProgressCallback& progress = {}) override;
+    Status checkTree(const QString& localRoot, const QString& remoteRelativeBase, bool sizeOnly,
+                     const CancellationToken& cancellation) override;
 
     /// Remote target string for a provider-relative path, e.g.
     /// "icloud:Nesva/Archive/Documents/a.txt". Exposed for CLI output and tests.

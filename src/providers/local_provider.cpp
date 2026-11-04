@@ -170,7 +170,7 @@ Result<TransferResult> LocalFilesystemProvider::uploadFile(const QString& localP
         }
         written += chunk.size();
         if (progress) {
-            progress({written, total});
+            progress(TransferProgress{written, total, {}, 0, -1});
         }
     }
 
@@ -275,7 +275,7 @@ Result<TransferResult> LocalFilesystemProvider::downloadFile(const QString& rela
         }
         written += chunk.size();
         if (progress) {
-            progress({written, total});
+            progress(TransferProgress{written, total, {}, 0, -1});
         }
     }
 

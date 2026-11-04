@@ -855,7 +855,7 @@ Result<QMap<QString, ManifestSnapshot>> JobStore::lastSuccessfulManifest(qint64 
 Result<std::optional<qint64>> JobStore::latestRunId(qint64 jobId) const {
     Result<QSqlQuery> query = database_.select(
         QStringLiteral("SELECT MAX(id) FROM job_runs WHERE job_id = ? AND status IN "
-                       "('succeeded', 'failed')"),
+                       "('succeeded', 'failed', 'interrupted', 'cancelled')"),
         {QVariant(jobId)});
     if (!query) {
         return query.error();
