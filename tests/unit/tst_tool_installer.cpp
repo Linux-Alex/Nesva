@@ -5,6 +5,7 @@
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QSysInfo>
 #include <QtCore/QTemporaryDir>
 
 #include <functional>
@@ -50,7 +51,7 @@ public:
                 response.body = checksumBody.isEmpty()
                                     ? QStringLiteral("%1  %2\n")
                                           .arg(sha256OfBytes(archiveBody),
-                                               QString::fromUtf8(kArchiveName))
+                                               archiveName())
                                           .toUtf8()
                                     : checksumBody;
             }
@@ -63,7 +64,24 @@ public:
         return response;
     }
 
-    static constexpr const char* kArchiveName = "rclone-v9.9.9-linux-amd64.zip";
+    /// The release file the installer asks for on this platform. Hardcoding
+    /// "linux" made every assertion fail on Windows and macOS.
+    static QString archiveName() {
+#if defined(Q_OS_WIN)
+        const QString platform = QStringLiteral("windows");
+#elif defined(Q_OS_MACOS)
+        const QString platform = QStringLiteral("osx");
+#else
+        const QString platform = QStringLiteral("linux");
+#endif
+        QString arch = QSysInfo::currentCpuArchitecture();
+        if (arch == QStringLiteral("x86_64")) {
+            arch = QStringLiteral("amd64");
+        } else if (arch == QStringLiteral("i386")) {
+            arch = QStringLiteral("386");
+        }
+        return QStringLiteral("rclone-v9.9.9-%1-%2.zip").arg(platform, arch);
+    }
 };
 
 } // namespace
@@ -87,7 +105,7 @@ void ToolInstallerTest::planDescribesTheExactCommands() {
 
     QCOMPARE(plan.value().version, QStringLiteral("9.9.9"));
     QVERIFY(plan.value().downloadUrl.endsWith(QStringLiteral("/v9.9.9/") +
-                                              QString::fromUtf8(ScriptedTransport::kArchiveName)));
+                                              ScriptedTransport::archiveName()));
     QVERIFY(plan.value().checksumUrl.endsWith(QStringLiteral("/v9.9.9/SHA256SUMS")));
     QVERIFY(plan.value().targetPath.endsWith(QStringLiteral("rclone")) ||
             plan.value().targetPath.endsWith(QStringLiteral("rclone.exe")));
