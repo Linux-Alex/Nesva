@@ -27,7 +27,8 @@ autostart**.
 
 ## Requirements
 
-* Rclone is not bundled. Install it from **Settings -> External tools -> Install Rclone...**: it
+* Rclone and Restic are not bundled. Install them from **Settings -> External tools -> Install
+  Rclone... / Install Restic...**: it
   shows every step, verifies the published SHA-256 and needs no admin rights.
 * Restic is not bundled either; download the official binary, verify its checksum and put it on
   `PATH` (or point to it in Settings).

@@ -46,12 +46,13 @@ restic  /home/you/.local/bin/restic  restic 0.18.1 compiled with go1.25.1 on lin
 
 ---
 
-## 2. Install Rclone from Nesva
+## 2. Install Rclone (and Restic) from Nesva
 
-Nesva does not bundle Rclone and will not pipe a download into a shell. Instead it shows you
-exactly what it would do, and then does it.
+Nesva does not bundle Rclone or Restic and will not pipe a download into a shell. Instead it shows
+you exactly what it would do, and then does it. Both tools use the same preview-then-install flow -
+swap `rclone` for `restic` everywhere below to install Restic.
 
-**Desktop:** Settings -> *External tools* -> **Install Rclone...**
+**Desktop:** Settings -> *External tools* -> **Install Rclone...** (or **Install Restic...**)
 **CLI:** preview first, then install.
 
 ```bash
@@ -98,6 +99,23 @@ Nesva now uses that path, so it works without changing PATH.
 ```
 
 `nesva-cli doctor` now reports `rclone: /home/you/.local/bin/rclone (rclone v1.75.2)`.
+
+Restic is the same flow with a different release source, which is why the plan looks slightly
+different: the version comes from the GitHub release API and the Linux asset is a lone bzip2
+stream rather than a zip.
+
+```bash
+nesva-cli tools restic --install
+```
+
+```
+  Downloading restic_0.19.1_linux_amd64.bz2
+  Verifying the SHA-256 checksum
+  Unpacking the archive
+  Checking the installed binary
+Installed restic 0.19.1 at /home/you/.local/bin/restic (SHA-256 verified).
+Nesva now uses that path, so it works without changing PATH.
+```
 
 ---
 
@@ -310,7 +328,7 @@ build with real data.
 |---|---|---|
 | 1 | `nesva-cli doctor` | every check `OK`, schema version equals the latest |
 | 2 | `nesva-cli tools rclone` | a plan with a resolved version and no changes made |
-| 3 | `nesva-cli tools rclone --install` | checksum verified, binary runs, path recorded |
+| 3 | `nesva-cli tools rclone --install` (or `tools restic`) | checksum verified, binary runs, path recorded |
 | 4 | Create an archive job, run with `--dry-run` | list of files, zero writes |
 | 5 | Run the job for real | objects in the destination, manifest rows, exit code 0 |
 | 6 | Delete one archived file, run again | the file is copied again (self-healing) |

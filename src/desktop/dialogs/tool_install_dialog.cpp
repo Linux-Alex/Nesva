@@ -25,9 +25,11 @@
 
 namespace nesva::ui {
 
-ToolInstallDialog::ToolInstallDialog(AppContext& context, QWidget* parent)
-    : QDialog(parent), context_(context) {
-    setWindowTitle(QStringLiteral("Install Rclone"));
+ToolInstallDialog::ToolInstallDialog(AppContext& context, const tools::ToolId tool,
+                                     QWidget* parent)
+    : QDialog(parent), context_(context), tool_(tool) {
+    const QString display = tools::displayName(tool_);
+    setWindowTitle(QStringLiteral("Install %1").arg(display));
     setModal(true);
     resize(720, 620);
 
@@ -36,10 +38,15 @@ ToolInstallDialog::ToolInstallDialog(AppContext& context, QWidget* parent)
     layout->setSpacing(12);
 
     auto* intro = new QLabel(
-        QStringLiteral("Rclone is a separate program that Nesva calls for cloud destinations. "
-                       "Nesva never bundles it and never pipes a download into a shell: the "
-                       "steps below are exactly what will run, and nothing is downloaded or "
-                       "executed until you press Install."),
+        tool_ == tools::ToolId::Restic
+            ? QStringLiteral("Restic is a separate program that Nesva calls to create and restore "
+                             "versioned, encrypted backups. Nesva never bundles it and never pipes "
+                             "a download into a shell: the steps below are exactly what will run, "
+                             "and nothing is downloaded or executed until you press Install.")
+            : QStringLiteral("Rclone is a separate program that Nesva calls for cloud "
+                             "destinations. Nesva never bundles it and never pipes a download "
+                             "into a shell: the steps below are exactly what will run, and "
+                             "nothing is downloaded or executed until you press Install."),
         this);
     intro->setWordWrap(true);
     layout->addWidget(intro);
@@ -49,7 +56,7 @@ ToolInstallDialog::ToolInstallDialog(AppContext& context, QWidget* parent)
     scopeCombo_->addItem(QStringLiteral("Only for me (no password, recommended)"),
                          QString::fromLatin1("user"));
     scopeCombo_->addItem(QStringLiteral("All users (%1, asks for your password)")
-                             .arg(tools::rcloneTargetPath(tools::InstallScope::System)),
+                             .arg(tools::toolTargetPath(tool_, tools::InstallScope::System)),
                          QString::fromLatin1("system"));
     form->addRow(QStringLiteral("Install for:"), scopeCombo_);
     layout->addLayout(form);
@@ -84,7 +91,7 @@ ToolInstallDialog::ToolInstallDialog(AppContext& context, QWidget* parent)
     layout->addWidget(statusLabel_);
 
     auto* buttons = new QHBoxLayout();
-    installButton_ = new QPushButton(QStringLiteral("Install Rclone"), this);
+    installButton_ = new QPushButton(QStringLiteral("Install %1").arg(display), this);
     installButton_->setDefault(true);
     installButton_->setEnabled(false);
     closeButton_ = new QPushButton(QStringLiteral("Close"), this);
@@ -115,8 +122,9 @@ void ToolInstallDialog::requestPlan() {
     const bool systemScope = scopeCombo_->currentData().toString() == QStringLiteral("system");
     const tools::InstallScope scope =
         systemScope ? tools::InstallScope::System : tools::InstallScope::User;
-    showPlaceholder(QStringLiteral("Reading the current rclone release from "
-                                   "downloads.rclone.org to work out the exact steps..."));
+    showPlaceholder(QStringLiteral("Reading the current %1 release to work out the exact "
+                                   "steps...")
+                        .arg(tools::displayName(tool_)));
 
     auto* watcher = new QFutureWatcher<Result<tools::ToolInstallPlan>>(this);
     connect(watcher, &QFutureWatcher<Result<tools::ToolInstallPlan>>::finished, this,
@@ -133,16 +141,17 @@ void ToolInstallDialog::requestPlan() {
                 planReady_ = true;
                 renderPlan();
             });
-    watcher->setFuture(QtConcurrent::run([scope]() -> Result<tools::ToolInstallPlan> {
+    const tools::ToolId tool = tool_;
+    watcher->setFuture(QtConcurrent::run([tool, scope]() -> Result<tools::ToolInstallPlan> {
         net::QNetworkHttpTransport transport;
-        return tools::planRcloneInstall(scope, transport);
+        return tools::planToolInstall(tool, scope, transport);
     }));
 }
 
 void ToolInstallDialog::renderPlan() {
     summaryLabel_->setText(
-        QStringLiteral("Rclone %1 will be installed to %2. %3")
-            .arg(plan_.version, plan_.targetPath,
+        QStringLiteral("%1 %2 will be installed to %3. %4")
+            .arg(plan_.toolDisplayName, plan_.version, plan_.targetPath,
                  plan_.requiresElevation
                      ? QStringLiteral("This needs elevated privileges: the password prompt below "
                                       "is the only elevated action.")
@@ -152,7 +161,8 @@ void ToolInstallDialog::renderPlan() {
     if (!plan_.automatic) {
         installButton_->setText(QStringLiteral("Manual installation required"));
     } else {
-        installButton_->setText(QStringLiteral("Install Rclone"));
+        installButton_->setText(
+            QStringLiteral("Install %1").arg(tools::displayName(tool_)));
     }
 }
 
@@ -194,21 +204,25 @@ void ToolInstallDialog::performInstall() {
                     return;
                 }
                 installedPath_ = outcome.value().executablePath;
+                const char* settingKey = tool_ == tools::ToolId::Restic
+                                             ? config::keys::kResticBinaryPath
+                                             : config::keys::kRcloneBinaryPath;
                 const Status stored = context_.settings().setString(
-                    QString::fromUtf8(config::keys::kRcloneBinaryPath), installedPath_);
+                    QString::fromUtf8(settingKey), installedPath_);
                 if (!stored.ok()) {
-                    finishWithError(QStringLiteral("Rclone was installed to %1, but Nesva could "
-                                                   "not save that path: %2")
-                                        .arg(installedPath_,
+                    finishWithError(QStringLiteral("%1 was installed to %2, but Nesva could "
+                                                   "not save that path: %3")
+                                        .arg(tools::displayName(tool_), installedPath_,
                                              QString::fromStdString(
                                                  stored.error().toDisplayString())));
                     return;
                 }
                 appendLog(QStringLiteral("SHA-256 %1").arg(outcome.value().sha256));
+                const QString token = tools::toToken(tool_);
                 statusLabel_->setText(
-                    QStringLiteral("Installed rclone %1 at %2 (checksum verified). Nesva now uses "
-                                   "that path. To use rclone in a terminal too, add %3 to PATH.")
-                        .arg(outcome.value().version, installedPath_,
+                    QStringLiteral("Installed %1 %2 at %3 (checksum verified). Nesva now uses "
+                                   "that path. To use %1 in a terminal too, add %4 to PATH.")
+                        .arg(token, outcome.value().version, installedPath_,
                              QFileInfo(installedPath_).absolutePath()));
                 statusLabel_->setVisible(true);
                 installButton_->setText(QStringLiteral("Installed"));
@@ -217,7 +231,7 @@ void ToolInstallDialog::performInstall() {
             });
     const QPointer<ToolInstallDialog> guard(this);
     watcher->setFuture(QtConcurrent::run([plan, guard]() -> Result<tools::InstallOutcome> {
-        return tools::executeRcloneInstall(plan, [guard](const QString& line) {
+        return tools::executeToolInstall(plan, [guard](const QString& line) {
             // The installer runs in a worker thread; hop back to the GUI thread
             // to touch widgets.
             if (guard) {

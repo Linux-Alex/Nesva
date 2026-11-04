@@ -575,14 +575,16 @@ int commandTools(Context& context, const Options& options) {
         return output.flush(stdout, kExitSuccess);
     }
 
-    if (sub == QStringLiteral("rclone")) {
+    if (sub == QStringLiteral("rclone") || sub == QStringLiteral("restic")) {
         const bool install = options.flags.contains(QStringLiteral("install"));
         const tools::InstallScope scope =
             options.flags.contains(QStringLiteral("system")) ? tools::InstallScope::System
                                                              : tools::InstallScope::User;
+        const tools::ToolId tool = sub == QStringLiteral("restic") ? tools::ToolId::Restic
+                                                                   : tools::ToolId::Rclone;
 
         net::QNetworkHttpTransport transport;
-        const Result<tools::ToolInstallPlan> plan = tools::planRcloneInstall(scope, transport);
+        const Result<tools::ToolInstallPlan> plan = tools::planToolInstall(tool, scope, transport);
         if (!plan) {
             return output.flushError(plan.error(), kExitFailure);
         }
@@ -611,9 +613,11 @@ int commandTools(Context& context, const Options& options) {
                 return output.flush(stdout, kExitSuccess);
             }
             output.line(QStringLiteral("Run '%1' to perform exactly these steps.")
-                            .arg(options.flags.contains(QStringLiteral("system"))
-                                     ? QStringLiteral("nesva-cli tools rclone --install --system")
-                                     : QStringLiteral("nesva-cli tools rclone --install")));
+                            .arg(QStringLiteral("nesva-cli tools %1 --install%2")
+                                     .arg(tools::toToken(tool),
+                                          options.flags.contains(QStringLiteral("system"))
+                                              ? QStringLiteral(" --system")
+                                              : QString())));
             return output.flush(stdout, kExitSuccess);
         }
 
@@ -625,29 +629,34 @@ int commandTools(Context& context, const Options& options) {
             std::fflush(stderr);
         };
         const Result<tools::InstallOutcome> outcome =
-            tools::executeRcloneInstall(value, progress);
+            tools::executeToolInstall(value, progress);
         if (!outcome) {
             return output.flushError(outcome.error(), kExitFailure);
         }
 
         // Record the absolute path: Nesva then uses this binary even when the
         // install directory is not on PATH (the usual case for ~/.local/bin).
-        const Status stored = settings.setString(
-            QString::fromUtf8(config::keys::kRcloneBinaryPath), outcome.value().executablePath);
+        const char* settingKey = tool == tools::ToolId::Restic
+                                     ? config::keys::kResticBinaryPath
+                                     : config::keys::kRcloneBinaryPath;
+        const Status stored = settings.setString(QString::fromUtf8(settingKey),
+                                                 outcome.value().executablePath);
         if (!stored.ok()) {
             return output.flushError(stored.error(), kExitFailure);
         }
+        const QString toolName = tools::toToken(tool);
 
         output.add(QStringLiteral("installed"), true);
         output.add(QStringLiteral("installed_version"), outcome.value().version);
         output.add(QStringLiteral("installed_path"), outcome.value().executablePath);
         output.add(QStringLiteral("sha256"), outcome.value().sha256);
         output.add(QStringLiteral("bytes_downloaded"), outcome.value().bytesDownloaded);
-        output.line(QStringLiteral("Installed rclone %1 at %2 (SHA-256 verified).")
-                        .arg(outcome.value().version, outcome.value().executablePath));
+        output.line(QStringLiteral("Installed %1 %2 at %3 (SHA-256 verified).")
+                        .arg(toolName, outcome.value().version, outcome.value().executablePath));
         output.line(QStringLiteral("Nesva now uses that path, so it works without changing PATH."));
-        output.line(QStringLiteral("To also use rclone in a terminal, add %1 to PATH.")
-                        .arg(QFileInfo(outcome.value().executablePath).absolutePath()));
+        output.line(QStringLiteral("To also use %1 in a terminal, add %2 to PATH.")
+                        .arg(toolName,
+                             QFileInfo(outcome.value().executablePath).absolutePath()));
         return output.flush(stdout, kExitSuccess);
     }
 

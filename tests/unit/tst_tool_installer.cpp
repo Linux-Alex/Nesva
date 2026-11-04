@@ -40,6 +40,12 @@ public:
         requested.append(url.toString());
         net::HttpResponse response;
         const QString target = url.toString();
+        if (target.contains(QStringLiteral("api.github.com"))) {
+            // The GitHub release API only answers JSON clients.
+            response.statusCode = 200;
+            response.body = QByteArrayLiteral("{\"tag_name\": \"v9.9.9\"}");
+            return response;
+        }
         if (target.endsWith(QStringLiteral("/version.txt"))) {
             response.statusCode = 200;
             response.body = versionBody;
@@ -82,6 +88,28 @@ public:
         }
         return QStringLiteral("rclone-v9.9.9-%1-%2.zip").arg(platform, arch);
     }
+
+    /// restic publishes a lone bzip2 stream on Linux and macOS and a zip on
+    /// Windows, named after the tool rather than after its release directory.
+    static QString resticArchiveName() {
+#if defined(Q_OS_WIN)
+        const QString platform = QStringLiteral("windows");
+        const QString suffix = QStringLiteral("zip");
+#elif defined(Q_OS_MACOS)
+        const QString platform = QStringLiteral("darwin");
+        const QString suffix = QStringLiteral("bz2");
+#else
+        const QString platform = QStringLiteral("linux");
+        const QString suffix = QStringLiteral("bz2");
+#endif
+        QString arch = QSysInfo::currentCpuArchitecture();
+        if (arch == QStringLiteral("x86_64")) {
+            arch = QStringLiteral("amd64");
+        } else if (arch == QStringLiteral("i386")) {
+            arch = QStringLiteral("386");
+        }
+        return QStringLiteral("restic_9.9.9_%1_%2.%3").arg(platform, arch, suffix);
+    }
 };
 
 } // namespace
@@ -95,6 +123,8 @@ private slots:
     void installRefusesAnUnverifiedArchive();
     void installReportsADownloadFailure();
     void rendererPrintsCommandsVerbatim();
+    void resticPlanUsesTheGithubRelease();
+    void resticInstallRefusesAnUnverifiedArchive();
 };
 
 void ToolInstallerTest::planDescribesTheExactCommands() {
@@ -219,6 +249,74 @@ void ToolInstallerTest::rendererPrintsCommandsVerbatim() {
 #if !defined(Q_OS_WIN)
     QVERIFY(text.contains(QStringLiteral("pkexec install -m 0755")));
 #endif
+}
+
+void ToolInstallerTest::resticPlanUsesTheGithubRelease() {
+    ScriptedTransport transport;
+    const Result<tools::ToolInstallPlan> plan =
+        tools::planToolInstall(tools::ToolId::Restic, tools::InstallScope::User, transport);
+    QVERIFY2(plan.hasValue(), plan.hasValue() ? "" : plan.error().toDisplayString().c_str());
+
+    QCOMPARE(plan.value().tool, tools::ToolId::Restic);
+    QCOMPARE(plan.value().toolToken, QStringLiteral("restic"));
+    QCOMPARE(plan.value().toolDisplayName, QStringLiteral("Restic"));
+    QCOMPARE(plan.value().version, QStringLiteral("9.9.9"));
+    // The version comes from the GitHub API, so the plan must have asked it.
+    bool askedGithub = false;
+    for (const QString& url : transport.requested) {
+        if (url.contains(QStringLiteral("api.github.com"))) {
+            askedGithub = true;
+        }
+    }
+    QVERIFY(askedGithub);
+    QVERIFY(plan.value().downloadUrl.endsWith(
+        QStringLiteral("/v9.9.9/") + ScriptedTransport::resticArchiveName()));
+    QVERIFY(plan.value().checksumUrl.endsWith(QStringLiteral("/v9.9.9/SHA256SUMS")));
+    QVERIFY(plan.value().targetPath.endsWith(QStringLiteral("restic")) ||
+            plan.value().targetPath.endsWith(QStringLiteral("restic.exe")));
+    QVERIFY(!plan.value().requiresElevation);
+
+    // Restic needs a repository password; the plan has to say where it goes.
+    bool mentionsKeyring = false;
+    for (const QString& note : plan.value().notes) {
+        if (note.contains(QStringLiteral("keyring"))) {
+            mentionsKeyring = true;
+        }
+    }
+    QVERIFY(mentionsKeyring);
+
+    QCOMPARE(tools::toToken(tools::ToolId::Restic), QStringLiteral("restic"));
+    QCOMPARE(tools::displayName(tools::ToolId::Restic), QStringLiteral("Restic"));
+    QCOMPARE(tools::toToken(tools::ToolId::Rclone), QStringLiteral("rclone"));
+    QCOMPARE(tools::displayName(tools::ToolId::Rclone), QStringLiteral("Rclone"));
+    QVERIFY(tools::toolTargetPath(tools::ToolId::Restic, tools::InstallScope::User)
+                .endsWith(QStringLiteral("restic")) ||
+            tools::toolTargetPath(tools::ToolId::Restic, tools::InstallScope::User)
+                .endsWith(QStringLiteral("restic.exe")));
+}
+
+void ToolInstallerTest::resticInstallRefusesAnUnverifiedArchive() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    ScriptedTransport transport;
+    transport.checksumBody = QByteArrayLiteral(
+        "1111111111111111111111111111111111111111111111111111111111111111  "
+        "restic_9.9.9_linux_amd64.bz2\n");
+
+    const Result<tools::ToolInstallPlan> plan =
+        tools::planToolInstall(tools::ToolId::Restic, tools::InstallScope::User, transport);
+    QVERIFY(plan.hasValue());
+
+    tools::ToolInstallPlan target = plan.value();
+    target.targetPath = directory.filePath(QStringLiteral("restic"));
+
+    const Result<tools::InstallOutcome> outcome =
+        tools::executeToolInstall(target, {}, &transport);
+    QVERIFY(!outcome);
+    QCOMPARE(static_cast<int>(outcome.error().code()),
+             static_cast<int>(ErrorCode::IntegrityError));
+    QVERIFY(!QFileInfo::exists(target.targetPath));
 }
 
 QTEST_GUILESS_MAIN(ToolInstallerTest)

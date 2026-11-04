@@ -6,6 +6,18 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (external tools)
+
+- **Restic can now be installed from Nesva too.** The installer was rclone-only, so a machine
+  without restic could not create backups without leaving the app. **Settings -> External tools**
+  now has **Install Restic...** next to **Install Rclone...**, and `nesva-cli tools restic`
+  (preview) / `nesva-cli tools restic --install` do the same from a terminal. The resolver reads
+  the current release from the GitHub API, downloads the official asset (zip on Windows, bzip2 on
+  Linux and macOS), verifies the published SHA-256 from `SHA256SUMS` before unpacking, installs the
+  single binary into the per-user program directory and records its absolute path. Both tools share
+  one code path (`tools::planToolInstall`/`executeToolInstall`) so the preview cannot drift from
+  what runs.
+
 ### Added (cloud credentials)
 
 - **Provider tutorials in the rclone wizard.** The dialog now has a provider selector

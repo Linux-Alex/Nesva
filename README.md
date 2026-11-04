@@ -109,7 +109,8 @@ is real, working functionality - not mockups:
   never unpacked as root
 - After installation Nesva records the absolute path, so Rclone works even when
   `~/.local/bin` is not on `PATH`
-- Desktop: Settings -> External tools -> Install Rclone; CLI: `nesva-cli tools rclone`
+- Desktop: Settings -> External tools -> Install Rclone / Install Restic; CLI:
+  `nesva-cli tools rclone|restic`
   (`--install`, `--system`)
 
 **nesva (desktop application)**
@@ -138,7 +139,7 @@ is real, working functionality - not mockups:
 - `--gui-selftest` mode that drives every page and writes PNG screenshots (headless or X11)
 
 **nesva-cli (automation and diagnostics)**
-- `status`, `doctor`, `tools` (`tools rclone [--install] [--system]`),
+- `status`, `doctor`, `tools` (`tools rclone|restic [--install] [--system]`),
   `jobs list`, `jobs run` (`--dry-run`, `--force`, `--retries`),
   `jobs cancel`, `storage list`, `storage test`, `archive list`, `archive restore`,
   `history list`, `verify`, `schedule list`, `agent status|run|cancel|reload|stop`,

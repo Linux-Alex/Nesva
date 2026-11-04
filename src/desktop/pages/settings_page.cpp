@@ -443,20 +443,26 @@ void SettingsPage::buildToolsSection() {
 
     auto* buttons = new QHBoxLayout();
     auto* refreshButton = new QPushButton(QStringLiteral("Check again"), card);
-    auto* installButton = new QPushButton(QStringLiteral("Install Rclone..."), card);
+    auto* installRcloneButton = new QPushButton(QStringLiteral("Install Rclone..."), card);
+    auto* installResticButton = new QPushButton(QStringLiteral("Install Restic..."), card);
     buttons->addWidget(refreshButton);
-    buttons->addWidget(installButton);
+    buttons->addWidget(installRcloneButton);
+    buttons->addWidget(installResticButton);
     buttons->addStretch(1);
     cardLayout->addLayout(buttons);
 
     connect(refreshButton, &QPushButton::clicked, this, [this] { refreshToolsStatus(); });
-    connect(installButton, &QPushButton::clicked, this, [this] {
-        ToolInstallDialog dialog(context_, this);
-        dialog.exec();
-        if (!dialog.installedPath().isEmpty()) {
-            refreshToolsStatus();
-        }
-    });
+    for (const tools::ToolId tool : {tools::ToolId::Rclone, tools::ToolId::Restic}) {
+        QPushButton* button =
+            tool == tools::ToolId::Restic ? installResticButton : installRcloneButton;
+        connect(button, &QPushButton::clicked, this, [this, tool] {
+            ToolInstallDialog dialog(context_, tool, this);
+            dialog.exec();
+            if (!dialog.installedPath().isEmpty()) {
+                refreshToolsStatus();
+            }
+        });
+    }
 
     body()->addWidget(card);
     refreshToolsStatus();

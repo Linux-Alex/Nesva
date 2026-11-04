@@ -133,7 +133,8 @@ JSON log if you need the detail.
 ## 9. Settings (Ctrl+9)
 
 - **Appearance** - theme: follow system, light or dark.
-- **External tools** - the status of Rclone and Restic, and **Install Rclone...**, which shows the
+- **External tools** - the status of Rclone and Restic, and **Install Rclone...** / **Install
+  Restic...**, which show the
   download, the checksum check, the unpack command and the target path before you approve it
   (see [ADR 0014](../architecture/decisions/0014-external-tool-installation.md)).
 - **Logging** - console verbosity.

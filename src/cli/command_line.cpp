@@ -95,8 +95,8 @@ Options parseArguments(const QStringList& arguments) {
             "install",  "uninstall", "configure", "create",  "folders", "help",    "info",
             "init",     "job",      "list",      "locks",
             "preview",
-            "rclone",   "reload",   "restore",   "run",      "set-password", "show", "status",
-            "stop",     "sync",     "test",      "unlock"};
+            "rclone",   "reload",   "restic",    "restore",  "run",      "set-password",
+            "show",     "status",   "stop",      "sync",     "test",     "unlock"};
         if (subcommands.contains(candidate)) {
             options.subcommand = remaining.takeFirst();
         }
