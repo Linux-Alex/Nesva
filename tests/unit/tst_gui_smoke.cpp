@@ -247,6 +247,17 @@ void GuiSmokeTest::settingsPageScrollsInsteadOfSqueezing() {
         }
         QVERIFY2(install != nullptr, "the Rclone installer must live inside the page body");
 
+        // Restic needs a versioned backup repository, so its installer has to be
+        // reachable from the same place - rclone alone cannot create a backup.
+        bool resticInstaller = false;
+        for (QPushButton* button : scroll->findChildren<QPushButton*>()) {
+            if (button->text().contains(QStringLiteral("Restic"))) {
+                resticInstaller = true;
+                break;
+            }
+        }
+        QVERIFY2(resticInstaller, "the Restic installer must be offered next to the Rclone one");
+
         scroll->ensureWidgetVisible(install, 0, 0);
         QVERIFY(install->isVisible());
         const QRect viewport = scroll->viewport()->rect();
