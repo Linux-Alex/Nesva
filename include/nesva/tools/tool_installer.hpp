@@ -98,6 +98,15 @@ Result<InstallOutcome> executeRcloneInstall(const ToolInstallPlan& plan,
 /// steps, the exact argument vector of each executed command, and the caveats.
 QString describeInstallPlan(const ToolInstallPlan& plan);
 
+/// Locates the tool binary inside a directory an asset was unpacked into.
+///
+/// Release assets name the payload after the asset rather than after the tool -
+/// restic publishes "restic_0.19.1_windows_amd64.exe" inside its zip and a lone
+/// "restic_0.19.1_linux_amd64" bzip2 stream - so an exact-name search alone
+/// finds nothing. The exact name wins; otherwise the asset name is tried, then
+/// any file that starts with the tool name.
+QString findToolBinary(const QString& directory, const QString& archiveName, ToolId tool);
+
 /// Absolute path of the binary an install would create for a scope.
 QString toolTargetPath(ToolId tool, InstallScope scope);
 QString rcloneTargetPath(InstallScope scope);

@@ -125,6 +125,7 @@ private slots:
     void rendererPrintsCommandsVerbatim();
     void resticPlanUsesTheGithubRelease();
     void resticInstallRefusesAnUnverifiedArchive();
+    void payloadIsFoundUnderItsReleaseAssetName();
 };
 
 void ToolInstallerTest::planDescribesTheExactCommands() {
@@ -317,6 +318,60 @@ void ToolInstallerTest::resticInstallRefusesAnUnverifiedArchive() {
     QCOMPARE(static_cast<int>(outcome.error().code()),
              static_cast<int>(ErrorCode::IntegrityError));
     QVERIFY(!QFileInfo::exists(target.targetPath));
+}
+
+void ToolInstallerTest::payloadIsFoundUnderItsReleaseAssetName() {
+    // restic's Windows zip contains "restic_0.19.1_windows_amd64.exe" and its
+    // Linux bzip2 stream decompresses to "restic_0.19.1_linux_amd64" - neither is
+    // called "restic", so an exact-name search found nothing and the install
+    // failed after a successful download and checksum check.
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString assetName = QStringLiteral("restic_0.19.1_windows_amd64.zip");
+    const QString payload =
+        directory.filePath(QStringLiteral("restic_0.19.1_windows_amd64.exe"));
+    {
+        QFile file(payload);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("MZ binary");
+    }
+    {
+        QFile readme(directory.filePath(QStringLiteral("README.txt")));
+        QVERIFY(readme.open(QIODevice::WriteOnly));
+        readme.write("restic documentation");
+    }
+
+    QCOMPARE(tools::findToolBinary(directory.path(), assetName, tools::ToolId::Restic), payload);
+
+    // The bzip2 payload has no suffix at all.
+    const QString bz2Payload = directory.filePath(QStringLiteral("restic_0.19.1_linux_amd64"));
+    {
+        QFile file(bz2Payload);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("ELF binary");
+    }
+    QCOMPARE(tools::findToolBinary(directory.path(),
+                                   QStringLiteral("restic_0.19.1_linux_amd64.bz2"),
+                                   tools::ToolId::Restic),
+             bz2Payload);
+
+    // A binary already carrying the tool's name always wins over the asset name.
+    const QString exact = directory.filePath(QStringLiteral("restic"));
+    {
+        QFile file(exact);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("ELF binary");
+    }
+    QCOMPARE(tools::findToolBinary(directory.path(), assetName, tools::ToolId::Restic), exact);
+
+    // An unpack directory holding only documentation yields nothing rather than
+    // a README copied into place as the tool.
+    QTemporaryDir docs;
+    QVERIFY(docs.isValid());
+    QFile readme(docs.filePath(QStringLiteral("README.md")));
+    QVERIFY(readme.open(QIODevice::WriteOnly));
+    readme.write("restic");
+    QVERIFY(tools::findToolBinary(docs.path(), assetName, tools::ToolId::Restic).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(ToolInstallerTest)

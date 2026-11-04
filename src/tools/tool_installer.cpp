@@ -258,6 +258,45 @@ QString findExtractedBinary(const QString& directory, const ToolId tool) {
     return {};
 }
 
+/// Release assets name the payload after themselves, not after the tool.
+QString findNamedPayload(const QString& directory, const QString& archiveName,
+                         const ToolId tool) {
+    const QString stem = QFileInfo(archiveName).completeBaseName();
+    QStringList names{stem};
+#if defined(Q_OS_WIN)
+    names.append(stem + QStringLiteral(".exe"));
+#endif
+    for (const QString& name : names) {
+        QDirIterator iterator(directory, QStringList{name}, QDir::Files,
+                              QDirIterator::Subdirectories);
+        if (iterator.hasNext()) {
+            return iterator.next();
+        }
+    }
+
+    // Last resort: any file that starts with the tool name ("restic"), so a
+    // release that renames its asset still installs. Documentation and checksum
+    // files are skipped so a stray README cannot be copied into place.
+    const QString bareName = binaryNameFor(tool);
+    const QString prefix = bareName.section(QLatin1Char('.'), 0, 0);
+    static const QStringList notBinaries = {QStringLiteral("txt"),  QStringLiteral("md"),
+                                            QStringLiteral("json"), QStringLiteral("sha256"),
+                                            QStringLiteral("sums"), QStringLiteral("1")};
+    QDirIterator iterator(directory, QDir::Files, QDirIterator::Subdirectories);
+    while (iterator.hasNext()) {
+        const QString path = iterator.next();
+        const QFileInfo info(path);
+        if (!info.fileName().startsWith(prefix)) {
+            continue;
+        }
+        if (notBinaries.contains(info.suffix().toLower())) {
+            continue;
+        }
+        return path;
+    }
+    return {};
+}
+
 QString parseVersion(const QString& output) {
     // "rclone v1.75.2" and "restic 0.19.1 compiled with go1.24..." -> "1.75.2" / "0.19.1"
     const QString first = output.section(QLatin1Char('\n'), 0, 0).trimmed();
@@ -278,6 +317,14 @@ QString parseVersion(const QString& output) {
 
 QString toToken(InstallScope scope) {
     return scope == InstallScope::System ? QStringLiteral("system") : QStringLiteral("user");
+}
+
+QString findToolBinary(const QString& directory, const QString& archiveName, const ToolId tool) {
+    const QString exact = findExtractedBinary(directory, tool);
+    if (!exact.isEmpty()) {
+        return exact;
+    }
+    return findNamedPayload(directory, archiveName, tool);
 }
 
 QString toToken(const ToolId tool) {
@@ -604,18 +651,12 @@ Result<InstallOutcome> executeToolInstall(const ToolInstallPlan& plan,
         return makeErrorValue(ErrorCode::ExternalToolFailed, "cannot unpack the archive",
                               extracted.error.toStdString());
     }
-    QString binary = findExtractedBinary(extractDirectory, plan.tool);
+    // The payload is named after the asset ("restic_0.19.1_windows_amd64.exe"),
+    // not after the tool, and a bzip2 decompressor writes it next to the
+    // archive instead of the unpack directory.
+    QString binary = findToolBinary(extractDirectory, plan.archiveName, plan.tool);
     if (binary.isEmpty() && spec.bzipped) {
-        // A decompressor writes the payload next to the archive, still named after
-        // the release asset ("restic_0.19.1_linux_amd64"), not after the tool.
-        binary = findExtractedBinary(workspace.path(), plan.tool);
-        if (binary.isEmpty()) {
-            const QString decompressed = workspace.filePath(
-                QFileInfo(plan.archiveName).completeBaseName());
-            if (QFileInfo(decompressed).isFile()) {
-                binary = decompressed;
-            }
-        }
+        binary = findToolBinary(workspace.path(), plan.archiveName, plan.tool);
     }
     if (binary.isEmpty()) {
         return makeErrorValue(ErrorCode::ExternalToolFailed,
