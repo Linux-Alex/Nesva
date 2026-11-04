@@ -3,13 +3,21 @@ cmake_minimum_required(VERSION 3.25)
 project(Nesva
   VERSION 0.6.0
   DESCRIPTION "Cross-platform desktop backup and archival application"
-  HOMEPAGE_URL "https://github.com/nesva-project/nesva"
+  HOMEPAGE_URL "https://github.com/Linux-Alex/Nesva"
   LANGUAGES CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(GNUInstallDirs)
 include(CTest)
+
+if(UNIX AND NOT APPLE)
+  # Installed binaries find the Qt runtime that cmake/DeployQtRuntime.cmake copies
+  # next to them, so the packages never depend on a Qt the distribution does not
+  # ship. Set at link time rather than with patchelf: one less build dependency.
+  set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/nesva")
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
+endif()
 include(NesvaCompilerWarnings)
 include(NesvaVersion)
 
@@ -294,7 +302,30 @@ if(WIN32)
   set(CPACK_GENERATOR "NSIS;ZIP")
   set(CPACK_NSIS_INSTALLED_ICON_NAME "nesva.exe")
 elseif(UNIX)
-  set(CPACK_GENERATOR "DEB")
+  # DEB plus a portable archive: both are produced from the same staged tree, so
+  # the Qt bundling below cannot apply to one and not the other.
+  set(CPACK_GENERATOR "DEB;TGZ")
+  set(CPACK_PACKAGE_FILE_NAME "nesva-${PROJECT_VERSION}-linux-${CMAKE_SYSTEM_PROCESSOR}")
+  # Bundle the Qt runtime into the package: the release Qt is newer than anything a
+  # distribution ships, so a package that depended on the system Qt would install
+  # and then fail to start. Qt's own deploy script also copies every system library
+  # Qt touches (226 MB of X11, cups, avahi, yuv), so this does the narrower thing:
+  # the Qt libraries the binaries need plus the plugin families Nesva loads, while
+  # everything Qt itself needs stays a package dependency.
+  if(DEFINED QT6_INSTALL_PREFIX)
+    set(NESVA_QT_RUNTIME_DIR "${QT6_INSTALL_PREFIX}")
+  elseif(DEFINED QT_INSTALL_PREFIX)
+    set(NESVA_QT_RUNTIME_DIR "${QT_INSTALL_PREFIX}")
+  else()
+    get_target_property(nesva_qt_core_file Qt6::Core IMPORTED_LOCATION)
+    if(nesva_qt_core_file)
+      get_filename_component(NESVA_QT_RUNTIME_DIR "${nesva_qt_core_file}" DIRECTORY)
+      get_filename_component(NESVA_QT_RUNTIME_DIR "${NESVA_QT_RUNTIME_DIR}" DIRECTORY)
+    endif()
+  endif()
+  configure_file(cmake/DeployQtRuntime.cmake.in
+                 "${CMAKE_CURRENT_BINARY_DIR}/DeployQtRuntime.cmake" @ONLY)
+  install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/DeployQtRuntime.cmake")
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "The Nesva Authors <security@nesva.invalid>")
   set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
   set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)

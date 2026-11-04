@@ -272,6 +272,14 @@ release packaging with checksums. The workflows are the executable version of th
 | Linux x86_64 | `nesva_<version>_amd64.deb`, `nesva-<version>-linux-x86_64.tar.gz` (portable prefix tree), `SHA256SUMS-linux.txt` |
 | Windows x86_64 | `nesva-<version>-windows-x86_64.zip` (three executables, Qt runtime and plugins, licence, notes), `SHA256SUMS-windows.txt` |
 
+The Linux packages **bundle the Qt runtime**: the release is built against a Qt newer
+than any distribution ships, so a package depending on the system Qt would install and then fail to
+start. `cmake/DeployQtRuntime.cmake.in` copies the Qt libraries the binaries need (walked through
+`DT_NEEDED` along `libQt6*` edges only) plus the platform, SQLite and TLS plugins into
+`lib/nesva`, writes `bin/qt.conf`, and relies on the link-time rpath
+(`CMAKE_INSTALL_RPATH`) to point at it. Everything Qt itself needs from the system - X11,
+fontconfig, xkbcommon - stays a package dependency that `dpkg-shlibdeps` derives from the files.
+
 Both jobs run the whole test suite first and smoke-test the assembled package: the Linux tarball
 is unpacked and the GUI self-test runs from it, the Windows zip is expanded and checked for
 `Qt6Core.dll` before `nesva.exe` self-tests from the extracted folder. The `publish` job then

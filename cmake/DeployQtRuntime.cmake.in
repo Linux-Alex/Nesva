@@ -1,0 +1,150 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 The Nesva Authors
+#
+# Bundles the Qt runtime into the install tree so the packages never depend on a Qt
+# the distribution does not ship (the release is built against a much newer one).
+#
+# Only Qt libraries are copied, and only the ones the binaries actually pull in:
+# everything Qt needs from the system (X11, fontconfig, xkbcommon, ...) stays a
+# package dependency, which dpkg-shlibdeps derives from these files. Copying the
+# whole Qt directory would add ~300 MB of Bluetooth, Charts and QML modules;
+# copying Qt together with every system library would duplicate libcups and
+# friends and risk conflicts with the distribution.
+#
+# Runs at install time (also inside CPack), so DESTDIR and CMAKE_INSTALL_PREFIX
+# are set. The Qt location is baked in at configure time.
+
+set(qt_source "@NESVA_QT_RUNTIME_DIR@")
+if(NOT qt_source OR NOT IS_DIRECTORY "${qt_source}")
+  message(STATUS "qt-runtime: no Qt installation at @NESVA_QT_RUNTIME_DIR@, nothing to bundle")
+  return()
+endif()
+
+set(qt_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(qt_bindir "${qt_root}/bin")
+set(qt_libdir "${qt_root}/lib/nesva")
+set(qt_plugindir "${qt_libdir}/plugins")
+if(NOT IS_DIRECTORY "${qt_bindir}")
+  message(STATUS "qt-runtime: ${qt_bindir} is missing, nothing to bundle")
+  return()
+endif()
+
+# Where the Qt libraries live on this build machine: lib, lib64 or multiarch.
+set(qt_system_libdir "")
+foreach(candidate IN ITEMS "${qt_source}/lib" "${qt_source}/lib64" "${qt_source}/lib/*-linux-gnu")
+  file(GLOB candidate_dirs "${candidate}")
+  foreach(candidate_dir IN LISTS candidate_dirs)
+    if(qt_system_libdir STREQUAL "" AND IS_DIRECTORY "${candidate_dir}"
+       AND EXISTS "${candidate_dir}/libQt6Core.so.6")
+      set(qt_system_libdir "${candidate_dir}")
+    endif()
+  endforeach()
+endforeach()
+if(qt_system_libdir STREQUAL "")
+  message(WARNING "qt-runtime: no libQt6Core.so.6 under ${qt_source}; the packages will need a system Qt")
+  return()
+endif()
+
+find_program(NESVA_READELF readelf REQUIRED)
+
+# Walk DT_NEEDED transitively, but only along libQt6* edges: the rest belongs to
+# the system and is declared as a package dependency instead of being bundled.
+function(nesva_qt_needed_files out_var)
+  set(frontier ${ARGN})
+  set(seen "")
+  set(files "")
+  set(guard 0)
+  while(frontier AND guard LESS 200)
+    math(EXPR guard "${guard} + 1")
+    set(next_generation "")
+    foreach(elf IN LISTS frontier)
+      if(elf IN_LIST seen)
+        continue()
+      endif()
+      list(APPEND seen "${elf}")
+      execute_process(COMMAND "${NESVA_READELF}" -d "${elf}"
+                      OUTPUT_VARIABLE elf_dynamic ERROR_QUIET RESULT_VARIABLE readelf_status)
+      if(NOT readelf_status EQUAL 0)
+        continue()
+      endif()
+      string(REGEX MATCHALL "NEEDED[^\n]*\\[libQt6[^]]*\\]" needed_entries "${elf_dynamic}")
+      foreach(entry IN LISTS needed_entries)
+        string(REGEX REPLACE ".*\\[(libQt6[^]]*)\\]" "\\1" library_name "${entry}")
+        set(library_path "${qt_system_libdir}/${library_name}")
+        if(EXISTS "${library_path}")
+          get_filename_component(real_path "${library_path}" REALPATH)
+          list(APPEND files "${real_path}")
+          list(APPEND next_generation "${real_path}")
+        endif()
+      endforeach()
+    endforeach()
+    set(frontier ${next_generation})
+  endwhile()
+  list(REMOVE_DUPLICATES files)
+  set(${out_var} ${files} PARENT_SCOPE)
+endfunction()
+
+set(qt_roots "")
+foreach(binary IN ITEMS nesva nesva-cli nesva-agent)
+  if(EXISTS "${qt_bindir}/${binary}")
+    list(APPEND qt_roots "${qt_bindir}/${binary}")
+  endif()
+endforeach()
+nesva_qt_needed_files(qt_libraries ${qt_roots})
+if(NOT qt_libraries)
+  message(WARNING "qt-runtime: the binaries need no Qt libraries from ${qt_system_libdir}")
+  return()
+endif()
+
+file(MAKE_DIRECTORY "${qt_libdir}")
+foreach(library IN LISTS qt_libraries)
+  file(COPY "${library}" DESTINATION "${qt_libdir}")
+  # The SONAME is a symlink to the real file; keep it so DT_NEEDED resolves.
+  get_filename_component(library_name "${library}" NAME)
+  string(REGEX REPLACE "^(libQt6[^.]+\\.so\\.[0-9]+)\\..*$" "\\1" soname "${library_name}")
+  if(NOT soname STREQUAL library_name)
+    file(CREATE_LINK "${library_name}" "${qt_libdir}/${soname}" SYMBOLIC)
+  endif()
+endforeach()
+
+# Only the plugins Nesva can actually load. The platform plugins and the SQLite
+# driver are required. The widget styles are not: Fusion is built into QtWidgets,
+# and the distribution style plugins drag in KDE libraries. Image-format plugins
+# are unnecessary because Nesva decodes no images.
+set(qt_plugin_files
+  "platforms/libqxcb.so"
+  "platforms/libqoffscreen.so"
+  "platforms/libqminimal.so"
+  "platforms/libqwayland-egl.so"
+  "platforms/libqwayland-generic.so"
+  "sqldrivers/libqsqlite.so")
+foreach(candidate IN ITEMS "${qt_source}/plugins" "${qt_source}/lib/qt6/plugins"
+                          "${qt_source}/lib/*-linux-gnu/qt6/plugins")
+  file(GLOB qt_plugin_roots "${candidate}")
+  set(qt_plugin_root "")
+  foreach(root_candidate IN LISTS qt_plugin_roots)
+    if(qt_plugin_root STREQUAL "" AND IS_DIRECTORY "${root_candidate}")
+      set(qt_plugin_root "${root_candidate}")
+    endif()
+  endforeach()
+  if(qt_plugin_root STREQUAL "")
+    continue()
+  endif()
+  foreach(relative IN LISTS qt_plugin_files)
+    if(EXISTS "${qt_plugin_root}/${relative}")
+      get_filename_component(plugin_family "${relative}" DIRECTORY)
+      file(COPY "${qt_plugin_root}/${relative}"
+           DESTINATION "${qt_plugindir}/${plugin_family}")
+    endif()
+  endforeach()
+  # TLS backends are named differently on every Qt build; take the whole family.
+  if(IS_DIRECTORY "${qt_plugin_root}/tls")
+    file(COPY "${qt_plugin_root}/tls" DESTINATION "${qt_plugindir}")
+  endif()
+  break()
+endforeach()
+
+file(WRITE "${qt_bindir}/qt.conf"
+  "[Paths]\nPrefix = ..\nPlugins = lib/nesva/plugins\nLibraries = lib/nesva\n")
+
+message(STATUS "qt-runtime: bundled Qt into ${qt_libdir}")

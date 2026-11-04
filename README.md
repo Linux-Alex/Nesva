@@ -19,7 +19,7 @@ Current release: [v0.6.0](https://github.com/Linux-Alex/Nesva/releases/latest)
 | Platform | File | Notes |
 | --- | --- | --- |
 | Linux x86_64 | `nesva_<version>_amd64.deb` | `sudo apt install ./nesva_<version>_amd64.deb`; recommends `rclone` and `restic` |
-| Linux x86_64 | `nesva-<version>-linux-x86_64.tar.gz` | Portable prefix tree: unpack, run `bin/nesva` |
+| Linux x86_64 | `nesva-<version>-linux-x86_64.tar.gz` | Portable tree with Qt bundled: unpack, run `nesva-<version>-linux-x86_64/bin/nesva` |
 | Windows x86_64 | `nesva-<version>-windows-x86_64.zip` | Unpack anywhere, run `nesva.exe`; Qt runtime included, no installer, no admin rights |
 
 Each release also publishes a `SHA256SUMS` file per platform. Rclone and Restic are not bundled:

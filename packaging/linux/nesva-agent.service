@@ -1,6 +1,6 @@
 [Unit]
 Description=Nesva background backup agent
-Documentation=https://github.com/nesva-project/nesva
+Documentation=https://github.com/Linux-Alex/Nesva
 # User-level unit: it runs inside the user's session so cloud credentials and
 # the keyring stay available. Never install this as a system-wide service.
 

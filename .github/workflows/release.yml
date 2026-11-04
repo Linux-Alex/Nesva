@@ -47,17 +47,10 @@ jobs:
       - name: Test
         run: ctest --preset linux-release --output-on-failure
 
-      - name: Package (.deb)
-        run: cd build/linux-release && cpack -G DEB
-
-      - name: Package (portable tarball)
-        run: |
-          set -euo pipefail
-          version="$(grep -m1 '^  VERSION' CMakeLists.txt | awk '{print $2}')"
-          stage="$RUNNER_TEMP/nesva-stage"
-          cmake --install build/linux-release --prefix "$stage"
-          tar -C "$stage" -czf "build/linux-release/nesva-${version}-linux-x86_64.tar.gz" .
-          rm -rf "$stage"
+      - name: Package (.deb and portable tarball)
+        # Both generators stage the same install tree, which is where the Qt
+        # runtime is bundled (cmake/DeployQtRuntime.cmake.in).
+        run: cd build/linux-release && cpack
 
       - name: Checksums
         run: |
@@ -69,11 +62,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/tar-check"
-          tar -C "$RUNNER_TEMP/tar-check" -xzf build/linux-release/nesva-*.tar.gz
-          "$RUNNER_TEMP/tar-check/bin/nesva-cli" --version
+          tar -C "$RUNNER_TEMP/tar-check" -xzf build/linux-release/nesva-*.tar.gz --strip-components=1
+          # Prove the package carries its own Qt: the binaries must resolve Qt from
+          # lib/nesva, not from whatever Qt the runner happens to have.
+          ldd "$RUNNER_TEMP/tar-check/bin/nesva" | grep -q "lib/nesva/libQt6Core.so.6"
+          "${RUNNER_TEMP}/tar-check/bin/nesva-cli" --version
           QT_QPA_PLATFORM=offscreen "$RUNNER_TEMP/tar-check/bin/nesva" \
             --data-dir="$RUNNER_TEMP/tar-check/data" \
             --gui-selftest="$RUNNER_TEMP/tar-check/shots" --no-console-log
+
+      - name: Report the packaged dependencies
+        run: |
+          cd build/linux-release
+          dpkg-deb -f *.deb Depends | tr ',' '\n' | sed 's/^ *//'
 
       - uses: actions/upload-artifact@v4
         with:
