@@ -27,6 +27,17 @@ function(nesva_set_target_warnings target)
     /utf-8
   )
 
+  # GCC 13's -Wnull-dereference is known to report false positives at -O3 in
+  # heavily inlined code - especially Qt's queued-connection functor chains,
+  # where it concludes that 'this' itself may be null. GCC 14 fixed most of
+  # them, so the check stays enabled there and only the affected versions skip
+  # it. Verified on GCC 13.1 (MinGW) and GCC 15 (Linux): without this, a
+  # perfectly valid 'if (member_ == nullptr)' is reported as a dereference.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+     AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+    list(REMOVE_ITEM gcc_clang_warnings -Wnull-dereference)
+  endif()
+
   if(MSVC)
     target_compile_options(${target} PRIVATE ${msvc_warnings})
     if(NESVA_WARNINGS_AS_ERRORS)
