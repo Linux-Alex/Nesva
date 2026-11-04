@@ -20,15 +20,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools \
-            libqt6sql6-sqlite libgl1-mesa-dev
+            build-essential cmake ninja-build libgl1-mesa-dev ccache
 
       - name: Configure
-        run: cmake --preset linux-debug
+        run: cmake --preset linux-debug -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
 
       - name: Build
         run: cmake --build --preset linux-debug
@@ -61,15 +66,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools \
-            libqt6sql6-sqlite libgl1-mesa-dev
+            build-essential cmake ninja-build libgl1-mesa-dev ccache
 
       - name: Configure
-        run: cmake --preset linux-release
+        run: cmake --preset linux-release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
 
       - name: Build
         run: cmake --build --preset linux-release

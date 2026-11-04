@@ -13,15 +13,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.2'
+          cache: true
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build clang clang-tidy \
-            qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite libgl1-mesa-dev
+            build-essential cmake ninja-build clang clang-tidy libgl1-mesa-dev
 
       - name: Configure with compile commands
-        run: cmake --preset linux-debug -DNESVA_WARNINGS_AS_ERRORS=OFF
+        run: cmake --preset linux-debug -DNESVA_WARNINGS_AS_ERRORS=OFF -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
 
       - name: Generate compile_commands.json
         run: cmake --build --preset linux-debug --target nesva_core
