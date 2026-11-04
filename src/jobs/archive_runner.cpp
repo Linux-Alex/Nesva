@@ -418,23 +418,70 @@ RunReport ArchiveRunner::run(const ArchiveJob& job,
                            destination.provider->kind() == QStringLiteral("rclone") &&
                            scanResult.fileCount() > 0;
     if (batchMode) {
-        QHash<QString, QVector<scan::ScanEntry>> byRoot;
+        // Split every source into "changed since the last successful run" and
+        // "already there". Only the changed part is uploaded and hashed; the
+        // rest is recorded as skipped, which is what makes a daily incremental
+        // run seconds instead of minutes.
+        struct RootBatch {
+            QString rootPath;
+            QString label;
+            QVector<scan::ScanEntry> changed;
+            int unchanged = 0;
+        };
+        QVector<RootBatch> batches;
+        QHash<QString, int> indexByRoot;
         for (const scan::ScanEntry& entry : scanResult.files) {
-            byRoot[QDir::cleanPath(entry.sourceRoot)].append(entry);
+            const QString rootPath = QDir::cleanPath(entry.sourceRoot);
+            const QString label = labelsByRoot.value(
+                rootPath, providers::sanitiseForRemote(QFileInfo(rootPath).fileName()));
+            const QString remoteRelative = providers::joinRelative(label, entry.relativePath);
+            const auto previousIt = previous.constFind(remoteRelative);
+            const bool same = previousIt != previous.constEnd() &&
+                              previousIt->sizeBytes == entry.sizeBytes &&
+                              previousIt->modifiedUtc == timestampOf(entry.modifiedUtc);
+            int index = indexByRoot.value(rootPath, -1);
+            if (index < 0) {
+                index = static_cast<int>(batches.size());
+                indexByRoot.insert(rootPath, index);
+                batches.append({rootPath, label, {}, 0});
+            }
+            if (same) {
+                ManifestRecord record;
+                record.relativePath = remoteRelative;
+                record.sourcePath = entry.absolutePath;
+                record.sizeBytes = entry.sizeBytes;
+                record.modifiedUtc = timestampOf(entry.modifiedUtc);
+                record.sha256 = previousIt->sha256;
+                record.state = QStringLiteral("skipped");
+                record.skipReason = QStringLiteral("unchanged since the last successful run");
+                store_.recordManifestEntry(job.id, report.runId, record);
+                ++report.counters.filesSkipped;
+                ++report.counters.filesProcessed;
+                ++report.skipped;
+                ++batches.last().unchanged;
+            } else {
+                batches.last().changed.append(entry);
+            }
         }
 
         QElapsedTimer counterClock;
         counterClock.start();
-        for (auto it = byRoot.constBegin(); it != byRoot.constEnd() && !cancelled; ++it) {
-            const QString rootPath = it.key();
-            const QString label = labelsByRoot.value(
-                rootPath, providers::sanitiseForRemote(QFileInfo(rootPath).fileName()));
-            const QVector<scan::ScanEntry>& entries = it.value();
+        for (const RootBatch& batch : batches) {
+            if (cancelled) {
+                break;
+            }
+            const QString rootPath = batch.rootPath;
+            const QString label = batch.label;
+            if (batch.changed.isEmpty()) {
+                continue; // nothing to upload for this source
+            }
+            const QVector<scan::ScanEntry>& entries = batch.changed;
 
             progress.phase = RunPhase::Transferring;
-            progress.message = QStringLiteral("Uploading %1 (%2 files) with rclone")
+            progress.message = QStringLiteral("Uploading %1 (%2 changed of %3) with rclone")
                                    .arg(label)
-                                   .arg(entries.size());
+                                   .arg(entries.size())
+                                   .arg(entries.size() + batch.unchanged);
             emitProgress(progress);
 
             const Status uploaded = destination.provider->uploadTree(
