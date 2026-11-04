@@ -22,6 +22,7 @@
 #include <QtWidgets/QSystemTrayIcon>
 #include <QtWidgets/QTableView>
 #include <QtCore/QTimer>
+#include <QtSql/QSqlQuery>
 #include <QtWidgets/QVBoxLayout>
 
 #include "app_context.hpp"
@@ -48,6 +49,7 @@ namespace nesva::ui {
 namespace {
 
 constexpr int kStatusRefreshIntervalMs = 60000;
+constexpr int kRunRefreshIntervalMs = 5000; ///< while a job is running
 
 QIcon tintedGlyph(Glyph glyph, const QPalette& palette) {
     QColor color = palette.color(QPalette::WindowText);
@@ -416,6 +418,27 @@ void MainWindow::updateAgentIndicator() {
 void MainWindow::updateStatus() {
     if (statusBadge_ != nullptr) {
         statusBadge_->setText(context_.healthSummary());
+    }
+    // Tick faster while a run is in progress: a minute between progress updates
+    // makes a running job look frozen, which is exactly what the user cannot
+    // distinguish from a hang.
+    if (refreshTimer_ != nullptr) {
+        bool running = false;
+        const bool own = context_.executor() != nullptr && context_.executor()->isRunning();
+        if (own) {
+            running = true;
+        } else {
+            Result<QSqlQuery> query = context_.database().select(QStringLiteral(
+                "SELECT 1 FROM job_runs WHERE status = 'running' LIMIT 1"));
+            if (query) {
+                QSqlQuery rows = std::move(query).take();
+                running = rows.next();
+            }
+        }
+        const int wanted = running ? kRunRefreshIntervalMs : kStatusRefreshIntervalMs;
+        if (refreshTimer_->interval() != wanted) {
+            refreshTimer_->setInterval(wanted);
+        }
     }
     updateAgentIndicator();
     if (schemaStatus_ != nullptr) {

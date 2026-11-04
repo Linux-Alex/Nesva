@@ -11,6 +11,8 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QTableView>
 
+#include <QtSql/QSqlQuery>
+
 #include "app_context.hpp"
 #include "widgets/elided_label.hpp"
 #include "nesva/agent/client.hpp"
@@ -157,6 +159,43 @@ void JobsPage::refresh() {
         emptyState_->setText(QStringLiteral(
             "No jobs yet. Use \"New job...\" to create an archive job: choose the folders to copy "
             "and a destination folder or storage provider."));
+    }
+
+    // A run started elsewhere - by the agent, or from a terminal - used to be
+    // invisible here: the page only knew about runs its own executor started.
+    // Read the running row from the database so the window always shows it.
+    const bool ownRun = context_.executor() != nullptr && context_.executor()->isRunning();
+    if (!ownRun) {
+        Result<QSqlQuery> running = context_.database().select(QStringLiteral(
+            "SELECT j.name, r.files_total, r.files_transferred, r.files_failed "
+            "FROM job_runs r JOIN backup_jobs j ON j.id = r.job_id "
+            "WHERE r.status = 'running' ORDER BY r.id DESC LIMIT 1"));
+        if (running) {
+            QSqlQuery row = std::move(running).take();
+            if (row.next()) {
+                const QString name = row.value(0).toString();
+                const qint64 total = row.value(1).toLongLong();
+                const qint64 done = row.value(2).toLongLong();
+                const qint64 failed = row.value(3).toLongLong();
+                if (total > 0) {
+                    runProgress_->setVisible(true);
+                    runProgress_->setRange(0, static_cast<int>(total));
+                    runProgress_->setValue(static_cast<int>(done));
+                    runLabel_->setText(QStringLiteral("%1: %2/%3 files (%4%), %5 failed")
+                                           .arg(name)
+                                           .arg(done)
+                                           .arg(total)
+                                           .arg(QString::number(100.0 * done / total, 'f', 1))
+                                           .arg(failed));
+                } else {
+                    runProgress_->setVisible(true);
+                    runProgress_->setRange(0, 0);
+                    runLabel_->setText(QStringLiteral("%1: scanning...").arg(name));
+                }
+            } else if (!ownRun) {
+                runProgress_->setVisible(false);
+            }
+        }
     }
 
     agent::AgentClient client;

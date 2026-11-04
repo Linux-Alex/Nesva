@@ -1049,6 +1049,107 @@ int commandNotImplemented(const Options& options, const QString& what, const QSt
 }
 
 
+int commandJobsStatus(Context& context, const Options& options) {
+    Output output(options.json);
+    jobs::JobStore store(context.database);
+
+    // Without an id, report whatever is running now - the case where a job was
+    // started by the agent or another terminal and the user has no window.
+    QString sql =
+        QStringLiteral("SELECT r.id, r.job_id, COALESCE(j.name, ''), r.status, "
+                       "COALESCE(r.started_at, ''), r.files_total, r.files_transferred, "
+                       "r.files_skipped, r.files_failed, r.bytes_transferred "
+                       "FROM job_runs r LEFT JOIN backup_jobs j ON j.id = r.job_id ");
+    QVariantList binds;
+    if (!options.positional.isEmpty()) {
+        bool valid = false;
+        const qint64 jobId = options.positional.constFirst().toLongLong(&valid);
+        if (!valid) {
+            return output.flushError(
+                makeErrorValue(ErrorCode::InvalidArgument, "job id must be numeric"), kExitUsage);
+        }
+        sql += QStringLiteral("WHERE r.job_id = ? ORDER BY r.id DESC LIMIT 1");
+        binds.append(jobId);
+    } else {
+        sql += QStringLiteral("WHERE r.status = 'running' ORDER BY r.id DESC LIMIT 1");
+    }
+
+    Result<QSqlQuery> query = context.database.select(sql, binds);
+    if (!query) {
+        return output.flushError(query.error(), kExitFailure);
+    }
+    QSqlQuery row = std::move(query).take();
+    if (!row.next()) {
+        output.add(QStringLiteral("ok"), true);
+        output.add(QStringLiteral("running"), false);
+        output.line(QStringLiteral("No run is running right now."));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    const qint64 runId = row.value(0).toLongLong();
+    const qint64 jobId = row.value(1).toLongLong();
+    const QString jobName = row.value(2).toString();
+    const QString status = row.value(3).toString();
+    const QString started = row.value(4).toString();
+    const qint64 total = row.value(5).toLongLong();
+    const qint64 done = row.value(6).toLongLong();
+    const qint64 skipped = row.value(7).toLongLong();
+    const qint64 failed = row.value(8).toLongLong();
+    const qint64 bytes = row.value(9).toLongLong();
+
+    const QDateTime startedAt = QDateTime::fromString(started, Qt::ISODateWithMs).toUTC();
+    const double elapsedSeconds = startedAt.isValid()
+                                      ? startedAt.secsTo(QDateTime::currentDateTimeUtc())
+                                      : 0.0;
+    const double rate = elapsedSeconds > 0 ? done / elapsedSeconds : 0.0;
+    const qint64 remaining = total > done ? total - done : 0;
+    const qint64 etaSeconds =
+        rate > 0 && remaining > 0 ? static_cast<qint64>(remaining / rate) : -1;
+    const double percent = total > 0 ? 100.0 * static_cast<double>(done) / total : 0.0;
+
+    output.add(QStringLiteral("ok"), true);
+    output.add(QStringLiteral("running"), status == QStringLiteral("running"));
+    output.add(QStringLiteral("run_id"), runId);
+    output.add(QStringLiteral("job_id"), jobId);
+    output.add(QStringLiteral("job"), jobName);
+    output.add(QStringLiteral("status"), status);
+    output.add(QStringLiteral("files_total"), total);
+    output.add(QStringLiteral("files_done"), done);
+    output.add(QStringLiteral("files_skipped"), skipped);
+    output.add(QStringLiteral("files_failed"), failed);
+    output.add(QStringLiteral("bytes_transferred"), bytes);
+    output.add(QStringLiteral("percent"), percent);
+    output.add(QStringLiteral("files_per_minute"), rate * 60.0);
+    output.add(QStringLiteral("eta_seconds"), etaSeconds);
+
+    output.line(QStringLiteral("Run %1 of job %2 '%3': %4")
+                    .arg(runId)
+                    .arg(jobId)
+                    .arg(jobName, status));
+    if (total > 0) {
+        output.line(QStringLiteral("Progress: %1/%2 files (%3%), %4 transferred, %5 failed, %6")
+                        .arg(done)
+                        .arg(total)
+                        .arg(QString::number(percent, 'f', 1))
+                        .arg(humanBytes(bytes))
+                        .arg(failed)
+                        .arg(skipped > 0 ? QStringLiteral("%1 unchanged").arg(skipped)
+                                         : QStringLiteral("time %1")
+                                               .arg(humanDuration(
+                                                   static_cast<qint64>(elapsedSeconds)))));
+        output.line(QStringLiteral("Speed:    %1 files/min (%2/s) - elapsed %3 - ETA %4")
+                        .arg(QString::number(rate * 60.0, 'f', 0))
+                        .arg(QString::number(rate, 'f', 1))
+                        .arg(humanDuration(static_cast<qint64>(elapsedSeconds)))
+                        .arg(etaSeconds >= 0 ? humanDuration(etaSeconds)
+                                             : QStringLiteral("unknown")));
+    } else {
+        output.line(QStringLiteral("Still scanning (elapsed %1).")
+                        .arg(humanDuration(static_cast<qint64>(elapsedSeconds))));
+    }
+    return output.flush(stdout, kExitSuccess);
+}
+
 int commandJobsRun(Context& context, const Options& options) {
     Output output(options.json);
     if (options.positional.isEmpty()) {
@@ -2918,6 +3019,9 @@ int run(int argc, char** argv) {
         }
         if (subcommand == QStringLiteral("create")) {
             return commandJobsCreate(context, options);
+        }
+        if (subcommand == QStringLiteral("status")) {
+            return commandJobsStatus(context, options);
         }
         if (subcommand == QStringLiteral("run")) {
             return commandJobsRun(context, options);

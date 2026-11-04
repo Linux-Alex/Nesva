@@ -22,7 +22,10 @@ namespace nesva::jobs {
 namespace {
 
 constexpr int kMaxRecordedErrors = 50;
-constexpr int kCounterPersistInterval = 20;
+// Persisting the counters is what lets another process - the desktop window, the
+// CLI, the agent - see the progress of a run it did not start. Every 5 files
+// keeps the number visibly moving without hammering SQLite.
+constexpr int kCounterPersistInterval = 5;
 
 QString timestampOf(const QDateTime& dateTime) {
     return dateTime.toUTC().toString(Qt::ISODateWithMs);
