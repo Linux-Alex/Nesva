@@ -133,6 +133,18 @@ jobs:
             & windeployqt --release --no-translations (Join-Path $stage $exe)
             if ($LASTEXITCODE -ne 0) { throw "windeployqt failed for $exe" }
           }
+
+          # windeployqt drops vc_redist.x64.exe, which needs an administrator to
+          # install. Ship the CRT DLLs next to the binaries instead: app-local
+          # deployment is allowed and needs no rights at all.
+          if ($env:VCToolsRedistDir) {
+            $crt = Get-ChildItem -Path (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT' |
+              Select-Object -First 1
+            if ($crt) {
+              Copy-Item (Join-Path $crt.FullName '*.dll') $stage
+            }
+          }
+          Get-ChildItem $stage -Filter 'vc_redist*.exe' | Remove-Item -Force
           Copy-Item LICENSE, README.md $stage
           Copy-Item 'packaging/windows/README.md' (Join-Path $stage 'README-windows.md')
 
@@ -148,8 +160,10 @@ jobs:
           $check = Join-Path $env:RUNNER_TEMP 'zip-check'
           Expand-Archive (Join-Path 'build/windows-msvc-release' "nesva-$version-windows-x86_64.zip") $check
           & (Join-Path $check 'nesva-cli.exe') --version
-          if (-not (Test-Path (Join-Path $check 'Qt6Core.dll'))) {
-            throw 'Qt6Core.dll is missing from the package'
+          foreach ($required in 'Qt6Core.dll', 'qwindows.dll', 'msvcp140.dll', 'vcruntime140.dll') {
+            if (-not (Get-ChildItem $check -Filter $required -Recurse | Select-Object -First 1)) {
+              throw "$required is missing from the package"
+            }
           }
           $env:QT_QPA_PLATFORM = 'offscreen'
           & (Join-Path $check 'nesva.exe') --data-dir (Join-Path $check 'data') --gui-selftest (Join-Path $check 'shots') --no-console-log
