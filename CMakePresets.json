@@ -106,6 +106,23 @@
         "CMAKE_BUILD_TYPE": "Release",
         "NESVA_WARNINGS_AS_ERRORS": "ON"
       }
+    },
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Windows Release (MinGW)",
+      "description": "Windows build with the MinGW toolchain that ships with the Qt installer. Useful on machines without Visual Studio: it compiles the same Windows code, but MSVC remains the reference compiler for releases.",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "NESVA_WARNINGS_AS_ERRORS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -114,7 +131,8 @@
     { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
     { "name": "linux-asan", "configurePreset": "linux-asan" },
     { "name": "windows-msvc-debug", "configurePreset": "windows-msvc-debug" },
-    { "name": "windows-msvc-release", "configurePreset": "windows-msvc-release" }
+    { "name": "windows-msvc-release", "configurePreset": "windows-msvc-release" },
+    { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" }
   ],
   "testPresets": [
     {
@@ -128,6 +146,7 @@
     { "name": "linux-clang-debug", "inherits": "base-test", "configurePreset": "linux-clang-debug" },
     { "name": "linux-asan", "inherits": "base-test", "configurePreset": "linux-asan" },
     { "name": "windows-msvc-debug", "inherits": "base-test", "configurePreset": "windows-msvc-debug" },
-    { "name": "windows-msvc-release", "inherits": "base-test", "configurePreset": "windows-msvc-release" }
+    { "name": "windows-msvc-release", "inherits": "base-test", "configurePreset": "windows-msvc-release" },
+    { "name": "windows-mingw-release", "inherits": "base-test", "configurePreset": "windows-mingw-release" }
   ]
 }

@@ -80,8 +80,10 @@ add_library(nesva_core STATIC
   src/mail/mail_store.cpp
   src/mail/oauth.cpp
   src/mail/session.cpp
-  src/security/credential_manager_windows.cpp
-  src/security/secret_service_linux.cpp
+  # One platform backend per build: compiling the other one is wasted work at
+  # best (both files guard their bodies, but MSVC still parses them).
+  $<$<PLATFORM_ID:Windows>:src/security/credential_manager_windows.cpp>
+  $<$<PLATFORM_ID:Linux>:src/security/secret_service_linux.cpp>
   src/security/identity.cpp
   src/security/secret_store.cpp
   src/jobs/archive_restore.cpp

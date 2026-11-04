@@ -110,7 +110,11 @@ int main(int argc, char** argv) {
 
     std::signal(SIGINT, handleStopSignal);
     std::signal(SIGTERM, handleStopSignal);
+#if defined(SIGHUP)
+    // POSIX only: Windows has no SIGHUP, so there is nothing to reload with
+    // there - the agent reloads on its own schedule changes.
     std::signal(SIGHUP, handleReloadSignal);
+#endif
 
     nesva::agent::AgentService service(options);
     const nesva::Status initialised = service.initialise();
@@ -137,7 +141,7 @@ int main(int argc, char** argv) {
         }
         if (g_reloadRequested != 0) {
             g_reloadRequested = 0;
-            nesva::logInfo("agent", QStringLiteral("reloading schedules (SIGHUP)"));
+            nesva::logInfo("agent", QStringLiteral("reloading schedules on request"));
             service.tick();
         }
         if (service.isStopping()) {
