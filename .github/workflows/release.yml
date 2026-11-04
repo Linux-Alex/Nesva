@@ -1,33 +1,45 @@
-name: Release packaging
+name: Release
 
-# Manual or tag-triggered. Produces artifacts and checksums only: publishing is
-# a separate, deliberate step performed after the artifacts have been reviewed.
+# Tag push (v*) builds, tests, packages and publishes a GitHub release.
+# Manual dispatch builds the same artifacts without publishing, so a candidate
+# can be inspected before anything is tagged.
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version label for the artifacts (for example 0.1.0)'
-        required: true
+      publish:
+        description: 'Publish a release for this commit'
+        type: boolean
+        default: false
   push:
     tags:
       - 'v*'
 
+env:
+  QT_VERSION: '6.10.2'
+
 jobs:
-  package-linux:
-    name: Linux package
+  linux:
+    name: Linux x86_64 package
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe for the embedded commit
 
-      - name: Install dependencies
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools \
-            libqt6sql6-sqlite libgl1-mesa-dev
+            build-essential cmake ninja-build libgl1-mesa-dev ccache
 
-      - name: Configure (release, embedded commit)
-        run: cmake --preset linux-release -DNESVA_EMBED_GIT_COMMIT=ON
+      - name: Configure
+        run: cmake --preset linux-release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" -DNESVA_EMBED_GIT_COMMIT=ON
 
       - name: Build
         run: cmake --build --preset linux-release
@@ -35,35 +47,54 @@ jobs:
       - name: Test
         run: ctest --preset linux-release --output-on-failure
 
-      - name: Package
+      - name: Package (.deb)
+        run: cd build/linux-release && cpack -G DEB
+
+      - name: Package (portable tarball)
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^  VERSION' CMakeLists.txt | awk '{print $2}')"
+          stage="$RUNNER_TEMP/nesva-stage"
+          cmake --install build/linux-release --prefix "$stage"
+          tar -C "$stage" -czf "build/linux-release/nesva-${version}-linux-x86_64.tar.gz" .
+          rm -rf "$stage"
+
+      - name: Checksums
         run: |
           cd build/linux-release
-          cpack
+          sha256sum *.deb *.tar.gz > SHA256SUMS-linux.txt
+          cat SHA256SUMS-linux.txt
 
-      - name: Generate checksums
+      - name: Smoke-test the tarball
         run: |
-          cd build/linux-release
-          sha256sum *.deb > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tar-check"
+          tar -C "$RUNNER_TEMP/tar-check" -xzf build/linux-release/nesva-*.tar.gz
+          "$RUNNER_TEMP/tar-check/bin/nesva-cli" --version
+          QT_QPA_PLATFORM=offscreen "$RUNNER_TEMP/tar-check/bin/nesva" \
+            --data-dir="$RUNNER_TEMP/tar-check/data" \
+            --gui-selftest="$RUNNER_TEMP/tar-check/shots" --no-console-log
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: nesva-linux-x86_64
           path: |
             build/linux-release/*.deb
-            build/linux-release/SHA256SUMS.txt
+            build/linux-release/nesva-*.tar.gz
+            build/linux-release/SHA256SUMS-linux.txt
 
-  package-windows:
-    name: Windows package
+  windows:
+    name: Windows x86_64 package
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.10.2'
+          version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
           cache: true
 
@@ -72,7 +103,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure (release, embedded commit)
+      - name: Configure
         run: cmake --preset windows-msvc-release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DNESVA_EMBED_GIT_COMMIT=ON
 
       - name: Build
@@ -81,10 +112,99 @@ jobs:
       - name: Test
         run: ctest --preset windows-msvc-release --output-on-failure
 
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
+      - name: Assemble a runnable folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $build = 'build/windows-msvc-release'
+          $version = (Select-String -Path CMakeLists.txt -Pattern '^  VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          $stage = Join-Path $env:RUNNER_TEMP 'nesva-windows'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          foreach ($exe in 'nesva.exe', 'nesva-cli.exe', 'nesva-agent.exe') {
+            Copy-Item (Join-Path $build $exe) $stage
+          }
+          # Qt DLLs and plugins: without this the archive only runs on a machine
+          # that already has Qt installed.
+          # Keep the compiler runtime and the software OpenGL fallback: the zip must
+          # run on a machine without a VC++ redistributable and on a VM or RDP
+          # session without a usable GPU.
+          foreach ($exe in 'nesva.exe', 'nesva-cli.exe', 'nesva-agent.exe') {
+            & windeployqt --release --no-translations (Join-Path $stage $exe)
+            if ($LASTEXITCODE -ne 0) { throw "windeployqt failed for $exe" }
+          }
+          Copy-Item LICENSE, README.md $stage
+          Copy-Item 'packaging/windows/README.md' (Join-Path $stage 'README-windows.md')
+
+          $zip = Join-Path $build "nesva-$version-windows-x86_64.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
+
+      - name: Smoke-test the package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Select-String -Path CMakeLists.txt -Pattern '^  VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          $check = Join-Path $env:RUNNER_TEMP 'zip-check'
+          Expand-Archive (Join-Path 'build/windows-msvc-release' "nesva-$version-windows-x86_64.zip") $check
+          & (Join-Path $check 'nesva-cli.exe') --version
+          if (-not (Test-Path (Join-Path $check 'Qt6Core.dll'))) {
+            throw 'Qt6Core.dll is missing from the package'
+          }
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & (Join-Path $check 'nesva.exe') --data-dir (Join-Path $check 'data') --gui-selftest (Join-Path $check 'shots') --no-console-log
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem 'build/windows-msvc-release/nesva-*-windows-x86_64.zip' | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $lines | Set-Content 'build/windows-msvc-release/SHA256SUMS-windows.txt'
+          Get-Content 'build/windows-msvc-release/SHA256SUMS-windows.txt'
+
+      - uses: actions/upload-artifact@v4
         with:
           name: nesva-windows-x86_64
           path: |
-            build/windows-msvc-release/nesva.exe
-            build/windows-msvc-release/nesva-cli.exe
+            build/windows-msvc-release/nesva-*-windows-x86_64.zip
+            build/windows-msvc-release/SHA256SUMS-windows.txt
+
+  publish:
+    name: Publish GitHub release
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+
+      - name: Collect assets
+        run: |
+          find assets -type f \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \
+            -o -name 'SHA256SUMS-*.txt' \) -exec cp {} . \;
+          ls -l
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="v$(grep -m1 '^  VERSION' CMakeLists.txt | awk '{print $2}')-candidate"
+          fi
+          # The notes live in CHANGELOG.md; the release body points at them rather
+          # than inventing a second summary that drifts.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" --clobber ./*.deb ./*.tar.gz ./*.zip ./SHA256SUMS-*.txt
+          else
+            gh release create "$tag" --title "Nesva $tag" --generate-notes \
+              ./*.deb ./*.tar.gz ./*.zip ./SHA256SUMS-*.txt
+          fi

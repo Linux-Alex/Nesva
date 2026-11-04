@@ -14,6 +14,11 @@
 #include <cstdio>
 #include <optional>
 
+#if defined(Q_OS_WIN)
+// windows.h only for the console attach below; nothing here touches the registry.
+#include <windows.h>
+#endif
+
 #include "agent_service.hpp"
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/logging.hpp"
@@ -26,6 +31,24 @@ volatile std::sig_atomic_t g_reloadRequested = 0;
 void handleStopSignal(int) {
     g_stopRequested = 1;
 }
+
+#if defined(Q_OS_WIN)
+/// The agent is a GUI-subsystem binary so the logon Run entry does not open a
+/// console window in the user's session. When it is nevertheless started from a
+/// terminal, attach to that console so --help, --version and --verbose print
+/// where the user is looking. Started by the shell there is no console to attach
+/// to, and then this does nothing at all.
+void attachParentConsole() {
+    if (::AttachConsole(ATTACH_PARENT_PROCESS) == 0) {
+        return;
+    }
+    FILE* stream = nullptr;
+    if (freopen_s(&stream, "CONOUT$", "w", stdout) != 0) {
+        return;
+    }
+    freopen_s(&stream, "CONOUT$", "w", stderr);
+}
+#endif
 
 #if defined(SIGHUP)
 // Only compiled where the reload signal exists (POSIX); on Windows the agent
@@ -56,6 +79,9 @@ QString helpText() {
 } // namespace
 
 int main(int argc, char** argv) {
+#if defined(Q_OS_WIN)
+    attachParentConsole();
+#endif
     QCoreApplication application(argc, argv);
     nesva::initialiseApplicationMetadata();
 

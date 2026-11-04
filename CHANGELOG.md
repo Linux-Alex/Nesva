@@ -6,6 +6,29 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.0] - 2026-11-04
+
+First tagged release: Linux and Windows packages built and published by CI.
+Windows is verified end to end on a real machine (24/24 test binaries, GUI
+self-test, agent autostart through the logon Run entry); Linux is verified here
+and on GitHub Actions.
+
+### Added (release packaging)
+
+- **Published releases for Linux and Windows.** `.github/workflows/release.yml`
+  builds both platforms on a tag, runs the full test suite, packages a `.deb` and
+  a portable tarball for Linux and a self-contained zip for Windows (Qt deployed
+  with `windeployqt`, both command-line tools included), writes `SHA256SUMS` per
+  platform, smoke-tests each package, and publishes the GitHub release.
+- **The Windows agent no longer opens a console window.** It is a GUI-subsystem
+  binary now, so the logon Run entry starts it silently; launched from a terminal
+  it attaches to that console, so `--help` and `--verbose` still print.
+- **Settings -> Background agent -> Start agent.** Linux has
+  `systemctl --user start`; Windows had no equivalent, so scheduled jobs could
+  only begin at the next logon. Both now start the agent from the same button.
+
 ### Fixed (Windows)
 
 - **Hidden entries follow one rule on every platform.** Windows marks hidden files with an

@@ -12,6 +12,25 @@ never invoked through a shell.
 
 ---
 
+## Download
+
+Current release: [v0.6.0](https://github.com/Linux-Alex/Nesva/releases/latest)
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Linux x86_64 | `nesva_<version>_amd64.deb` | `sudo apt install ./nesva_<version>_amd64.deb`; recommends `rclone` and `restic` |
+| Linux x86_64 | `nesva-<version>-linux-x86_64.tar.gz` | Portable prefix tree: unpack, run `bin/nesva` |
+| Windows x86_64 | `nesva-<version>-windows-x86_64.zip` | Unpack anywhere, run `nesva.exe`; Qt runtime included, no installer, no admin rights |
+
+Each release also publishes a `SHA256SUMS` file per platform. Rclone and Restic are not bundled:
+Nesva installs them from inside the application (**Settings -> External tools**), showing every
+step and verifying the published SHA-256 before anything runs.
+
+The binaries are not code-signed, so Windows SmartScreen warns on first launch. The Windows agent
+runs from the logon Run entry - no PowerShell, no scheduled task, no elevation.
+
+---
+
 ## Archive mode vs. backup mode
 
 | | Archive mode | Backup mode |
@@ -26,9 +45,11 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: Phase 5 (Microsoft 365) - engine + CLI done, UI next
+## Current status: v0.6.0 - Phases 1-5 implemented
 
-Phases 1-4 are implemented, built and tested on Linux; Phase 5's Microsoft 365 engine and CLI
+Everything below is implemented, built and tested on Linux **and Windows**: the Windows build is
+verified on a real machine (24/24 test binaries, GUI self-test, background agent and autostart),
+Linux is verified locally and on GitHub Actions. Phase 5's Microsoft 365 engine, CLI and mail page
 are in place. Archive jobs run end to end, scheduled jobs run in a background agent without the
 window, versioned encrypted backups work from the desktop application or `nesva-cli`, and
 Microsoft 365 mail can be exported as incremental .eml archives from the CLI. What exists today

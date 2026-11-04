@@ -262,3 +262,28 @@ Never paste secrets into an issue; the redactor protects logs, not your terminal
 GitHub Actions runs (see `.github/workflows`): Linux debug build + tests + GUI self-test, Linux
 release build + tests, Windows x64 build + tests, static analysis, dependency review, and
 release packaging with checksums. The workflows are the executable version of this guide.
+
+### Cutting a release
+
+`.github/workflows/release.yml` runs on a `v*` tag (and on demand without publishing):
+
+| Platform | Artifacts |
+| --- | --- |
+| Linux x86_64 | `nesva_<version>_amd64.deb`, `nesva-<version>-linux-x86_64.tar.gz` (portable prefix tree), `SHA256SUMS-linux.txt` |
+| Windows x86_64 | `nesva-<version>-windows-x86_64.zip` (three executables, Qt runtime and plugins, licence, notes), `SHA256SUMS-windows.txt` |
+
+Both jobs run the whole test suite first and smoke-test the assembled package: the Linux tarball
+is unpacked and the GUI self-test runs from it, the Windows zip is expanded and checked for
+`Qt6Core.dll` before `nesva.exe` self-tests from the extracted folder. The `publish` job then
+creates the GitHub release and uploads the assets with the checksums.
+
+```bash
+# 1. bump the version in CMakeLists.txt and move the Unreleased notes in CHANGELOG.md
+# 2. commit, then tag and push
+git tag -a v0.6.0 -m "Nesva 0.6.0"
+git push origin v0.6.0
+```
+
+Re-running the workflow for an existing tag uploads the new assets over the old ones
+(`gh release upload --clobber`). Nothing is code-signed yet, so Windows SmartScreen warns on the
+first launch of the zip.

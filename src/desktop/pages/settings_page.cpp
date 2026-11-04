@@ -5,6 +5,8 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QProcess>
 #include <QtCore/QSignalBlocker>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -526,15 +528,44 @@ void SettingsPage::buildAgentSection() {
 
     auto* buttons = new QHBoxLayout();
     auto* refreshButton = new QPushButton(QStringLiteral("Refresh status"), card);
+    auto* startButton = new QPushButton(QStringLiteral("Start agent"), card);
     auto* stopButton = new QPushButton(QStringLiteral("Stop agent"), card);
     auto* installButton = new QPushButton(QStringLiteral("Install autostart"), card);
     auto* removeButton = new QPushButton(QStringLiteral("Remove autostart"), card);
     buttons->addWidget(refreshButton);
+    buttons->addWidget(startButton);
     buttons->addWidget(stopButton);
     buttons->addWidget(installButton);
     buttons->addWidget(removeButton);
     buttons->addStretch(1);
     cardLayout->addLayout(buttons);
+
+    // Linux has "systemctl --user start" and Windows has nothing comparable, so the
+    // scheduled jobs could only start at the next logon there. Starting the agent is
+    // the same detached launch on both platforms.
+    connect(startButton, &QPushButton::clicked, this, [this] {
+        const QString executable = QCoreApplication::applicationDirPath() + QStringLiteral("/")
+#if defined(Q_OS_WIN)
+                                   + QStringLiteral("nesva-agent.exe");
+#else
+                                   + QStringLiteral("nesva-agent");
+#endif
+        if (!QFileInfo::exists(executable)) {
+            QMessageBox::warning(this, QStringLiteral("Background agent"),
+                                 QStringLiteral("%1 was not found next to the application. Install "
+                                                "or unpack the full package.")
+                                     .arg(executable));
+            return;
+        }
+        if (!QProcess::startDetached(executable, {})) {
+            QMessageBox::warning(this, QStringLiteral("Background agent"),
+                                 QStringLiteral("Could not start %1.").arg(executable));
+            return;
+        }
+        // The agent registers itself on the local socket within a moment; ask again
+        // shortly instead of showing a stale "not running".
+        QTimer::singleShot(1500, this, [this] { refreshAgentStatus(); });
+    });
 
     connect(installButton, &QPushButton::clicked, this, [this, autostartLabel] {
         const QString executable = QCoreApplication::applicationDirPath() + QStringLiteral("/")

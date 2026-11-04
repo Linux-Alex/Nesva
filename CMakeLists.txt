@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.5.0
+  VERSION 0.6.0
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/nesva-project/nesva"
   LANGUAGES CXX)
@@ -240,6 +240,15 @@ nesva_set_target_warnings(nesva-agent)
 
 set_target_properties(nesva-agent PROPERTIES OUTPUT_NAME "nesva-agent")
 
+if(WIN32)
+  # Started by the logon Run entry, a console-subsystem binary makes Windows open
+  # a console window in the user's session every time they log in. The agent is a
+  # background helper: no window, log file only. Started from a terminal it attaches
+  # to that console instead (see src/agent/main.cpp), so --help and --verbose still
+  # print where the user can see them.
+  set_target_properties(nesva-agent PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
 install(TARGETS nesva-agent RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # ---------------------------------------------------------------------------
@@ -254,11 +263,6 @@ endif()
 # ---------------------------------------------------------------------------
 install(TARGETS nesva nesva-cli nesva-agent
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-install(TARGETS nesva_core
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 if(UNIX AND NOT APPLE)
