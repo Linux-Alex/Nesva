@@ -6,6 +6,10 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.3] - 2026-11-05
+
 ### Added (tray)
 
 - **Nesva can start in the notification area at sign-in.** Settings -> Window behaviour has a

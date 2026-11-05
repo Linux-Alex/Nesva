@@ -10,7 +10,7 @@
 ; notes come from the staged directory passed as /DSTAGE.
 ;
 ; Build:
-;   makensis /DVERSION=0.6.2 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe nesva.nsi
+;   makensis /DVERSION=0.6.3 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe nesva.nsi
 
 Unicode true
 
