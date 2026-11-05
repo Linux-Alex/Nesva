@@ -87,6 +87,16 @@ jobs:
       - name: Test
         run: ctest --preset linux-release --output-on-failure
 
+      - name: Build the packages
+        env:
+          NESVA_REQUIRE_QT_BUNDLE: '1'
+        run: cd build/linux-release && cpack
+
+      - name: Check the package does not leak Qt into the system
+        # Every push, not only on a tag: Nesva 0.6.4 shipped /usr/bin/qt.conf and
+        # broke unrelated Qt applications, and that must never reach a release.
+        run: ./scripts/check-linux-package.sh build/linux-release/nesva_*.deb
+
       - name: Install to staging prefix
         run: cmake --install build/linux-release --prefix "$RUNNER_TEMP/nesva-stage"
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.6.4
+  VERSION 0.6.5
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/Linux-Alex/Nesva"
   LANGUAGES CXX)
@@ -12,6 +12,20 @@ include(GNUInstallDirs)
 include(CTest)
 
 if(UNIX AND NOT APPLE)
+  # Nesva's private application directory. Every file Nesva installs on Linux
+  # lives under it, and nothing there is read by any other application.
+  #
+  # This is not a style choice: qt.conf is resolved relative to the executable, so
+  # a qt.conf in a shared directory such as /usr/bin applies to *every* Qt program
+  # started from there. Nesva 0.6.4 shipped exactly that, and it made KDE Spectacle
+  # and other Qt applications look for plugins in /usr/lib/nesva/plugins.
+  set(NESVA_APP_DIR "lib/nesva")
+  set(NESVA_APP_BINDIR "${NESVA_APP_DIR}/bin")
+  set(NESVA_APP_LIBDIR "${NESVA_APP_DIR}/lib")
+  set(NESVA_APP_PLUGINDIR "${NESVA_APP_DIR}/plugins")
+  # /usr/bin holds only symlinks into the private directory (see the install rules).
+  set(NESVA_LAUNCHER_DIR "${CMAKE_INSTALL_BINDIR}")
+
   # Installed binaries find the Qt runtime that cmake/DeployQtRuntime.cmake.in
   # copies next to them, so the packages never depend on a Qt the distribution
   # does not ship. Set at link time rather than with patchelf: one less build
@@ -21,7 +35,7 @@ if(UNIX AND NOT APPLE)
   # LD_LIBRARY_PATH, so a user with an older Qt on their LD_LIBRARY_PATH would
   # silently load it against these binaries. RPATH is searched first and the
   # bundled Qt therefore always wins.
-  set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/nesva")
+  set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
   add_link_options(-Wl,--disable-new-dtags)
 endif()
@@ -290,8 +304,6 @@ if(WIN32)
   set_target_properties(nesva-agent PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
-install(TARGETS nesva-agent RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -302,16 +314,30 @@ endif()
 # ---------------------------------------------------------------------------
 # Install rules
 # ---------------------------------------------------------------------------
-install(TARGETS nesva nesva-cli nesva-agent
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
 if(UNIX AND NOT APPLE)
+  # The executables, the bundled Qt runtime and its plugins all live in the
+  # private directory; /usr/bin only ever holds symlinks into it.
+  install(TARGETS nesva nesva-cli nesva-agent
+    RUNTIME DESTINATION ${NESVA_APP_BINDIR}
+  )
+
+  # Relative symlinks, so the same install tree works under /usr for the .deb and
+  # under any prefix for the portable tarball. Generated rather than inlined: an
+  # install(CODE) string expands its ${} at configure time, which silently produced
+  # links in / instead of the install tree.
+  configure_file(cmake/CreateLauncherLinks.cmake.in
+                 "${CMAKE_CURRENT_BINARY_DIR}/CreateLauncherLinks.cmake" @ONLY)
+  install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/CreateLauncherLinks.cmake")
+
   install(FILES packaging/linux/nesva.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
   install(FILES assets/icons/nesva.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
     RENAME nesva.svg)
+else()
+  install(TARGETS nesva nesva-cli nesva-agent
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
 endif()
 
 # ---------------------------------------------------------------------------
@@ -344,7 +370,11 @@ elseif(UNIX)
   # Qt touches (226 MB of X11, cups, avahi, yuv), so this does the narrower thing:
   # the Qt libraries the binaries need plus the plugin families Nesva loads, while
   # everything Qt itself needs stays a package dependency.
-  if(DEFINED QT6_INSTALL_PREFIX)
+  # A packager can point at the Qt installation explicitly; otherwise the one this
+  # build links against is used.
+  if(DEFINED NESVA_QT_RUNTIME_DIR AND NESVA_QT_RUNTIME_DIR)
+    message(STATUS "Using the Qt runtime from ${NESVA_QT_RUNTIME_DIR}")
+  elseif(DEFINED QT6_INSTALL_PREFIX)
     set(NESVA_QT_RUNTIME_DIR "${QT6_INSTALL_PREFIX}")
   elseif(DEFINED QT_INSTALL_PREFIX)
     set(NESVA_QT_RUNTIME_DIR "${QT_INSTALL_PREFIX}")
@@ -360,6 +390,11 @@ elseif(UNIX)
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/DeployQtRuntime.cmake")
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "The Nesva Authors <security@nesva.invalid>")
   set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+  # Maintainer script: removes the global /usr/bin/qt.conf that 0.6.4 and earlier
+  # shipped, but only when its contents are byte-for-byte Nesva's and no package
+  # owns the path. See packaging/linux/debian/postinst.
+  set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/debian/postinst")
   set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
   # Let dpkg-shlibdeps derive the Qt runtime dependencies from the binaries
   # instead of hardcoding distribution-specific package names.

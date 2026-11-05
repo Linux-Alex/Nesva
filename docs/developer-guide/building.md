@@ -272,6 +272,12 @@ release packaging with checksums. The workflows are the executable version of th
 | Linux x86_64 | `nesva_<version>_amd64.deb`, `nesva-<version>-linux-x86_64.tar.gz` (portable prefix tree), `SHA256SUMS-linux.txt` |
 | Windows x86_64 | `nesva-<version>-windows-x86_64-setup.exe` (per-user NSIS installer, `packaging/windows/nesva.nsi`), `nesva-<version>-windows-x86_64.zip` (three executables, Qt runtime and plugins, licence, notes), `SHA256SUMS-windows.txt` |
 
+Neither Linux job may let Qt leak into a shared system location: `scripts/check-linux-package.sh`
+checks the built package for a `qt.conf` outside Nesva's private directory, files in system library
+directories, loader or environment overrides, unresolved libraries and a missing `$ORIGIN` rpath,
+and `scripts/test-deb-upgrade.sh` installs the previous release in a clean container, upgrades, and
+verifies that the old global `qt.conf` is gone and that unrelated Qt applications are unaffected.
+
 The Linux packages **bundle the Qt runtime**: the release is built against a Qt newer
 than any distribution ships, so a package depending on the system Qt would install and then fail to
 start. `cmake/DeployQtRuntime.cmake.in` copies the Qt libraries the binaries need (walked through

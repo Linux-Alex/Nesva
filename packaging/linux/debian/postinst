@@ -1,0 +1,39 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 The Nesva Authors
+#
+# Post-installation script for the Debian package.
+#
+# The only job here is a safe migration: Nesva 0.6.4 and earlier installed
+# /usr/bin/qt.conf, which made *every* Qt program started from /usr/bin look for
+# plugins in Nesva's private directory (KDE Spectacle lost its Wayland and QtQuick
+# plugins that way). 0.6.5 ships no such file, so dpkg normally removes it during
+# the upgrade. This handles the leftovers dpkg does not remove on its own - an
+# interrupted upgrade, or a locally modified copy that dpkg kept - and it removes
+# nothing unless the file is provably Nesva's.
+
+set -e
+
+OBSOLETE_QT_CONF=/usr/bin/qt.conf
+
+if [ -f "$OBSOLETE_QT_CONF" ] && [ ! -L "$OBSOLETE_QT_CONF" ]; then
+    # Never touch a file another package owns. dpkg-query exits non-zero when the
+    # path belongs to no installed package, which is the case for a leftover.
+    if ! dpkg-query -S "$OBSOLETE_QT_CONF" >/dev/null 2>&1; then
+        expected_contents='[Paths]
+Prefix = ..
+Plugins = lib/nesva/plugins
+Libraries = lib/nesva'
+        if [ "$(cat "$OBSOLETE_QT_CONF" 2>/dev/null)" = "$expected_contents" ]; then
+            rm -f "$OBSOLETE_QT_CONF"
+        fi
+    fi
+fi
+
+# Refresh the menu cache so the new launcher appears without a logout. Best effort:
+# a missing tool or a failed refresh must never fail the installation.
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+
+exit 0

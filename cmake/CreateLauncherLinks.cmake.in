@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 The Nesva Authors
+#
+# Creates the /usr/bin launchers for the Linux install tree.
+#
+# The path a shared executables directory gets is a symlink into Nesva private
+# directory, never the executable itself: a qt.conf found next to an executable
+# applies to every Qt program started from that directory, which is exactly how
+# Nesva 0.6.4 broke KDE Spectacle. Relative links keep the same install tree
+# working under /usr for the .deb and under any prefix for the tarball.
+
+cmake_minimum_required(VERSION 3.25)
+
+set(launcher_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@NESVA_LAUNCHER_DIR@")
+file(MAKE_DIRECTORY "${launcher_dir}")
+foreach(tool nesva nesva-cli nesva-agent)
+  file(CREATE_LINK "../@NESVA_APP_BINDIR@/${tool}" "${launcher_dir}/${tool}" SYMBOLIC)
+endforeach()
+message(STATUS "launchers: linked the Nesva tools into ${launcher_dir}")

@@ -38,9 +38,13 @@ if(NOT qt_source OR NOT IS_DIRECTORY "${qt_source}")
 endif()
 
 set(qt_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
-set(qt_bindir "${qt_root}/bin")
-set(qt_libdir "${qt_root}/lib/nesva")
-set(qt_plugindir "${qt_libdir}/plugins")
+# The private application directory (see NESVA_APP_DIR in the top-level CMakeLists).
+# bin/qt.conf lands in @NESVA_APP_BINDIR@ and never in /usr/bin: Qt applies a
+# qt.conf found next to the executable to *every* Qt program started from that
+# directory, which is what made Nesva 0.6.4 break KDE Spectacle.
+set(qt_bindir "${qt_root}/@NESVA_APP_BINDIR@")
+set(qt_libdir "${qt_root}/@NESVA_APP_LIBDIR@")
+set(qt_plugindir "${qt_root}/@NESVA_APP_PLUGINDIR@")
 if(NOT IS_DIRECTORY "${qt_bindir}")
   nesva_stop("${qt_bindir} is missing, nothing to bundle")
 endif()
@@ -214,7 +218,10 @@ foreach(candidate IN ITEMS "${qt_source}/plugins" "${qt_source}/lib/qt6/plugins"
   break()
 endforeach()
 
+# qt.conf applies to the executable it sits next to, so it is written into the
+# private bin directory and nowhere else. Prefix=.. resolves to the application
+# directory; the plugin and library paths are relative to it.
 file(WRITE "${qt_bindir}/qt.conf"
-  "[Paths]\nPrefix = ..\nPlugins = lib/nesva/plugins\nLibraries = lib/nesva\n")
+  "[Paths]\nPrefix = ..\nPlugins = plugins\nLibraries = lib\n")
 
 message(STATUS "qt-runtime: bundled Qt into ${qt_libdir}")

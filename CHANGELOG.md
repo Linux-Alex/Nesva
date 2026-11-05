@@ -8,6 +8,38 @@ All notable changes to Nesva are documented here. The format follows
 
 Nothing yet.
 
+## [0.6.5] - 2026-11-05
+
+### Fixed (Linux packaging - critical)
+
+- **Nesva no longer changes Qt behaviour for other applications.** 0.6.4 installed
+  `/usr/bin/qt.conf`. Qt resolves `qt.conf` relative to the executable, so every Qt program
+  started from `/usr/bin` inherited Nesva's plugin and library paths: KDE Spectacle looked for its
+  Wayland and QtQuick plugins in `/usr/lib/nesva/plugins` and crashed with OpenGL context errors.
+  No environment variable was set and nothing else was modified - one stray file in a shared
+  directory was enough.
+- **The whole application now lives in its own directory.** The executables, the bundled Qt runtime
+  and its plugins are installed under `/usr/lib/nesva/` (bin, lib, plugins) and `/usr/bin` holds
+  nothing but three relative symlinks. The `qt.conf` that tells Qt where the bundled plugins are
+  sits next to Nesva's own executable, where it can only affect Nesva. Nesva's rpath is
+  `$ORIGIN/../lib`, so the bundled runtime is found without touching `/etc/ld.so.conf.d`,
+  `QT_PLUGIN_PATH`, `QML_IMPORT_PATH` or `LD_LIBRARY_PATH`.
+- **Safe upgrade from 0.6.4.** dpkg removes the obsolete package-owned file during the upgrade; the
+  new package also ships a `postinst` that removes a leftover `/usr/bin/qt.conf` only when no
+  package owns the path and its contents are byte-for-byte the file Nesva used to write. A file
+  belonging to anything else, or a locally edited copy, is left alone.
+
+### Added (Linux packaging tests)
+
+- `scripts/check-linux-package.sh` inspects a built `.deb` and fails the build when the package
+  ships a `qt.conf` outside Nesva's private directory, writes into a system library or Qt plugin
+  directory, installs a loader or environment override, leaves library dependencies unresolved, or
+  loses the `$ORIGIN` rpath. It runs on every push and before every release.
+- `scripts/test-deb-upgrade.sh` installs the previous release in a clean container, upgrades to the
+  new one, and checks that the global `qt.conf` is gone, that Nesva still starts (GUI self-test),
+  that a system Qt tool again reports the system plugin directory, and that removal leaves nothing
+  behind. It gates the release.
+
 ## [0.6.4] - 2026-11-05
 
 ### Fixed (single instance)

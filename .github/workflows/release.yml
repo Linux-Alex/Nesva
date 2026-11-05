@@ -90,6 +90,12 @@ jobs:
             --data-dir="$RUNNER_TEMP/tar-check/data" \
             --gui-selftest="$RUNNER_TEMP/tar-check/shots" --no-console-log
 
+      - name: Check the package does not leak Qt into the system
+        # Fails the release when a qt.conf, a plugin directory, a library or an
+        # environment variable escapes into a shared system location. Nesva 0.6.4
+        # shipped /usr/bin/qt.conf and broke other Qt applications that way.
+        run: ./scripts/check-linux-package.sh build/linux-release/nesva_*.deb
+
       - name: Report the packaged dependencies
         run: |
           cd build/linux-release
@@ -102,6 +108,46 @@ jobs:
             build/linux-release/*.deb
             build/linux-release/nesva-*.tar.gz
             build/linux-release/SHA256SUMS-linux.txt
+
+  linux-upgrade:
+    name: Linux upgrade from the previous release
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nesva-linux-x86_64
+          path: new-package
+
+      - name: Fetch the previous release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The migration is what this job exists for: the old package installed a
+          # qt.conf into /usr/bin, the new one must remove it.
+          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts \
+            --limit 10 --json tagName --jq '.[].tagName' | grep -v "^$GITHUB_REF_NAME$" | head -1)"
+          if [ -z "$previous" ]; then
+            echo "No previous release to upgrade from; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Upgrading from $previous"
+          mkdir -p old-package
+          gh release download "$previous" --repo "$GITHUB_REPOSITORY" --pattern "*amd64.deb" \
+            --dir old-package
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Install and upgrade inside a clean container
+        if: steps.previous.outputs.skip != 'true'
+        run: |
+          ./scripts/test-deb-upgrade.sh \
+            "$(ls old-package/*amd64.deb | head -1)" \
+            "$(ls new-package/*amd64.deb | head -1)" \
+            ubuntu:24.04
 
   windows:
     name: Windows x86_64 package
@@ -277,7 +323,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: [linux, windows]
+    needs: [linux, linux-upgrade, windows]
     if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
     runs-on: ubuntu-24.04
     permissions:
