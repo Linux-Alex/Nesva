@@ -40,6 +40,10 @@ does not execute schedules.
 
 Both Run values (`Nesva` and `NesvaAgent`) are per-user and are removed by the uninstaller.
 
+Only one desktop process runs per data directory. Launching `nesva.exe` again connects to the
+running instance, brings its window forward (also from the notification area) and exits, so there
+is never a second window or tray icon.
+
 ## Requirements
 
 * Rclone and Restic are not bundled. Install them from **Settings -> External tools -> Install
@@ -100,5 +104,5 @@ Rebuild the installer locally:
 
 ```powershell
 choco install nsis -y
-makensis /DVERSION=0.6.3 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe packaging\windows\nesva.nsi
+makensis /DVERSION=0.6.4 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe packaging\windows\nesva.nsi
 ```

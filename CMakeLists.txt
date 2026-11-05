@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.6.3
+  VERSION 0.6.4
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/Linux-Alex/Nesva"
   LANGUAGES CXX)
@@ -156,6 +156,8 @@ qt_add_library(nesva_ui STATIC
   src/desktop/app_context.cpp
   src/desktop/app_autostart.hpp
   src/desktop/app_autostart.cpp
+  src/desktop/single_instance.hpp
+  src/desktop/single_instance.cpp
   src/desktop/main_window.hpp
   src/desktop/main_window.cpp
   src/desktop/theme.hpp

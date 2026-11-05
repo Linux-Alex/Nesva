@@ -46,6 +46,11 @@ public slots:
     void refreshAll();
     void applyTheme();
 
+    /// Brings the window forward, whether it is hidden in the notification
+    /// area, minimised or merely behind another window. Used by the tray menu
+    /// and when a second launch asks the running instance to show itself.
+    void showFromTray();
+
     /// Leaves the tray, saves the window state and exits. This is what both
     /// "Quit" actions use, so they work even while the window is hidden in the
     /// notification area.

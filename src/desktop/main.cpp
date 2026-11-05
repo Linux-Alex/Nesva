@@ -16,6 +16,7 @@
 #include "gui_selftest.hpp"
 #include "icon_factory.hpp"
 #include "main_window.hpp"
+#include "single_instance.hpp"
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/core/paths.hpp"
@@ -140,6 +141,33 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Resolve the data directory before opening the database: the single
+    // instance channel is scoped to it, so two profiles can still run side by
+    // side while a second launch of the same profile reuses the running window.
+    if (!options.dataRoot.isEmpty()) {
+        nesva::Paths::setDataRootOverride(options.dataRoot);
+    }
+
+    nesva::ui::SingleInstance singleInstance;
+    if (!options.selfTest) {
+        if (singleInstance.notifyExistingInstance()) {
+            return 0;
+        }
+        if (!singleInstance.listen()) {
+            // A simultaneous start may have claimed the socket between the
+            // notify and listen attempts; try to reach it once more.
+            if (singleInstance.notifyExistingInstance()) {
+                return 0;
+            }
+            const QString message =
+                QStringLiteral("Nesva is already running, but its window could not be reached: %1")
+                    .arg(singleInstance.errorString());
+            std::fprintf(stderr, "%s\n", qPrintable(message));
+            QMessageBox::critical(nullptr, QString::fromUtf8(nesva::kApplicationName), message);
+            return 1;
+        }
+    }
+
     nesva::ui::AppContext context;
     nesva::ui::StartupOptions startup;
     startup.dataRootOverride = options.dataRoot;
@@ -163,6 +191,13 @@ int main(int argc, char** argv) {
     nesva::ui::MainWindow window(context);
     QObject::connect(&context, &nesva::ui::AppContext::themeModeChanged, &window,
                      &nesva::ui::MainWindow::applyTheme);
+    QObject::connect(
+        &singleInstance, &nesva::ui::SingleInstance::showRequested, &window,
+        [&context, &window] {
+            context.recordEvent(nesva::LogLevel::Info, QStringLiteral("application"),
+                                QStringLiteral("another instance asked for the window"));
+            window.showFromTray();
+        });
 
     if (options.selfTest) {
         QString directory = options.selfTestDirectory;

@@ -340,11 +340,7 @@ void MainWindow::buildTray() {
 
     auto* trayMenu = new QMenu(this);
     QAction* showAction = trayMenu->addAction(QStringLiteral("Show Nesva"));
-    connect(showAction, &QAction::triggered, this, [this] {
-        showNormal();
-        raise();
-        activateWindow();
-    });
+    connect(showAction, &QAction::triggered, this, &MainWindow::showFromTray);
     trayMenu->addSeparator();
     QAction* quitAction = trayMenu->addAction(QStringLiteral("Quit"));
     connect(quitAction, &QAction::triggered, this, &MainWindow::requestQuit);
@@ -353,9 +349,7 @@ void MainWindow::buildTray() {
     connect(trayIcon_, &QSystemTrayIcon::activated, this,
             [this](QSystemTrayIcon::ActivationReason reason) {
                 if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
-                    showNormal();
-                    raise();
-                    activateWindow();
+                    showFromTray();
                 }
             });
     trayIcon_->show();
@@ -363,6 +357,20 @@ void MainWindow::buildTray() {
 
 bool MainWindow::trayAvailable() const {
     return trayIcon_ != nullptr && trayIcon_->isVisible();
+}
+
+void MainWindow::showFromTray() {
+    if (isMinimized()) {
+        showNormal();
+    } else {
+        show();
+    }
+    raise();
+    activateWindow();
+    // A background process (a second launch) may not be allowed to take the
+    // foreground; flashing the taskbar button still tells the user where the
+    // window is.
+    QApplication::alert(this, 0);
 }
 
 void MainWindow::requestQuit() {

@@ -8,6 +8,15 @@ All notable changes to Nesva are documented here. The format follows
 
 Nothing yet.
 
+## [0.6.4] - 2026-11-05
+
+### Fixed (single instance)
+
+- **Nesva is one process per data directory.** Opening Nesva again talks to the running instance,
+  brings its window forward and exits, instead of adding another window, database connection and
+  tray icon. The second launch exits promptly even when the running window is hidden in the
+  notification area; different `--data-dir` profiles can still run side by side.
+
 ## [0.6.3] - 2026-11-05
 
 ### Added (tray)

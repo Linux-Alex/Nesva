@@ -14,7 +14,7 @@ never invoked through a shell.
 
 ## Download
 
-Current release: [v0.6.3](https://github.com/Linux-Alex/Nesva/releases/latest)
+Current release: [v0.6.4](https://github.com/Linux-Alex/Nesva/releases/latest)
 
 | Platform | File | Notes |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: v0.6.3 - Phases 1-5 implemented
+## Current status: v0.6.4 - Phases 1-5 implemented
 
 Everything below is implemented, built and tested on Linux **and Windows**: the Windows build is
 verified on a real machine (24/24 test binaries, GUI self-test, background agent and autostart),
@@ -151,6 +151,8 @@ is real, working functionality - not mockups:
   when it is running, and the status bar shows agent state
 - Optional start-at-sign-in in the notification area (`nesva.exe --tray`), minimise-to-tray
   and desktop notifications for finished runs
+- Single instance per profile: opening Nesva again brings the existing window forward instead of
+  adding another window and tray icon
 - Backup Jobs and Storage pages read the real database through Qt Model/View models
 - Activity page: combined job + application event stream with live text filtering, sortable
   columns, and a shortcut to the log folder

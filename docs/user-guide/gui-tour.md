@@ -141,7 +141,8 @@ JSON log if you need the detail.
 - **Safety** - confirmation before destructive actions (keep it on).
 - **Window behaviour** - **Start Nesva in the notification area when I sign in**, minimise to
   tray, desktop notifications. The sign-in option starts the window hidden with a tray icon;
-  closing the window keeps it there only when minimise-to-tray is also on.
+  closing the window keeps it there only when minimise-to-tray is also on. Opening Nesva again
+  brings the existing window forward - one window and one tray icon per profile.
 - **Background agent** - whether `nesva-agent` is running, **Refresh status**, **Start agent**,
   **Stop agent**, and the agent's own autostart entry. The agent runs schedules without the
   window and has no window or tray icon; its autostart is separate from starting Nesva itself at

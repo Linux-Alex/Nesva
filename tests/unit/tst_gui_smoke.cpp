@@ -32,6 +32,7 @@
 #include <QtCore/QTimer>
 
 #include "app_autostart.hpp"
+#include "single_instance.hpp"
 #include "dialogs/job_editor_dialog.hpp"
 #include "dialogs/rclone_config_dialog.hpp"
 #include "time_display.hpp"
@@ -106,6 +107,7 @@ private slots:
     void mainWindowExposesEveryPage();
     void settingsPageOffersTheRcloneInstaller();
     void settingsPageOffersTrayAutostart();
+    void singleInstanceActivatesTheFirstInstance();
     void mailPageShowsAccountsAndFolderCounts();
     void dashboardCardsStackWhenNarrow();
     void jobModelAlignsNumericColumns();
@@ -549,6 +551,18 @@ void GuiSmokeTest::settingsPageOffersTrayAutostart() {
         }
     }
     QVERIFY2(installAgentAutostart, "the agent autostart button must name the agent");
+}
+
+void GuiSmokeTest::singleInstanceActivatesTheFirstInstance() {
+    // A second launch must talk to the running process and exit instead of
+    // creating another window, database connection and tray icon.
+    ui::SingleInstance first;
+    QVERIFY2(first.listen(), qPrintable(first.errorString()));
+    QSignalSpy showSpy(&first, &ui::SingleInstance::showRequested);
+
+    ui::SingleInstance second;
+    QVERIFY(second.notifyExistingInstance());
+    QTRY_COMPARE_WITH_TIMEOUT(showSpy.count(), 1, 5000);
 }
 
 void GuiSmokeTest::mainWindowExposesEveryPage() {
