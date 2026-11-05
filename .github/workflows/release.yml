@@ -188,7 +188,9 @@ jobs:
           }
           if (-not (Test-Path $makensis)) { throw "makensis not found" }
           Write-Host "using $makensis"
-          $outFile = Join-Path 'build/windows-msvc-release' "nesva-$env:NESVA_VERSION-windows-x86_64-setup.exe"
+          # Absolute: makensis resolves OutFile against the script's own directory
+          # (packaging/windows/), where the build tree does not exist.
+          $outFile = Join-Path (Get-Location).Path "build/windows-msvc-release/nesva-$env:NESVA_VERSION-windows-x86_64-setup.exe"
           & $makensis "/DVERSION=$env:NESVA_VERSION" "/DSTAGE=$env:NESVA_STAGE" "/DOUTFILE=$outFile" 'packaging/windows/nesva.nsi'
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           if (-not (Test-Path $outFile)) { throw "the installer was not produced" }
