@@ -178,9 +178,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install nsis --no-progress -y | Out-Null
-          $makensis = Join-Path $env:ProgramFiles(x86) 'NSIS\makensis.exe'
-          if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
+          # The windows-2022 image already has NSIS on PATH; install it only when
+          # the image changes. ($env:ProgramFiles(x86) cannot be used directly:
+          # PowerShell reads it as a call to a command named x86.)
+          $makensis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if (-not $makensis) {
+            choco install nsis --no-progress -y | Out-Null
+            $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          }
+          if (-not (Test-Path $makensis)) { throw "makensis not found" }
+          Write-Host "using $makensis"
           $outFile = Join-Path 'build/windows-msvc-release' "nesva-$env:NESVA_VERSION-windows-x86_64-setup.exe"
           & $makensis "/DVERSION=$env:NESVA_VERSION" "/DSTAGE=$env:NESVA_STAGE" "/DOUTFILE=$outFile" 'packaging/windows/nesva.nsi'
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
