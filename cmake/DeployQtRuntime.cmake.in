@@ -19,10 +19,22 @@
 # CMP0057 set to NEW.
 cmake_minimum_required(VERSION 3.25)
 
-set(qt_source "@NESVA_QT_RUNTIME_DIR@")
-if(NOT qt_source OR NOT IS_DIRECTORY "${qt_source}")
-  message(STATUS "qt-runtime: no Qt installation at @NESVA_QT_RUNTIME_DIR@, nothing to bundle")
+# A release that ships without its Qt runtime installs and then cannot start, so
+# the packaging step sets NESVA_REQUIRE_QT_BUNDLE=1 and every early return below
+# becomes a hard error instead of a quiet one.
+macro(nesva_stop message_text)
+  if(DEFINED ENV{NESVA_REQUIRE_QT_BUNDLE})
+    message(FATAL_ERROR "qt-runtime: ${message_text}")
+  else()
+    message(STATUS "qt-runtime: ${message_text}")
+  endif()
   return()
+endmacro()
+
+set(qt_source "@NESVA_QT_RUNTIME_DIR@")
+message(STATUS "qt-runtime: Qt installation is '${qt_source}'")
+if(NOT qt_source OR NOT IS_DIRECTORY "${qt_source}")
+  nesva_stop("no Qt installation at '${qt_source}', nothing to bundle")
 endif()
 
 set(qt_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
@@ -30,8 +42,7 @@ set(qt_bindir "${qt_root}/bin")
 set(qt_libdir "${qt_root}/lib/nesva")
 set(qt_plugindir "${qt_libdir}/plugins")
 if(NOT IS_DIRECTORY "${qt_bindir}")
-  message(STATUS "qt-runtime: ${qt_bindir} is missing, nothing to bundle")
-  return()
+  nesva_stop("${qt_bindir} is missing, nothing to bundle")
 endif()
 
 # Where the Qt libraries live on this build machine: lib, lib64 or multiarch.
@@ -46,8 +57,7 @@ foreach(candidate IN ITEMS "${qt_source}/lib" "${qt_source}/lib64" "${qt_source}
   endforeach()
 endforeach()
 if(qt_system_libdir STREQUAL "")
-  message(WARNING "qt-runtime: no libQt6Core.so.6 under ${qt_source}; the packages will need a system Qt")
-  return()
+  nesva_stop("no libQt6Core.so.6 under ${qt_source}; the packages would need a system Qt")
 endif()
 
 find_program(NESVA_READELF readelf REQUIRED)
@@ -136,8 +146,7 @@ foreach(binary IN ITEMS nesva nesva-cli nesva-agent)
 endforeach()
 nesva_qt_needed_files(qt_libraries ${qt_roots})
 if(NOT qt_libraries)
-  message(WARNING "qt-runtime: the binaries need no Qt libraries from ${qt_system_libdir}")
-  return()
+  nesva_stop("the binaries need no library from ${qt_system_libdir}, so nothing was bundled")
 endif()
 
 file(MAKE_DIRECTORY "${qt_libdir}")

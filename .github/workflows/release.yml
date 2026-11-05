@@ -49,8 +49,16 @@ jobs:
 
       - name: Package (.deb and portable tarball)
         # Both generators stage the same install tree, which is where the Qt
-        # runtime is bundled (cmake/DeployQtRuntime.cmake.in).
-        run: cd build/linux-release && cpack
+        # runtime is bundled (cmake/DeployQtRuntime.cmake.in). The flag turns a
+        # failed bundling into a build error instead of a package that installs
+        # and then cannot start.
+        env:
+          NESVA_REQUIRE_QT_BUNDLE: '1'
+        run: |
+          cd build/linux-release
+          cpack
+          echo "--- packaged tree ---"
+          tar tzf nesva-*-linux-x86_64.tar.gz | head -30
 
       - name: Checksums
         run: |
