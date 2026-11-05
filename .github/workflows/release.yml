@@ -213,8 +213,16 @@ jobs:
           }
           & (Join-Path $target 'nesva-cli.exe') --version
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & (Join-Path $target 'nesva.exe') --data-dir (Join-Path $env:RUNNER_TEMP 'installer-data') --gui-selftest (Join-Path $env:RUNNER_TEMP 'installer-shots') --no-console-log
-          if ($LASTEXITCODE -ne 0) { throw "the installed application failed to start" }
+          # nesva.exe is a GUI-subsystem binary, so calling it with & returns as soon
+          # as Windows hands it off. -Wait is what makes the check meaningful, and it
+          # also matters for the uninstall below: the executable is still locked
+          # while the self-test runs.
+          $gui = Start-Process -FilePath (Join-Path $target 'nesva.exe') -Wait -PassThru -ArgumentList @(
+            "--data-dir=$env:RUNNER_TEMP\installer-data",
+            "--gui-selftest=$env:RUNNER_TEMP\installer-shots",
+            '--no-console-log')
+          if ($gui.ExitCode -ne 0) { throw "the installed application failed to start ($($gui.ExitCode))" }
+          Get-Process -Name 'nesva*' -ErrorAction SilentlyContinue | Wait-Process -Timeout 30
           Start-Process -FilePath (Join-Path $target 'Uninstall.exe') -ArgumentList '/S'
           # An NSIS uninstaller relaunches itself from the temp directory and the
           # original process exits immediately, so -Wait is not enough here.
@@ -243,7 +251,11 @@ jobs:
             }
           }
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & (Join-Path $check 'nesva.exe') --data-dir (Join-Path $check 'data') --gui-selftest (Join-Path $check 'shots') --no-console-log
+          $gui = Start-Process -FilePath (Join-Path $check 'nesva.exe') -Wait -PassThru -ArgumentList @(
+            "--data-dir=$(Join-Path $check 'data')",
+            "--gui-selftest=$(Join-Path $check 'shots')",
+            '--no-console-log')
+          if ($gui.ExitCode -ne 0) { throw "the portable copy failed to start ($($gui.ExitCode))" }
 
       - name: Checksums
         shell: pwsh
