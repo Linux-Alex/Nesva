@@ -6,7 +6,24 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added (tray)
+
+- **Nesva can start in the notification area at sign-in.** Settings -> Window behaviour has a
+  new **Start Nesva in the notification area when I sign in** option. It writes a per-user Run
+  entry (`Nesva`, `nesva.exe --tray`) next to the agent's; the window starts hidden with a tray
+  icon, and **Show Nesva** / **Quit** are in its menu. `--tray` is also accepted on the command
+  line, and falls back to showing the window when the desktop has no notification area.
+- The background agent's autostart is now labelled **Agent autostart**, with an explicit note
+  that the agent has no window or tray icon, so it cannot be mistaken for the desktop window.
+
+### Fixed (tray)
+
+- **Quit works from the tray.** File -> Quit and the tray menu's **Quit** used the same close
+  path as the title-bar X, which hides to the tray when that option is enabled; the application
+  could not be ended. Both actions now leave the tray and exit, including when the window was
+  never shown.
+- The Windows uninstaller removes the desktop autostart entry (`Nesva`) as well as the background
+  agent's (`NesvaAgent`).
 
 ## [0.6.2] - 2026-11-05
 

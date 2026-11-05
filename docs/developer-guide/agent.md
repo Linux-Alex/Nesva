@@ -53,15 +53,18 @@ The unit runs **as the user**, not as root, because scheduled jobs need the user
 credentials and an unlocked keyring. `KillSignal=SIGTERM` (with a 120 s `TimeoutStopSec`) gives
 the agent time to finish the current file.
 
-### Windows: per-user scheduled task
+### Windows: per-user Run entry
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\register-agent.ps1
-Start-ScheduledTask -TaskName NesvaAgent
+nesva-cli agent install      # writes HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 nesva-cli agent status
+nesva-cli agent uninstall
 ```
 
-The task is registered for the current user with `LogonType Interactive` and `RunLevel Limited`.
+The entry starts `nesva-agent.exe` at logon in the user's interactive session, without
+PowerShell, a scheduled task or elevation. The agent has no window or tray icon. The desktop
+window's optional sign-in entry is a separate `Nesva` Run value managed under
+**Settings -> Window behaviour**.
 **Windows SYSTEM does not have access to an interactive user's cloud credentials or keyring**, so
 a system-wide service is deliberately not provided.
 

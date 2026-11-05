@@ -4,6 +4,7 @@
 #include "main_window.hpp"
 
 #include <QtCore/QByteArray>
+#include <QtCore/QCoreApplication>
 #include <QtGui/QCloseEvent>
 #include <QtGui/QShortcut>
 #include <QtGui/QActionGroup>
@@ -261,7 +262,7 @@ void MainWindow::buildMenus() {
     QMenu* fileMenu = menuBar()->addMenu(QStringLiteral("&File"));
     QAction* quitAction = fileMenu->addAction(QStringLiteral("&Quit"));
     quitAction->setShortcut(QKeySequence::Quit);
-    connect(quitAction, &QAction::triggered, this, &QWidget::close);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::requestQuit);
 
     QMenu* viewMenu = menuBar()->addMenu(QStringLiteral("&View"));
     QMenu* themeMenu = viewMenu->addMenu(QStringLiteral("&Theme"));
@@ -346,7 +347,7 @@ void MainWindow::buildTray() {
     });
     trayMenu->addSeparator();
     QAction* quitAction = trayMenu->addAction(QStringLiteral("Quit"));
-    connect(quitAction, &QAction::triggered, this, &QWidget::close);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::requestQuit);
     trayIcon_->setContextMenu(trayMenu);
 
     connect(trayIcon_, &QSystemTrayIcon::activated, this,
@@ -358,6 +359,23 @@ void MainWindow::buildTray() {
                 }
             });
     trayIcon_->show();
+}
+
+bool MainWindow::trayAvailable() const {
+    return trayIcon_ != nullptr && trayIcon_->isVisible();
+}
+
+void MainWindow::requestQuit() {
+    quitting_ = true;
+    saveWindowState();
+    if (trayIcon_ != nullptr) {
+        trayIcon_->hide();
+    }
+    close();
+    // A window that was never shown (--tray) has no visible top-level window to
+    // close, so the lastWindowClosed path is not guaranteed. End the event loop
+    // explicitly; the normal closeEvent cleanup above has already run.
+    QCoreApplication::quit();
 }
 
 bool MainWindow::notificationsEnabled() const {
@@ -531,8 +549,8 @@ Page* MainWindow::pageAt(int index) const {
 void MainWindow::closeEvent(QCloseEvent* event) {
     // Minimising to the tray keeps the window (and its in-process runs) alive;
     // the background agent is what guarantees unattended scheduling.
-    if (minimizeToTrayEnabled() && trayIcon_ != nullptr && trayIcon_->isVisible() &&
-        !context_.executor()->isRunning()) {
+    if (!quitting_ && minimizeToTrayEnabled() && trayIcon_ != nullptr &&
+        trayIcon_->isVisible() && !context_.executor()->isRunning()) {
         hide();
         event->ignore();
         notify(QStringLiteral("Nesva is still running"),

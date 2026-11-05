@@ -154,6 +154,8 @@ nesva_set_target_warnings(nesva_core)
 qt_add_library(nesva_ui STATIC
   src/desktop/app_context.hpp
   src/desktop/app_context.cpp
+  src/desktop/app_autostart.hpp
+  src/desktop/app_autostart.cpp
   src/desktop/main_window.hpp
   src/desktop/main_window.cpp
   src/desktop/theme.hpp

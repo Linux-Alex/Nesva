@@ -122,8 +122,10 @@ LangString DESC_SecDesktop ${LANG_ENGLISH} "Add a Nesva shortcut to this desktop
 Section "Uninstall"
   SetShellVarContext current
 
-  ; The logon autostart entry points at an executable this uninstaller deletes,
-  ; so it has to go as well.
+  ; The logon autostart entries point at executables this uninstaller deletes,
+  ; so they have to go as well: "Nesva" is the desktop window's optional tray
+  ; entry, "NesvaAgent" the background agent's.
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Nesva"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "NesvaAgent"
   DeleteRegKey HKCU "Software\Nesva"
   DeleteRegKey HKCU "${UNINST_KEY}"

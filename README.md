@@ -149,7 +149,8 @@ is real, working functionality - not mockups:
 - Storage connection manager: local folders and Rclone remotes, with an explicit connection test
 - Schedule editor with a live next-run preview; "Run now" is delegated to the background agent
   when it is running, and the status bar shows agent state
-- Optional minimise-to-tray and desktop notifications for finished runs
+- Optional start-at-sign-in in the notification area (`nesva.exe --tray`), minimise-to-tray
+  and desktop notifications for finished runs
 - Backup Jobs and Storage pages read the real database through Qt Model/View models
 - Activity page: combined job + application event stream with live text filtering, sortable
   columns, and a shortcut to the log folder

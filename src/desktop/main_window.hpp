@@ -38,10 +38,18 @@ public:
     Page* pageAt(int index) const;
     void selectPage(int index);
 
+    /// True when a notification-area icon exists for this window.
+    bool trayAvailable() const;
+
 public slots:
     void refreshCurrentPage();
     void refreshAll();
     void applyTheme();
+
+    /// Leaves the tray, saves the window state and exits. This is what both
+    /// "Quit" actions use, so they work even while the window is hidden in the
+    /// notification area.
+    void requestQuit();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -75,6 +83,7 @@ private:
     EventListModel* activityModel_ = nullptr;
     QSystemTrayIcon* trayIcon_ = nullptr;
     QTimer* refreshTimer_ = nullptr;
+    bool quitting_ = false;
     QActionGroup* themeGroup_ = nullptr;
     QVector<Page*> pages_;
     QVector<QListWidgetItem*> navigationItems_;

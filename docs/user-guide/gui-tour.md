@@ -139,9 +139,13 @@ JSON log if you need the detail.
   (see [ADR 0014](../architecture/decisions/0014-external-tool-installation.md)).
 - **Logging** - console verbosity.
 - **Safety** - confirmation before destructive actions (keep it on).
-- **Window behaviour** - minimise to tray, desktop notifications.
-- **Background agent** - whether `nesva-agent` is running, **Refresh status**, **Stop agent**.
-  The agent is what runs schedules when the window is closed.
+- **Window behaviour** - **Start Nesva in the notification area when I sign in**, minimise to
+  tray, desktop notifications. The sign-in option starts the window hidden with a tray icon;
+  closing the window keeps it there only when minimise-to-tray is also on.
+- **Background agent** - whether `nesva-agent` is running, **Refresh status**, **Start agent**,
+  **Stop agent**, and the agent's own autostart entry. The agent runs schedules without the
+  window and has no window or tray icon; its autostart is separate from starting Nesva itself at
+  sign-in.
 - **Locations** - **Open data folder** and **Open log folder**.
 
 ---

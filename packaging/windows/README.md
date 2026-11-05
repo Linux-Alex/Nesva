@@ -17,7 +17,7 @@ nesva-cli agent status        # is it running?
 ```
 
 The same is available in the desktop application: **Settings -> Background agent -> Install
-autostart**, next to **Start agent** (start it now without waiting for the next logon) and
+agent autostart**, next to **Start agent** (start it now without waiting for the next logon) and
 **Stop agent**.
 
 The agent is a GUI-subsystem binary, so logging in does not open a console window in your
@@ -28,7 +28,17 @@ session. Started from a terminal it attaches to that console, so `nesva-agent --
 * No PowerShell, no WScript, no scheduled task, so script-blocking group policies do not apply.
 * The value points at the absolute path of `nesva-agent.exe`, so an update that moves the
   executable has to run `agent install` again.
-* Removing Nesva does not delete the Run entry; run `nesva-cli agent uninstall` first.
+
+## Tray application autostart
+
+The **agent** has no window or tray icon. The desktop window has its own, separate sign-in
+option: **Settings -> Window behaviour -> Start Nesva in the notification area when I sign in**.
+It writes a second per-user Run value, `Nesva`, pointing at `nesva.exe` with `--tray`; the
+window starts hidden, the tray menu's **Show Nesva** opens it, and **Quit** ends it. Enable the
+agent's autostart as well if scheduled jobs have to run after sign-in; starting the window alone
+does not execute schedules.
+
+Both Run values (`Nesva` and `NesvaAgent`) are per-user and are removed by the uninstaller.
 
 ## Requirements
 

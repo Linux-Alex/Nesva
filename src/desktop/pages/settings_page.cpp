@@ -21,8 +21,10 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QLineEdit>
+#include <QtWidgets/QSystemTrayIcon>
 #include <QtWidgets/QVBoxLayout>
 
+#include "app_autostart.hpp"
 #include "app_context.hpp"
 #include "dialogs/entra_help_dialog.hpp"
 #include "dialogs/mail_connect_dialog.hpp"
@@ -246,6 +248,7 @@ void SettingsPage::refresh() {
     const QSignalBlocker themeBlocker(themeCombo_);
     const QSignalBlocker levelBlocker(logLevelCombo_);
     const QSignalBlocker confirmBlocker(confirmDestructive_);
+    const QSignalBlocker startAtLoginBlocker(startAtLoginCheck_);
     const QSignalBlocker minimizeBlocker(minimizeToTrayCheck_);
     const QSignalBlocker notificationsBlocker(notificationsCheck_);
 
@@ -268,12 +271,26 @@ void SettingsPage::refresh() {
 
     const Result<int> schemaVersion = context_.database().schemaVersion();
 
+    // The operating system's autostart store decides whether the tray
+    // application starts at sign-in; do not duplicate that state in Settings.
+    const bool trayAvailable = QSystemTrayIcon::isSystemTrayAvailable();
+    startAtLoginCheck_->setChecked(appAutostartInstalled());
+    startAtLoginCheck_->setEnabled(trayAvailable);
+    startAtLoginCheck_->setToolTip(
+        trayAvailable ? appAutostartCommand()
+                      : QStringLiteral("This desktop does not provide a notification area."));
+    minimizeToTrayCheck_->setEnabled(trayAvailable);
+
     const Result<bool> minimize = context_.settings().getBoolean(
         QString::fromUtf8(config::keys::kMinimizeToTray), false);
     minimizeToTrayCheck_->setChecked(minimize && minimize.value());
     const Result<bool> notifications = context_.settings().getBoolean(
         QString::fromUtf8(config::keys::kNotificationsEnabled), true);
     notificationsCheck_->setChecked(notifications && notifications.value());
+    if (agentAutostartValue_ != nullptr) {
+        agentAutostartValue_->setText(
+            QStringLiteral("Agent autostart: %1").arg(agent::autostartDescription()));
+    }
     refreshAgentStatus();
 
     dataRootValue_->setText(Paths::describeResolution());
@@ -289,20 +306,40 @@ void SettingsPage::buildBehaviourSection() {
     QVBoxLayout* cardLayout = nullptr;
     QFrame* card = makeCard(this, QStringLiteral("Window behaviour"), cardLayout);
 
+    startAtLoginCheck_ = new QCheckBox(
+        QStringLiteral("Start Nesva in the notification area when I sign in"), card);
+    startAtLoginCheck_->setObjectName(QStringLiteral("settingsStartAtLogin"));
     minimizeToTrayCheck_ = new QCheckBox(
         QStringLiteral("Keep running in the tray when the window is closed"), card);
+    minimizeToTrayCheck_->setToolTip(
+        QStringLiteral("Requires a notification area in the desktop environment."));
     notificationsCheck_ = new QCheckBox(QStringLiteral("Show desktop notifications for runs"), card);
+    cardLayout->addWidget(startAtLoginCheck_);
     cardLayout->addWidget(minimizeToTrayCheck_);
     cardLayout->addWidget(notificationsCheck_);
 
     auto* hint = new QLabel(
-        QStringLiteral("Scheduled runs are executed by the background agent, not by this window. "
-                       "Closing the window or the tray icon does not stop scheduled backups."),
+        QStringLiteral("The tray application and the background agent are separate: scheduled "
+                       "runs are executed by the agent, not by this window. Starting Nesva in the "
+                       "notification area does not start jobs by itself; enable the agent's "
+                       "autostart below as well if scheduled runs have to happen after sign-in."),
         card);
     hint->setObjectName(QStringLiteral("pageSubtitle"));
     hint->setWordWrap(true);
     cardLayout->addWidget(hint);
 
+    connect(startAtLoginCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        const Status status = checked ? installAppAutostart() : removeAppAutostart();
+        if (!status.ok()) {
+            QMessageBox::warning(this, QStringLiteral("Start at sign-in"),
+                                 QString::fromStdString(status.error().toDisplayString()));
+            const QSignalBlocker blocker(startAtLoginCheck_);
+            startAtLoginCheck_->setChecked(!checked);
+            return;
+        }
+        startAtLoginCheck_->setToolTip(appAutostartCommand());
+        showSaved();
+    });
     connect(minimizeToTrayCheck_, &QCheckBox::toggled, this, [this](bool checked) {
         if (context_.settings()
                 .setBoolean(QString::fromUtf8(config::keys::kMinimizeToTray), checked)
@@ -511,27 +548,28 @@ void SettingsPage::buildAgentSection() {
 
     auto* hint = new QLabel(
         QStringLiteral("The agent (<code>nesva-agent</code>) runs scheduled jobs without this "
-                       "window. Install it as a systemd user service, or start it from a terminal "
-                       "with <code>nesva-agent</code>. See docs/developer-guide/agent.md."),
+                       "window and has no window or tray icon. Install its autostart entry so it "
+                       "runs with your session, or start it now. The tray application's own "
+                       "sign-in option is under <b>Window behaviour</b> above."),
         card);
     hint->setObjectName(QStringLiteral("pageSubtitle"));
     hint->setWordWrap(true);
     hint->setTextFormat(Qt::RichText);
     cardLayout->addWidget(hint);
 
-    auto* autostartLabel = new QLabel(card);
-    autostartLabel->setObjectName(QStringLiteral("pageSubtitle"));
-    autostartLabel->setText(QStringLiteral("Autostart: %1")
-                                .arg(agent::autostartDescription()));
-    autostartLabel->setWordWrap(true);
-    cardLayout->addWidget(autostartLabel);
+    agentAutostartValue_ = new QLabel(card);
+    agentAutostartValue_->setObjectName(QStringLiteral("settingsAgentAutostart"));
+    agentAutostartValue_->setText(QStringLiteral("Agent autostart: %1")
+                                      .arg(agent::autostartDescription()));
+    agentAutostartValue_->setWordWrap(true);
+    cardLayout->addWidget(agentAutostartValue_);
 
     auto* buttons = new QHBoxLayout();
     auto* refreshButton = new QPushButton(QStringLiteral("Refresh status"), card);
     auto* startButton = new QPushButton(QStringLiteral("Start agent"), card);
     auto* stopButton = new QPushButton(QStringLiteral("Stop agent"), card);
-    auto* installButton = new QPushButton(QStringLiteral("Install autostart"), card);
-    auto* removeButton = new QPushButton(QStringLiteral("Remove autostart"), card);
+    auto* installButton = new QPushButton(QStringLiteral("Install agent autostart"), card);
+    auto* removeButton = new QPushButton(QStringLiteral("Remove agent autostart"), card);
     buttons->addWidget(refreshButton);
     buttons->addWidget(startButton);
     buttons->addWidget(stopButton);
@@ -567,7 +605,7 @@ void SettingsPage::buildAgentSection() {
         QTimer::singleShot(1500, this, [this] { refreshAgentStatus(); });
     });
 
-    connect(installButton, &QPushButton::clicked, this, [this, autostartLabel] {
+    connect(installButton, &QPushButton::clicked, this, [this] {
         const QString executable = QCoreApplication::applicationDirPath() + QStringLiteral("/")
 #if defined(Q_OS_WIN)
                                    + QStringLiteral("nesva-agent.exe");
@@ -579,16 +617,18 @@ void SettingsPage::buildAgentSection() {
             QMessageBox::warning(this, QStringLiteral("Background agent"),
                                  QString::fromStdString(installed.error().toDisplayString()));
         } else {
-            autostartLabel->setText(QStringLiteral("Autostart: %1").arg(installed.value()));
+            agentAutostartValue_->setText(
+                QStringLiteral("Agent autostart: %1").arg(installed.value()));
         }
     });
-    connect(removeButton, &QPushButton::clicked, this, [this, autostartLabel] {
+    connect(removeButton, &QPushButton::clicked, this, [this] {
         const Result<QString> removed = agent::removeAutostart();
         if (!removed) {
             QMessageBox::warning(this, QStringLiteral("Background agent"),
                                  QString::fromStdString(removed.error().toDisplayString()));
         } else {
-            autostartLabel->setText(QStringLiteral("Autostart: %1").arg(removed.value()));
+            agentAutostartValue_->setText(
+                QStringLiteral("Agent autostart: %1").arg(removed.value()));
         }
     });
 

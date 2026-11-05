@@ -43,9 +43,11 @@ private:
     QComboBox* logLevelCombo_ = nullptr;
     QComboBox* timezoneCombo_ = nullptr;
     QCheckBox* confirmDestructive_ = nullptr;
+    QCheckBox* startAtLoginCheck_ = nullptr;
     QCheckBox* minimizeToTrayCheck_ = nullptr;
     QCheckBox* notificationsCheck_ = nullptr;
     QLabel* agentStatusValue_ = nullptr;
+    QLabel* agentAutostartValue_ = nullptr;
     QLabel* toolsStatusValue_ = nullptr;
     QLineEdit* mailTenantEdit_ = nullptr;
     QLineEdit* mailClientEdit_ = nullptr;

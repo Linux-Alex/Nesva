@@ -11,11 +11,13 @@
 #include <cstdio>
 #include <optional>
 
+#include "app_autostart.hpp"
 #include "app_context.hpp"
 #include "gui_selftest.hpp"
 #include "icon_factory.hpp"
 #include "main_window.hpp"
 #include "nesva/core/app_info.hpp"
+#include "nesva/core/logging.hpp"
 #include "nesva/core/paths.hpp"
 #include "theme.hpp"
 
@@ -28,6 +30,7 @@ struct Options {
     bool showHelp = false;
     bool showVersion = false;
     bool selfTest = false;
+    bool startInTray = false;
     QString selfTestDirectory;
 };
 
@@ -41,6 +44,7 @@ QString helpText() {
         "  --data-dir <path>      Override the per-user data directory\n"
         "  --log-level <level>    Console log level: trace, debug, info, warn, error\n"
         "  --no-console-log       Write logs to the log file only\n"
+        "  --tray                 Start hidden in the notification area\n"
         "  --gui-selftest[=<dir>] Show the window, capture every page as PNG and exit\n"
         "  --version              Print version information\n"
         "  --help                 Print this help\n"
@@ -69,6 +73,8 @@ Options parseOptions(const QStringList& arguments, QStringList* errors) {
             options.showVersion = true;
         } else if (argument == QStringLiteral("--no-console-log")) {
             options.consoleLogging = false;
+        } else if (argument == QString::fromLatin1(nesva::ui::kStartInTrayArgument)) {
+            options.startInTray = true;
         } else if (argument.startsWith(QStringLiteral("--data-dir"))) {
             const QString value = takeValue(argument.section(QLatin1Char('='), 1));
             if (value.isEmpty()) {
@@ -167,6 +173,17 @@ int main(int argc, char** argv) {
         return nesva::ui::runGuiSelfTest(window, directory);
     }
 
-    window.show();
+    if (options.startInTray && window.trayAvailable()) {
+        // The tray icon was created by the MainWindow constructor; do not show
+        // the window. This is how the per-user autostart entry starts Nesva.
+        context.recordEvent(nesva::LogLevel::Info, QStringLiteral("application"),
+                            QStringLiteral("started in the notification area"));
+    } else {
+        if (options.startInTray) {
+            std::fprintf(stderr,
+                         "nesva: the system tray is not available; showing the window instead\n");
+        }
+        window.show();
+    }
     return QApplication::exec();
 }

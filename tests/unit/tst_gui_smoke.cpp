@@ -31,6 +31,7 @@
 #include <QtWidgets/QSpinBox>
 #include <QtCore/QTimer>
 
+#include "app_autostart.hpp"
 #include "dialogs/job_editor_dialog.hpp"
 #include "dialogs/rclone_config_dialog.hpp"
 #include "time_display.hpp"
@@ -104,6 +105,7 @@ private slots:
     void eventModelCombinesJobAndApplicationEvents();
     void mainWindowExposesEveryPage();
     void settingsPageOffersTheRcloneInstaller();
+    void settingsPageOffersTrayAutostart();
     void mailPageShowsAccountsAndFolderCounts();
     void dashboardCardsStackWhenNarrow();
     void jobModelAlignsNumericColumns();
@@ -504,6 +506,49 @@ void GuiSmokeTest::settingsPageOffersTheRcloneInstaller() {
         }
     }
     QVERIFY2(foundStatus, "the external tools card must report both tools");
+}
+
+void GuiSmokeTest::settingsPageOffersTrayAutostart() {
+    // The tray application and the background agent are separate autostart
+    // entries. The Settings page must expose the desktop one and keep the
+    // agent's clearly labelled, otherwise "Install autostart" reads as if the
+    // window would appear in the tray at the next logon.
+    QVERIFY(ui::appAutostartCommand().contains(QStringLiteral("--tray")));
+
+    MainWindow window(*context_);
+    window.show();
+
+    int settingsIndex = -1;
+    for (int index = 0; index < window.pageCount(); ++index) {
+        if (window.pageTitleAt(index) == QStringLiteral("Settings")) {
+            settingsIndex = index;
+            break;
+        }
+    }
+    QVERIFY(settingsIndex >= 0);
+    window.selectPage(settingsIndex);
+    QCoreApplication::processEvents();
+
+    Page* settings = window.pageAt(settingsIndex);
+    QVERIFY(settings != nullptr);
+
+    auto* startAtLogin = settings->findChild<QCheckBox*>(QStringLiteral("settingsStartAtLogin"));
+    QVERIFY2(startAtLogin != nullptr, "Settings must offer starting Nesva in the tray at sign-in");
+    QVERIFY(startAtLogin->text().contains(QStringLiteral("notification area")));
+
+    auto* agentAutostart =
+        settings->findChild<QLabel*>(QStringLiteral("settingsAgentAutostart"));
+    QVERIFY2(agentAutostart != nullptr, "the agent autostart state must be labelled");
+    QVERIFY(agentAutostart->text().startsWith(QStringLiteral("Agent autostart:")));
+
+    bool installAgentAutostart = false;
+    for (QPushButton* button : settings->findChildren<QPushButton*>()) {
+        if (button->text() == QStringLiteral("Install agent autostart")) {
+            installAgentAutostart = true;
+            break;
+        }
+    }
+    QVERIFY2(installAgentAutostart, "the agent autostart button must name the agent");
 }
 
 void GuiSmokeTest::mainWindowExposesEveryPage() {
