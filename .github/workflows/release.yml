@@ -64,8 +64,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tar-check"
           tar -C "$RUNNER_TEMP/tar-check" -xzf build/linux-release/nesva-*.tar.gz --strip-components=1
           # Prove the package carries its own Qt: the binaries must resolve Qt from
-          # lib/nesva, not from whatever Qt the runner happens to have.
-          ldd "$RUNNER_TEMP/tar-check/bin/nesva" | grep -q "lib/nesva/libQt6Core.so.6"
+          # lib/nesva, not from whatever Qt the runner happens to have. The runner
+          # exports LD_LIBRARY_PATH pointing at its own Qt, which a bundled package
+          # has to ignore.
+          env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP/tar-check/bin/nesva" \
+            | grep -q "lib/nesva/libQt6Core.so.6"
           "${RUNNER_TEMP}/tar-check/bin/nesva-cli" --version
           QT_QPA_PLATFORM=offscreen "$RUNNER_TEMP/tar-check/bin/nesva" \
             --data-dir="$RUNNER_TEMP/tar-check/data" \

@@ -12,11 +12,18 @@ include(GNUInstallDirs)
 include(CTest)
 
 if(UNIX AND NOT APPLE)
-  # Installed binaries find the Qt runtime that cmake/DeployQtRuntime.cmake copies
-  # next to them, so the packages never depend on a Qt the distribution does not
-  # ship. Set at link time rather than with patchelf: one less build dependency.
+  # Installed binaries find the Qt runtime that cmake/DeployQtRuntime.cmake.in
+  # copies next to them, so the packages never depend on a Qt the distribution
+  # does not ship. Set at link time rather than with patchelf: one less build
+  # dependency.
+  #
+  # DT_RPATH, not the default DT_RUNPATH: the loader searches RUNPATH *after*
+  # LD_LIBRARY_PATH, so a user with an older Qt on their LD_LIBRARY_PATH would
+  # silently load it against these binaries. RPATH is searched first and the
+  # bundled Qt therefore always wins.
   set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/nesva")
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
+  add_link_options(-Wl,--disable-new-dtags)
 endif()
 include(NesvaCompilerWarnings)
 include(NesvaVersion)
