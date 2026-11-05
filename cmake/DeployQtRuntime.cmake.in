@@ -52,8 +52,29 @@ endif()
 
 find_program(NESVA_READELF readelf REQUIRED)
 
-# Walk DT_NEEDED transitively, but only along libQt6* edges: the rest belongs to
-# the system and is declared as a package dependency instead of being bundled.
+# Libraries a package must never bundle: the C library and the C++ runtime have to
+# come from the system, or the package fights its own distribution.
+set(qt_never_bundle
+  "libc.so" "libm.so" "libdl.so" "libpthread.so" "librt.so" "libresolv.so"
+  "libutil.so" "libanl.so" "libmvec.so" "libstdc++.so" "libgcc_s.so" "ld-linux")
+
+# True when dpkg knows the file, i.e. the distribution provides that library and
+# the package should depend on it instead of shipping a private copy. This is what
+# keeps a build against the distribution Qt from turning into a 200 MB bundle of
+# glib, freetype and X11, while the official Qt build - which ships its own libicu
+# that no distribution has in that version - does get bundled.
+function(nesva_system_provides path out_var)
+  execute_process(COMMAND dpkg-query -S "${path}"
+                  RESULT_VARIABLE dpkg_status OUTPUT_QUIET ERROR_QUIET)
+  if(dpkg_status EQUAL 0)
+    set(${out_var} TRUE PARENT_SCOPE)
+  else()
+    set(${out_var} FALSE PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Walk DT_NEEDED transitively and bundle every library the build machine has but
+# the distribution does not provide.
 function(nesva_qt_needed_files out_var)
   set(frontier ${ARGN})
   set(seen "")
@@ -72,15 +93,33 @@ function(nesva_qt_needed_files out_var)
       if(NOT readelf_status EQUAL 0)
         continue()
       endif()
-      string(REGEX MATCHALL "NEEDED[^\n]*\\[libQt6[^]]*\\]" needed_entries "${elf_dynamic}")
+      string(REGEX MATCHALL "NEEDED[^\n]*\\[lib[^]]*\\]" needed_entries "${elf_dynamic}")
       foreach(entry IN LISTS needed_entries)
-        string(REGEX REPLACE ".*\\[(libQt6[^]]*)\\]" "\\1" library_name "${entry}")
+        string(REGEX REPLACE ".*\\[(lib[^]]*)\\]" "\\1" library_name "${entry}")
         set(library_path "${qt_system_libdir}/${library_name}")
-        if(EXISTS "${library_path}")
-          get_filename_component(real_path "${library_path}" REALPATH)
-          list(APPEND files "${real_path}")
-          list(APPEND next_generation "${real_path}")
+        if(NOT EXISTS "${library_path}")
+          continue()
         endif()
+        set(never_bundle FALSE)
+        foreach(forbidden IN LISTS qt_never_bundle)
+          # Plain prefix comparison: entries like libstdc++.so are not valid
+          # regular expressions, and escaping them for no reason is a trap.
+          string(LENGTH "${forbidden}" forbidden_length)
+          string(SUBSTRING "${library_name}" 0 ${forbidden_length} name_prefix)
+          if(name_prefix STREQUAL "${forbidden}")
+            set(never_bundle TRUE)
+          endif()
+        endforeach()
+        if(never_bundle)
+          continue()
+        endif()
+        get_filename_component(real_path "${library_path}" REALPATH)
+        nesva_system_provides("${real_path}" provided_by_system)
+        if(provided_by_system)
+          continue()
+        endif()
+        list(APPEND files "${real_path}")
+        list(APPEND next_generation "${real_path}")
       endforeach()
     endforeach()
     set(frontier ${next_generation})
@@ -104,10 +143,16 @@ endif()
 file(MAKE_DIRECTORY "${qt_libdir}")
 foreach(library IN LISTS qt_libraries)
   file(COPY "${library}" DESTINATION "${qt_libdir}")
-  # The SONAME is a symlink to the real file; keep it so DT_NEEDED resolves.
   get_filename_component(library_name "${library}" NAME)
-  string(REGEX REPLACE "^(libQt6[^.]+\\.so\\.[0-9]+)\\..*$" "\\1" soname "${library_name}")
-  if(NOT soname STREQUAL library_name)
+
+  # DT_NEEDED refers to the SONAME, which is usually a symlink to the real file
+  # (libQt6Core.so.6 -> libQt6Core.so.6.10.2). Recreate that symlink, using the
+  # SONAME the library itself declares rather than guessing from the file name.
+  execute_process(COMMAND "${NESVA_READELF}" -d "${library}"
+                  OUTPUT_VARIABLE library_dynamic ERROR_QUIET)
+  string(REGEX MATCH "SONAME[^\\n]*\\[([^]]*)\\]" soname_match "${library_dynamic}")
+  set(soname "${CMAKE_MATCH_1}")
+  if(NOT soname STREQUAL "" AND NOT soname STREQUAL library_name)
     file(CREATE_LINK "${library_name}" "${qt_libdir}/${soname}" SYMBOLIC)
   endif()
 endforeach()

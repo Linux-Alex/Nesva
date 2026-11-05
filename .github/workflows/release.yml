@@ -69,6 +69,14 @@ jobs:
           # has to ignore.
           env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP/tar-check/bin/nesva" \
             | grep -q "lib/nesva/libQt6Core.so.6"
+          # Nothing may be unresolved: an earlier build shipped a Qt that needed a
+          # libicu the distribution does not have, and only failed at startup.
+          if env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP"/tar-check/bin/* \
+               | grep -q "not found"; then
+            echo "unresolved shared libraries:" >&2
+            env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP"/tar-check/bin/* | grep "not found" >&2
+            exit 1
+          fi
           "${RUNNER_TEMP}/tar-check/bin/nesva-cli" --version
           QT_QPA_PLATFORM=offscreen "$RUNNER_TEMP/tar-check/bin/nesva" \
             --data-dir="$RUNNER_TEMP/tar-check/data" \
