@@ -6,6 +6,10 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.2] - 2026-11-05
+
 ### Fixed (Windows)
 
 - **Closing the rclone wizard no longer freezes the application.** The title-bar close button

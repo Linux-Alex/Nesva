@@ -14,7 +14,7 @@ never invoked through a shell.
 
 ## Download
 
-Current release: [v0.6.1](https://github.com/Linux-Alex/Nesva/releases/latest)
+Current release: [v0.6.2](https://github.com/Linux-Alex/Nesva/releases/latest)
 
 | Platform | File | Notes |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Archive mode is never presented as an equivalent to a versioned, immutable backu
 
 ---
 
-## Current status: v0.6.0 - Phases 1-5 implemented
+## Current status: v0.6.2 - Phases 1-5 implemented
 
 Everything below is implemented, built and tested on Linux **and Windows**: the Windows build is
 verified on a real machine (24/24 test binaries, GUI self-test, background agent and autostart),

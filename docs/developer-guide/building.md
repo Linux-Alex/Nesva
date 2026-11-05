@@ -289,8 +289,8 @@ job then creates the GitHub release and uploads the assets with the checksums.
 ```bash
 # 1. bump the version in CMakeLists.txt and move the Unreleased notes in CHANGELOG.md
 # 2. commit, then tag and push
-git tag -a v0.6.0 -m "Nesva 0.6.0"
-git push origin v0.6.0
+git tag -a v0.6.2 -m "Nesva 0.6.2"
+git push origin v0.6.2
 ```
 
 Re-running the workflow for an existing tag uploads the new assets over the old ones

@@ -90,5 +90,5 @@ Rebuild the installer locally:
 
 ```powershell
 choco install nsis -y
-makensis /DVERSION=0.6.1 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe packaging\windows\nesva.nsi
+makensis /DVERSION=0.6.2 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe packaging\windows\nesva.nsi
 ```
