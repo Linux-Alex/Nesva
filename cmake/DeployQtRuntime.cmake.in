@@ -154,13 +154,24 @@ foreach(library IN LISTS qt_libraries)
   file(COPY "${library}" DESTINATION "${qt_libdir}")
   get_filename_component(library_name "${library}" NAME)
 
-  # DT_NEEDED refers to the SONAME, which is usually a symlink to the real file
-  # (libQt6Core.so.6 -> libQt6Core.so.6.10.2). Recreate that symlink, using the
-  # SONAME the library itself declares rather than guessing from the file name.
+  # DT_NEEDED refers to the SONAME, which is a symlink to the real file
+  # (libQt6Core.so.6 -> libQt6Core.so.6.10.2). Recreate that symlink from the
+  # SONAME the library declares. Parsed with string(FIND) rather than a regular
+  # expression: readelf prints "Library soname: [libQt6Core.so.6]" and matching
+  # bracketed text across a multi-line output is one escaping mistake away from
+  # silently finding nothing, which is exactly what happened first time.
   execute_process(COMMAND "${NESVA_READELF}" -d "${library}"
                   OUTPUT_VARIABLE library_dynamic ERROR_QUIET)
-  string(REGEX MATCH "SONAME[^\\n]*\\[([^]]*)\\]" soname_match "${library_dynamic}")
-  set(soname "${CMAKE_MATCH_1}")
+  set(soname "")
+  string(FIND "${library_dynamic}" "soname: [" soname_position)
+  if(NOT soname_position EQUAL -1)
+    math(EXPR soname_offset "${soname_position} + 9")
+    string(SUBSTRING "${library_dynamic}" ${soname_offset} -1 soname_tail)
+    string(FIND "${soname_tail}" "]" soname_end)
+    if(NOT soname_end EQUAL -1)
+      string(SUBSTRING "${soname_tail}" 0 ${soname_end} soname)
+    endif()
+  endif()
   if(NOT soname STREQUAL "" AND NOT soname STREQUAL library_name)
     file(CREATE_LINK "${library_name}" "${qt_libdir}/${soname}" SYMBOLIC)
   endif()
