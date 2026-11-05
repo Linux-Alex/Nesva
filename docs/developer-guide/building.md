@@ -270,7 +270,7 @@ release packaging with checksums. The workflows are the executable version of th
 | Platform | Artifacts |
 | --- | --- |
 | Linux x86_64 | `nesva_<version>_amd64.deb`, `nesva-<version>-linux-x86_64.tar.gz` (portable prefix tree), `SHA256SUMS-linux.txt` |
-| Windows x86_64 | `nesva-<version>-windows-x86_64.zip` (three executables, Qt runtime and plugins, licence, notes), `SHA256SUMS-windows.txt` |
+| Windows x86_64 | `nesva-<version>-windows-x86_64-setup.exe` (per-user NSIS installer, `packaging/windows/nesva.nsi`), `nesva-<version>-windows-x86_64.zip` (three executables, Qt runtime and plugins, licence, notes), `SHA256SUMS-windows.txt` |
 
 The Linux packages **bundle the Qt runtime**: the release is built against a Qt newer
 than any distribution ships, so a package depending on the system Qt would install and then fail to
@@ -282,8 +282,9 @@ fontconfig, xkbcommon - stays a package dependency that `dpkg-shlibdeps` derives
 
 Both jobs run the whole test suite first and smoke-test the assembled package: the Linux tarball
 is unpacked and the GUI self-test runs from it, the Windows zip is expanded and checked for
-`Qt6Core.dll` before `nesva.exe` self-tests from the extracted folder. The `publish` job then
-creates the GitHub release and uploads the assets with the checksums.
+`Qt6Core.dll` before `nesva.exe` self-tests from the extracted folder, and the Windows installer is
+installed unattended into a temporary directory, exercised, and uninstalled again. The `publish`
+job then creates the GitHub release and uploads the assets with the checksums.
 
 ```bash
 # 1. bump the version in CMakeLists.txt and move the Unreleased notes in CHANGELOG.md

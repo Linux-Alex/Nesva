@@ -14,13 +14,14 @@ never invoked through a shell.
 
 ## Download
 
-Current release: [v0.6.0](https://github.com/Linux-Alex/Nesva/releases/latest)
+Current release: [v0.6.1](https://github.com/Linux-Alex/Nesva/releases/latest)
 
 | Platform | File | Notes |
 | --- | --- | --- |
+| Windows x86_64 | `nesva-<version>-windows-x86_64-setup.exe` | Installer: per-user install in `%LOCALAPPDATA%\Programs\Nesva`, shortcuts, uninstaller - **no administrator rights** |
+| Windows x86_64 | `nesva-<version>-windows-x86_64.zip` | Portable: unpack anywhere, run `nesva.exe`; Qt runtime included |
 | Linux x86_64 | `nesva_<version>_amd64.deb` | `sudo apt install ./nesva_<version>_amd64.deb`; recommends `rclone` and `restic` |
 | Linux x86_64 | `nesva-<version>-linux-x86_64.tar.gz` | Portable tree with Qt bundled: unpack, run `nesva-<version>-linux-x86_64/bin/nesva` |
-| Windows x86_64 | `nesva-<version>-windows-x86_64.zip` | Unpack anywhere, run `nesva.exe`; Qt runtime included, no installer, no admin rights |
 
 Each release also publishes a `SHA256SUMS` file per platform. Rclone and Restic are not bundled:
 Nesva installs them from inside the application (**Settings -> External tools**), showing every

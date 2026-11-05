@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.6.0
+  VERSION 0.6.1
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/Linux-Alex/Nesva"
   LANGUAGES CXX)
@@ -304,10 +304,12 @@ set(CPACK_PACKAGE_INSTALL_DIRECTORY "Nesva")
 set(CPACK_STRIP_FILES TRUE)
 
 if(WIN32)
-  # NSIS rather than WIX: it does not depend on the Windows Installer
-  # toolchain being installed on the build machine. Unsigned either way.
-  set(CPACK_GENERATOR "NSIS;ZIP")
-  set(CPACK_NSIS_INSTALLED_ICON_NAME "nesva.exe")
+  # The Windows installer is packaging/windows/nesva.nsi, built by the Release
+  # workflow from the staged directory that already contains the deployed Qt
+  # runtime: CPack's own NSIS generator would stage a tree without it. CPack here
+  # produces only the portable zip.
+  set(CPACK_GENERATOR "ZIP")
+  set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 elseif(UNIX)
   # DEB plus a portable archive: both are produced from the same staged tree, so
   # the Qt bundling below cannot apply to one and not the other.

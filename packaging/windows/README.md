@@ -54,15 +54,32 @@ directory, free space and both external tools.
 
 ## Packaging
 
-Each release publishes `nesva-<version>-windows-x86_64.zip`: `nesva.exe`, `nesva-cli.exe`,
-`nesva-agent.exe`, the Qt runtime and plugins deployed with `windeployqt`, the licence and these
-notes. Unpack it anywhere and run `nesva.exe` - no installer, no elevation, no registry writes
-apart from the optional autostart value above. `SHA256SUMS-windows.txt` sits next to the zip in the
-release.
+Each release publishes two artefacts, both built from the same staged directory (the three
+executables, the Qt runtime and plugins deployed with `windeployqt`, the CRT DLLs, the licence and
+these notes):
 
-The binaries are **unsigned**: SmartScreen warns on first launch and cannot be silenced without a
-code-signing certificate. A CPack NSIS target exists in the top-level CMakeLists, but it is not
-built or tested here, so the zip is the supported artefact.
+| File | What it is |
+| --- | --- |
+| `nesva-<version>-windows-x86_64-setup.exe` | Installer (`packaging/windows/nesva.nsi`): installs into `%LOCALAPPDATA%\Programs\Nesva`, Start-menu shortcut, optional desktop shortcut, entry in *Apps & features*, uninstaller |
+| `nesva-<version>-windows-x86_64.zip` | Portable: unpack anywhere and run `nesva.exe` |
 
-Build it yourself with the `windows-msvc-release` preset, or run the `Release` workflow
-(`workflow_dispatch` produces the artifacts without publishing them).
+Both are **per-user**: no administrator rights, no UAC prompt, no machine-wide state.
+
+The uninstaller removes the binaries, the bundled Qt runtime, the shortcuts and the logon autostart
+value, and leaves your data alone on purpose - the profile database stays in
+`%LOCALAPPDATA%\nesva` and the archives stay in whatever destinations the jobs were given.
+
+`SHA256SUMS-windows.txt` sits next to both files in the release. The binaries are **unsigned**:
+SmartScreen warns on first launch and cannot be silenced without a code-signing certificate.
+
+The Release workflow builds both and smoke-tests the installer before publishing: unattended
+install into a temporary directory, run the installed `nesva-cli` and the GUI self-test from
+there, then unattended uninstall and a check that nothing was left behind. Run it by hand with
+`workflow_dispatch` to get the artifacts without publishing them.
+
+Rebuild the installer locally:
+
+```powershell
+choco install nsis -y
+makensis /DVERSION=0.6.1 /DSTAGE=C:\stage /DOUTFILE=C:\out\nesva-setup.exe packaging\windows\nesva.nsi
+```

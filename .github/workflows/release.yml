@@ -171,6 +171,54 @@ jobs:
           $zip = Join-Path $build "nesva-$version-windows-x86_64.zip"
           if (Test-Path $zip) { Remove-Item $zip }
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
+          "NESVA_STAGE=$stage" >> $env:GITHUB_ENV
+          "NESVA_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install nsis --no-progress -y | Out-Null
+          $makensis = Join-Path $env:ProgramFiles(x86) 'NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
+          $outFile = Join-Path 'build/windows-msvc-release' "nesva-$env:NESVA_VERSION-windows-x86_64-setup.exe"
+          & $makensis "/DVERSION=$env:NESVA_VERSION" "/DSTAGE=$env:NESVA_STAGE" "/DOUTFILE=$outFile" 'packaging/windows/nesva.nsi'
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          if (-not (Test-Path $outFile)) { throw "the installer was not produced" }
+          Get-Item $outFile | Format-List Name, Length
+
+      - name: Smoke-test the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Unattended install into a temporary directory, then prove the installed
+          # copy runs and that the uninstaller really removes it. Nesva's whole
+          # point on Windows is that none of this asks for administrator rights.
+          $target = Join-Path $env:RUNNER_TEMP 'installer-check'
+          $setup = Join-Path 'build/windows-msvc-release' "nesva-$env:NESVA_VERSION-windows-x86_64-setup.exe"
+          Start-Process -FilePath $setup -ArgumentList '/S', "/D=$target" -Wait
+          foreach ($required in 'nesva.exe', 'nesva-cli.exe', 'nesva-agent.exe', 'Qt6Core.dll', 'Uninstall.exe') {
+            if (-not (Test-Path (Join-Path $target $required))) {
+              throw "$required was not installed into $target"
+            }
+          }
+          & (Join-Path $target 'nesva-cli.exe') --version
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & (Join-Path $target 'nesva.exe') --data-dir (Join-Path $env:RUNNER_TEMP 'installer-data') --gui-selftest (Join-Path $env:RUNNER_TEMP 'installer-shots') --no-console-log
+          if ($LASTEXITCODE -ne 0) { throw "the installed application failed to start" }
+          Start-Process -FilePath (Join-Path $target 'Uninstall.exe') -ArgumentList '/S'
+          # An NSIS uninstaller relaunches itself from the temp directory and the
+          # original process exits immediately, so -Wait is not enough here.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Date) -lt $deadline -and (Test-Path (Join-Path $target 'nesva.exe'))) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path (Join-Path $target 'nesva.exe')) {
+            throw "the uninstaller left nesva.exe behind"
+          }
+          if (Test-Path (Join-Path $target 'Uninstall.exe')) {
+            throw "the uninstaller left itself behind"
+          }
 
       - name: Smoke-test the package
         shell: pwsh
@@ -191,7 +239,7 @@ jobs:
       - name: Checksums
         shell: pwsh
         run: |
-          $lines = Get-ChildItem 'build/windows-msvc-release/nesva-*-windows-x86_64.zip' | ForEach-Object {
+          $lines = Get-ChildItem 'build/windows-msvc-release/nesva-*-windows-x86_64.zip','build/windows-msvc-release/nesva-*-windows-x86_64-setup.exe' | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }
@@ -203,6 +251,7 @@ jobs:
           name: nesva-windows-x86_64
           path: |
             build/windows-msvc-release/nesva-*-windows-x86_64.zip
+            build/windows-msvc-release/nesva-*-windows-x86_64-setup.exe
             build/windows-msvc-release/SHA256SUMS-windows.txt
 
   publish:
@@ -222,7 +271,7 @@ jobs:
       - name: Collect assets
         run: |
           find assets -type f \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \
-            -o -name 'SHA256SUMS-*.txt' \) -exec cp {} . \;
+            -o -name '*-setup.exe' -o -name 'SHA256SUMS-*.txt' \) -exec cp {} . \;
           ls -l
 
       - name: Create or update the release
@@ -237,8 +286,8 @@ jobs:
           # The notes live in CHANGELOG.md; the release body points at them rather
           # than inventing a second summary that drifts.
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" --clobber ./*.deb ./*.tar.gz ./*.zip ./SHA256SUMS-*.txt
+            gh release upload "$tag" --clobber ./*.deb ./*.tar.gz ./*.zip ./*-setup.exe ./SHA256SUMS-*.txt
           else
             gh release create "$tag" --title "Nesva $tag" --generate-notes \
-              ./*.deb ./*.tar.gz ./*.zip ./SHA256SUMS-*.txt
+              ./*.deb ./*.tar.gz ./*.zip ./*-setup.exe ./SHA256SUMS-*.txt
           fi

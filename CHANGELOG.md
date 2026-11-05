@@ -8,6 +8,23 @@ All notable changes to Nesva are documented here. The format follows
 
 Nothing yet.
 
+## [0.6.1] - 2026-11-05
+
+### Added (Windows installer)
+
+- **A real Windows installer**, `nesva-<version>-windows-x86_64-setup.exe`
+  (`packaging/windows/nesva.nsi`). It installs into
+  `%LOCALAPPDATA%\Programs\Nesva`, adds Start-menu and optional desktop shortcuts,
+  registers an uninstaller in *Apps & features*, and **never asks for elevation** -
+  Nesva is a per-user application, so an all-users install would only put the
+  binaries where the user cannot write. The uninstaller removes the binaries, the
+  deployed Qt runtime, the shortcuts and the logon autostart value, and
+  deliberately leaves your profile database and archives alone.
+- The Release workflow builds the installer from the same staged directory as the
+  portable zip and smoke-tests it before publishing: unattended install into a
+  temporary directory, run the installed `nesva-cli` and the GUI self-test from
+  there, then unattended uninstall and a check that nothing was left behind.
+
 ## [0.6.0] - 2026-11-04
 
 First tagged release: Linux and Windows packages built and published by CI.
