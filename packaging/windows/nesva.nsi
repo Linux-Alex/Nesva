@@ -33,10 +33,11 @@ Unicode true
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nesva"
 
 ; The setup executable, the installer pages and the uninstaller use the Nesva
-; icon. The default resolves relative to this script so a local makensis run
-; needs no extra switch; the Release workflow can still override it with /DICON.
+; icon. NSIS resolves a relative MUI_ICON against the script's own directory, so
+; this default works from any working directory; the Release workflow can still
+; override it with /DICON.
 !ifndef ICON
-  !define ICON "${__FILEDIR__}\..\..\assets\icons\nesva.ico"
+  !define ICON "..\..\assets\icons\nesva.ico"
 !endif
 !define MUI_ICON "${ICON}"
 !define MUI_UNICON "${ICON}"
