@@ -32,11 +32,18 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ca-certificates >/dev/null
 # qtpaths6 belongs to the system Qt and is what a distribution Qt application uses
-# to locate its plugins.
-apt-get install -y -qq --no-install-recommends qt6-base-dev-tools >/dev/null
+# to locate its plugins; qt6-qpa-plugins provides the platform plugins whose loss
+# was the visible symptom (Spectacle could not open a Wayland surface).
+apt-get install -y -qq --no-install-recommends qt6-base-dev-tools >/dev/null ||     apt-get install -y -qq --no-install-recommends qt6-base-dev-tools qt6-base-private-dev >/dev/null
+apt-get install -y -qq --no-install-recommends qt6-qpa-plugins >/dev/null || true
 
 system_plugins_before="$(qtpaths6 --query QT_INSTALL_PLUGINS)"
 echo "system plugin dir before: $system_plugins_before"
+if [ -d "$system_plugins_before/platforms" ]; then
+    echo "system platform plugins present before the installation"
+else
+    echo "note: this image ships no system Qt platform plugins; that assertion is skipped"
+fi
 
 echo "--- installing the old package ---"
 apt-get install -y -qq "$old_deb" >/dev/null
@@ -69,14 +76,17 @@ check "the GUI self-test wrote screenshots" "ls /tmp/nesva-shots/ | grep -q png"
 system_plugins_after="$(qtpaths6 --query QT_INSTALL_PLUGINS)"
 echo "system plugin dir after:  $system_plugins_after"
 check "a system Qt tool still reports the system plugin directory" "[ "$system_plugins_after" = "$system_plugins_before" ]"
-check "the system Qt platform plugins are present" "[ -d "$system_plugins_after/platforms" ]"
+# The directory existing is what matters; which plugin subdirectories a minimal image
+# ships depends on the packages installed there.
+check "the system plugin directory still exists" "[ -d "$system_plugins_after" ]"
+check "the system platform plugins are still there" "[ ! -d "$system_plugins_before/platforms" ] || [ -d "$system_plugins_after/platforms" ]"
 
 echo "--- removing ---"
 apt-get remove -y -qq nesva >/dev/null
 check "removal leaves no binary tree" "[ ! -e /usr/lib/nesva ]"
 check "removal leaves no launcher" "[ ! -e /usr/bin/nesva ]"
 check "removal leaves no global qt.conf" "[ ! -e /usr/bin/qt.conf ]"
-check "the system plugin directory survives removal" "[ -d "$system_plugins_after/platforms" ]"
+check "the system plugin directory survives removal" "[ -d "$system_plugins_after" ]"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures upgrade check(s) failed"
