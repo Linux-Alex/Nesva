@@ -59,5 +59,19 @@ set_tests_properties(tst_agent_integration PROPERTIES
 nesva_add_unit_test(tst_gui_smoke unit/tst_gui_smoke.cpp)
 target_link_libraries(tst_gui_smoke PRIVATE nesva_ui)
 
+# A line-based stand-in for "rclone config" so the wizard's process lifecycle
+# can be tested without installing rclone or touching the user's remotes.
+add_executable(nesva_fake_rclone support/fake_rclone.cpp)
+set_target_properties(nesva_fake_rclone PROPERTIES OUTPUT_NAME "nesva-fake-rclone")
+nesva_set_target_warnings(nesva_fake_rclone)
+
+nesva_add_unit_test(tst_rclone_dialog unit/tst_rclone_dialog.cpp)
+target_link_libraries(tst_rclone_dialog PRIVATE nesva_ui)
+add_dependencies(tst_rclone_dialog nesva_fake_rclone)
+set_tests_properties(tst_rclone_dialog PROPERTIES
+  ENVIRONMENT "QT_QPA_PLATFORM=offscreen;NESVA_FAKE_RCLONE=$<TARGET_FILE:nesva_fake_rclone>"
+  TIMEOUT 60
+)
+
 # Future integration tests live in tests/integration and are added here as the
 # corresponding features land (local archive, restore, cancellation, ...).

@@ -32,6 +32,15 @@ Unicode true
 !define APP_URL "https://github.com/Linux-Alex/Nesva"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nesva"
 
+; The setup executable, the installer pages and the uninstaller use the Nesva
+; icon. The default resolves relative to this script so a local makensis run
+; needs no extra switch; the Release workflow can still override it with /DICON.
+!ifndef ICON
+  !define ICON "${__FILEDIR__}\..\..\assets\icons\nesva.ico"
+!endif
+!define MUI_ICON "${ICON}"
+!define MUI_UNICON "${ICON}"
+
 Name "${APP_NAME} ${VERSION}"
 OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\Nesva"

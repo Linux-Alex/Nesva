@@ -6,7 +6,21 @@ All notable changes to Nesva are documented here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed (Windows)
+
+- **Closing the rclone wizard no longer freezes the application.** The title-bar close button
+  (and Escape) rejected the dialog without touching the `rclone config` child process, so the
+  dialog destructor killed the process only after its transcript widgets were gone; rclone's
+  output signals then wrote into freed widgets and the application stopped responding. The
+  dialog now stops and reaps the process in `done()` and in its destructor, with the process
+  signals disconnected first, and the wizard's **Close** button simply rejects. A regression
+  test opens the real dialog against a line-based `rclone config` stand-in and against a real
+  rclone installation and asserts that closing it returns promptly.
+- **The Windows executable carries the Nesva icon and version information.** There was no
+  resource file in the build, so Explorer, shortcuts, the taskbar and the installer showed the
+  generic executable icon even though the window icon was drawn at runtime. The new
+  `packaging/windows/nesva.rc.in` embeds `assets/icons/nesva.ico` and a `VERSIONINFO` block in
+  `nesva.exe`.
 
 ## [0.6.1] - 2026-11-05
 

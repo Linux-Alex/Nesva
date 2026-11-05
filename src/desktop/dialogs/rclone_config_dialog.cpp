@@ -247,14 +247,9 @@ RcloneConfigDialog::RcloneConfigDialog(AppContext& context, const QString& remot
         transcript_->clear();
         startSession();
     });
-    connect(closeButton_, &QPushButton::clicked, this, [this] {
-        closing_ = true;
-        if (process_ != nullptr) {
-            process_->kill();
-            process_->waitForFinished(2000);
-        }
-        reject();
-    });
+    // done() stops the rclone session, whether the dialog was closed with this
+    // button, the title-bar X, Escape or by the application shutting down.
+    connect(closeButton_, &QPushButton::clicked, this, [this] { reject(); });
 
     // Default to the profile whose remote name matches what the caller asked
     // for ("icloud", "gdrive", "pcloud", "b2", ...).
@@ -268,6 +263,32 @@ RcloneConfigDialog::RcloneConfigDialog(AppContext& context, const QString& remot
     applyProfile(providerCombo_->currentIndex());
 
     startSession();
+}
+
+RcloneConfigDialog::~RcloneConfigDialog() {
+    stopSession();
+}
+
+void RcloneConfigDialog::done(int result) {
+    stopSession();
+    QDialog::done(result);
+}
+
+void RcloneConfigDialog::stopSession() {
+    closing_ = true;
+    if (process_ == nullptr) {
+        return;
+    }
+    QProcess* process = process_;
+    process_ = nullptr;
+    // Nothing may be delivered to a dialog that is closing: readOutput() and
+    // finishSession() write to widgets that are about to be destroyed. Without
+    // this, closing the wizard while rclone was at its first prompt crashed in
+    // the QProcess destructor (or left the application unresponsive).
+    process->disconnect(this);
+    process->kill();
+    process->waitForFinished(2000);
+    delete process;
 }
 
 const RcloneProviderProfile* RcloneConfigDialog::profile() const {
@@ -329,7 +350,7 @@ void RcloneConfigDialog::startSession() {
 }
 
 void RcloneConfigDialog::readOutput() {
-    if (process_ == nullptr) {
+    if (process_ == nullptr || closing_) {
         return;
     }
     const QString chunk = stripAnsi(QString::fromLocal8Bit(process_->readAll()));
@@ -394,7 +415,7 @@ void RcloneConfigDialog::offerChoices() {
 }
 
 void RcloneConfigDialog::sendLine(const QString& text) {
-    if (process_ == nullptr) {
+    if (process_ == nullptr || closing_) {
         return;
     }
     process_->write(text.toUtf8() + '\n');
@@ -406,6 +427,10 @@ void RcloneConfigDialog::sendLine(const QString& text) {
 }
 
 void RcloneConfigDialog::finishSession(int exitCode, bool crashed) {
+    if (closing_) {
+        // The dialog is going away; the transcript must not be touched.
+        return;
+    }
     if (process_ != nullptr) {
         process_->deleteLater();
         process_ = nullptr;
@@ -414,10 +439,6 @@ void RcloneConfigDialog::finishSession(int exitCode, bool crashed) {
     sendButton_->setEnabled(false);
     restartButton_->setEnabled(true);
     choiceBar_->setVisible(false);
-
-    if (closing_) {
-        return;
-    }
     if (crashed || exitCode != 0) {
         statusLabel_->setText(
             QStringLiteral("rclone config ended without saving (exit code %1). Nothing was "

@@ -52,6 +52,15 @@ nesva.exe --gui-selftest=%TEMP%\nesva-shots
 `doctor` reports the user context (and warns when the process runs as a service account), the data
 directory, free space and both external tools.
 
+## Icon and version metadata
+
+`assets/icons/nesva.ico` is the Windows icon (16-256 px) drawn from the same design as
+`assets/icons/nesva.svg`. `packaging/windows/nesva.rc.in` embeds it in `nesva.exe` together with
+a `VERSIONINFO` block, so Explorer, shortcuts and the taskbar show the Nesva icon and File
+Properties shows the real version; `QApplication::setWindowIcon()` alone only affects the
+windows at runtime. CMake configures the template into the build tree so the icon path is
+absolute.
+
 ## Packaging
 
 Each release publishes two artefacts, both built from the same staged directory (the three

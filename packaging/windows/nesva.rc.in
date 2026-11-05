@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 The Nesva Authors
+
+// Windows resources for nesva.exe. CMake configures this template into the
+// build tree so the ICON path is absolute; the icon itself lives in
+// assets/icons/nesva.ico and is generated from assets/icons/nesva.svg.
+//
+// The icon in this resource is what Explorer, the taskbar, shortcuts and the
+// NSIS installer show. QApplication::setWindowIcon() only sets the icon of the
+// windows at runtime, so a build without this file has a generic executable.
+
+#define NESVA_ICON_ID 101
+
+NESVA_ICON_ID ICON "@NESVA_ICON_PATH@"
+
+1 VERSIONINFO
+ FILEVERSION @NESVA_VERSION_COMMA@
+ PRODUCTVERSION @NESVA_VERSION_COMMA@
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "The Nesva Authors\0"
+      VALUE "FileDescription", "Nesva backup and archival application\0"
+      VALUE "FileVersion", "@PROJECT_VERSION@\0"
+      VALUE "InternalName", "nesva\0"
+      VALUE "LegalCopyright", "Copyright 2025 The Nesva Authors\0"
+      VALUE "OriginalFilename", "nesva.exe\0"
+      VALUE "ProductName", "Nesva\0"
+      VALUE "ProductVersion", "@PROJECT_VERSION@\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

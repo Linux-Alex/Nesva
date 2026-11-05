@@ -55,6 +55,12 @@ endif()
 
 nesva_configure_version_header()
 
+# The RC language compiles the Windows icon/version resource below. It is only
+# needed on Windows, where CMake does not enable it through LANGUAGES CXX.
+if(WIN32)
+  enable_language(RC)
+endif()
+
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
@@ -213,7 +219,20 @@ target_link_libraries(nesva_ui PUBLIC Nesva::Core Qt6::Widgets Qt6::Gui Qt6::Con
 
 nesva_set_target_warnings(nesva_ui)
 
-qt_add_executable(nesva src/desktop/main.cpp)
+# The application icon is a Windows resource: QApplication::setWindowIcon()
+# only affects the windows at runtime, while Explorer, shortcuts, the taskbar
+# and the NSIS installer read the icon embedded in the executable. The same
+# resource carries the version information shown in File Properties.
+if(WIN32)
+  set(NESVA_ICON_PATH "${PROJECT_SOURCE_DIR}/assets/icons/nesva.ico")
+  set(NESVA_VERSION_COMMA
+      "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0")
+  set(NESVA_WINDOWS_RC "${CMAKE_CURRENT_BINARY_DIR}/nesva.rc")
+  configure_file(packaging/windows/nesva.rc.in "${NESVA_WINDOWS_RC}" @ONLY)
+  qt_add_executable(nesva src/desktop/main.cpp "${NESVA_WINDOWS_RC}")
+else()
+  qt_add_executable(nesva src/desktop/main.cpp)
+endif()
 
 target_link_libraries(nesva PRIVATE nesva_ui)
 

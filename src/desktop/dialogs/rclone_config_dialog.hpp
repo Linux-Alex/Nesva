@@ -46,12 +46,18 @@ class RcloneConfigDialog : public QDialog {
 public:
     explicit RcloneConfigDialog(AppContext& context, const QString& remoteName,
                                 QWidget* parent = nullptr);
+    ~RcloneConfigDialog() override;
 
     /// True when rclone finished successfully, i.e. the remote was written.
     bool configured() const { return configured_; }
 
+protected:
+    /// Stops the rclone session before the dialog closes or is destroyed.
+    void done(int result) override;
+
 private:
     void startSession();
+    void stopSession();
     void readOutput();
     void sendLine(const QString& text);
     void offerChoices();
