@@ -69,26 +69,40 @@ jobs:
       - name: Smoke-test the tarball
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/tar-check"
-          tar -C "$RUNNER_TEMP/tar-check" -xzf build/linux-release/nesva-*.tar.gz --strip-components=1
+          root="$RUNNER_TEMP/tar-check"
+          mkdir -p "$root"
+          tar -C "$root" -xzf build/linux-release/nesva-*.tar.gz --strip-components=1
+          # The tree is private: bin/ holds symlinks into lib/nesva/bin, so the
+          # checks look at the real executables.
+          test -L "$root/bin/nesva"
+          private="$root/lib/nesva/bin"
           # Prove the package carries its own Qt: the binaries must resolve Qt from
           # lib/nesva, not from whatever Qt the runner happens to have. The runner
           # exports LD_LIBRARY_PATH pointing at its own Qt, which a bundled package
           # has to ignore.
-          env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP/tar-check/bin/nesva" \
-            | grep -q "lib/nesva/libQt6Core.so.6"
-          # Nothing may be unresolved: an earlier build shipped a Qt that needed a
-          # libicu the distribution does not have, and only failed at startup.
-          if env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP"/tar-check/bin/* \
-               | grep -q "not found"; then
-            echo "unresolved shared libraries:" >&2
-            env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP"/tar-check/bin/* | grep "not found" >&2
+          # ldd prints the path it used, which keeps the "bin/../lib" of the rpath, so
+          # the assertion is "Qt resolves, and not from a system directory".
+          qt_line="$( cd "$private" && env -u LD_LIBRARY_PATH ldd nesva | grep Qt6Core )"
+          echo "$qt_line"
+          echo "$qt_line" | grep -q "libQt6Core.so.6"
+          if echo "$qt_line" | grep -q "linux-gnu"; then
+            echo "Qt was resolved from the system, not from the package" >&2
             exit 1
           fi
-          "${RUNNER_TEMP}/tar-check/bin/nesva-cli" --version
-          QT_QPA_PLATFORM=offscreen "$RUNNER_TEMP/tar-check/bin/nesva" \
-            --data-dir="$RUNNER_TEMP/tar-check/data" \
-            --gui-selftest="$RUNNER_TEMP/tar-check/shots" --no-console-log
+          # Nothing may be unresolved: an earlier build shipped a Qt that needed a
+          # libicu the distribution does not have, and only failed at startup.
+          if ( cd "$private" && env -u LD_LIBRARY_PATH ldd nesva nesva-cli nesva-agent ) \
+               | grep -q "not found"; then
+            echo "unresolved shared libraries:" >&2
+            ( cd "$private" && env -u LD_LIBRARY_PATH ldd nesva nesva-cli nesva-agent ) \
+              | grep "not found" >&2
+            exit 1
+          fi
+          "$root/bin/nesva-cli" --version
+          QT_QPA_PLATFORM=offscreen "$root/bin/nesva" \
+            --data-dir="$root/data" --gui-selftest="$root/shots" --no-console-log
+          test -f "$private/qt.conf"
+          test -f "$root/share/applications/nesva.desktop"
 
       - name: Check the package does not leak Qt into the system
         # Fails the release when a qt.conf, a plugin directory, a library or an
