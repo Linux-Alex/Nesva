@@ -38,6 +38,8 @@ public:
 signals:
     /// Emitted by the running instance when another process asks it to show.
     void showRequested();
+    /// Emitted when another process asks the window to quit (before an update).
+    void quitRequested();
 
 private:
     QLocalServer* server_ = nullptr;

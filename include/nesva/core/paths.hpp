@@ -40,6 +40,13 @@ public:
     static void setDataRootOverride(const QString& path);
     static QString dataRootOverride();
 
+    /// Name of the local socket the desktop window listens on.
+    ///
+    /// Derived from the data root, so one window per profile: a second launch
+    /// talks to the running one, and the CLI can ask it to quit before an update
+    /// replaces its executables.
+    static QString desktopSocketName();
+
     /// Human-readable description of the resolution order, used by
     /// "nesva-cli doctor".
     static QString describeResolution();

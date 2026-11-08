@@ -9,6 +9,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 
 namespace nesva::ui {
 
@@ -34,6 +35,10 @@ private:
     void saveMailSettings();
     void refreshToolsStatus();
     void buildAgentSection();
+    void buildUpdateSection();
+    void refreshUpdateStatus();
+    void checkForUpdatesNow();
+    void installUpdate(const QString& version);
     void refreshAgentStatus();
     void buildLocationsSection();
     void showSaved();
@@ -46,6 +51,10 @@ private:
     QCheckBox* startAtLoginCheck_ = nullptr;
     QCheckBox* minimizeToTrayCheck_ = nullptr;
     QCheckBox* notificationsCheck_ = nullptr;
+    QCheckBox* updateCheckOnStart_ = nullptr;
+    QCheckBox* updateWeeklyCheck_ = nullptr;
+    QLabel* updateStatusValue_ = nullptr;
+    QPushButton* updateInstallButton_ = nullptr;
     QLabel* agentStatusValue_ = nullptr;
     QLabel* agentAutostartValue_ = nullptr;
     QLabel* toolsStatusValue_ = nullptr;

@@ -23,6 +23,12 @@ Current release: [v0.6.4](https://github.com/Linux-Alex/Nesva/releases/latest)
 | Linux x86_64 | `nesva_<version>_amd64.deb` | `sudo apt install ./nesva_<version>_amd64.deb`; recommends `rclone` and `restic` |
 | Linux x86_64 | `nesva-<version>-linux-x86_64.tar.gz` | Portable tree with Qt bundled: unpack, run `nesva-<version>-linux-x86_64/bin/nesva` (everything Nesva owns lives under `lib/nesva`) |
 
+**Updates:** Nesva checks for a newer release when it starts (tray notification) and installs the
+newest one automatically every Sunday at 18:00 Europe/Ljubljana — the background agent downloads it,
+verifies the SHA-256, stops itself and runs the installer silently, with the window closed or open.
+Manual control: **Settings -> Updates -> Check now / Install update**, or
+`nesva-cli update` and `nesva-cli update --install`.
+
 Each release also publishes a `SHA256SUMS` file per platform. Rclone and Restic are not bundled:
 Nesva installs them from inside the application (**Settings -> External tools**), showing every
 step and verifying the published SHA-256 before anything runs.

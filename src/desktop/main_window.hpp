@@ -63,6 +63,9 @@ private:
     void buildUi();
     void createPages();
     void updateAgentIndicator();
+    /// Reads the release service once per start (rate-limited) and notifies when a
+    /// newer version is published. Enabled by default; see Settings -> Updates.
+    void checkForUpdatesOnStart();
     void notify(const QString& title, const QString& message);
     bool notificationsEnabled() const;
     bool minimizeToTrayEnabled() const;

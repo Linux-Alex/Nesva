@@ -3,6 +3,7 @@
 
 #include "nesva/core/paths.hpp"
 
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QStandardPaths>
 
@@ -78,6 +79,15 @@ Status Paths::ensureBaseDirectories() {
         }
     }
     return Status();
+}
+
+QString Paths::desktopSocketName() {
+    // Same derivation the desktop used before it moved into core: one window per
+    // data root, and the CLI can compute the same name without linking the UI.
+    const QByteArray root = QDir::cleanPath(dataRoot()).toUtf8();
+    const QByteArray digest =
+        QCryptographicHash::hash(root, QCryptographicHash::Sha1).toHex().left(16);
+    return QStringLiteral("nesva-ui-") + QString::fromLatin1(digest);
 }
 
 QString Paths::describeResolution() {

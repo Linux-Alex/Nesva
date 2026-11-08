@@ -64,6 +64,10 @@ public:
     /// Starts the event-independent part: evaluates schedules once.
     void tick();
 
+    /// Starts the weekly update when Sunday 18:00 Europe/Ljubljana has passed since
+    /// the last attempt, then stops this service so the installer can replace it.
+    void startWeeklyUpdateIfDue();
+
     /// Requests a graceful stop; the service finishes the current file, updates
     /// the schedule state and then emits stopped().
     void requestStop();

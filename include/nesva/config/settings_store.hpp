@@ -67,6 +67,16 @@ inline constexpr const char* kMailTenantId = "mail.tenant_id";
 inline constexpr const char* kMailClientId = "mail.client_id";
 /// Default directory for archived .eml files.
 inline constexpr const char* kMailDestination = "mail.destination";
+/// Check the published release when the window starts (default: on).
+inline constexpr const char* kUpdateCheckOnStart = "update.check_on_start";
+/// Install the weekly update unattended (default: on, Sunday 18:00 local).
+inline constexpr const char* kUpdateWeeklyAutoUpdate = "update.weekly_auto_update";
+/// ISO-8601 UTC timestamp of the last release check.
+inline constexpr const char* kUpdateLastCheckUtc = "update.last_check_utc";
+/// ISO-8601 UTC timestamp of the last update attempt.
+inline constexpr const char* kUpdateLastInstallUtc = "update.last_install_utc";
+/// Version the last check found available; empty when the installation is current.
+inline constexpr const char* kUpdateAvailableVersion = "update.available_version";
 } // namespace keys
 
 } // namespace nesva::config

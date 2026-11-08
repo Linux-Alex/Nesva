@@ -198,6 +198,15 @@ int main(int argc, char** argv) {
                                 QStringLiteral("another instance asked for the window"));
             window.showFromTray();
         });
+    QObject::connect(
+        &singleInstance, &nesva::ui::SingleInstance::quitRequested, &window,
+        [&context] {
+            // "nesva-cli update --install" asks the window to step aside before the
+            // installer replaces the executables it is running from.
+            context.recordEvent(nesva::LogLevel::Info, QStringLiteral("application"),
+                                QStringLiteral("quitting for an update"));
+            QCoreApplication::quit();
+        });
 
     if (options.selfTest) {
         QString directory = options.selfTestDirectory;

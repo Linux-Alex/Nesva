@@ -44,6 +44,10 @@
 #include "nesva/jobs/job_store.hpp"
 #include "nesva/jobs/mail_job_runner.hpp"
 #include <QtCore/QProcess>
+#include <QtCore/QThread>
+#include <QtNetwork/QLocalSocket>
+
+#include "nesva/core/updater.hpp"
 #include "nesva/scheduler/schedule.hpp"
 #include "nesva/providers/provider_factory.hpp"
 #include "nesva/tools/tool_installer.hpp"
@@ -235,6 +239,50 @@ int exitCodeFor(const ErrorCode code) {
 // Shared context
 // ---------------------------------------------------------------------------
 
+/// Asks a running desktop window to quit so its executables can be replaced.
+///
+/// The window answers on its single-instance socket and then exits; this waits
+/// for the socket to disappear so the installer does not race a file that is
+/// still open.
+void quitRunningWindow() {
+    QLocalSocket socket;
+    socket.connectToServer(Paths::desktopSocketName());
+    if (!socket.waitForConnected(800)) {
+        return;  // no window running
+    }
+    socket.write("quit\n");
+    socket.flush();
+    socket.waitForBytesWritten(800);
+    socket.disconnectFromServer();
+
+    // Give the window time to close its window, database and lock. A timeout is
+    // not fatal: the installer reports a locked file if it is.
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        QLocalSocket probe;
+        probe.connectToServer(Paths::desktopSocketName());
+        if (!probe.waitForConnected(150)) {
+            return;
+        }
+        probe.disconnectFromServer();
+        QThread::msleep(250);
+    }
+}
+
+/// Stops the background agent gracefully and waits for it to release the
+/// executables it is running from.
+void stopRunningAgent() {
+    agent::AgentClient client;
+    if (!client.isReachable(500)) {
+        return;
+    }
+    client.shutdown();
+    for (int attempt = 0; attempt < 120; ++attempt) {
+        if (!agent::AgentClient().isReachable(300)) {
+            return;
+        }
+        QThread::msleep(250);
+    }
+}
 struct Context {
     db::Database database;
     QString logFile;
@@ -527,6 +575,95 @@ int commandMaintenance(Context& context, const Options& options) {
     return output.flush(stdout, kExitSuccess);
 }
 
+int commandUpdate(Context& context, const Options& options) {
+    Output output(options.json);
+    config::SettingsStore settings(context.database);
+    const bool install = options.flags.contains(QStringLiteral("install"));
+    const bool dryRun = options.flags.contains(QStringLiteral("dry-run"));
+    const bool force = options.flags.contains(QStringLiteral("force"));
+    const QString currentVersion = ApplicationInfo::version();
+
+    net::QNetworkHttpTransport transport;
+    const Result<update::UpdateCheck> check =
+        update::checkForUpdate(transport, currentVersion);
+    if (!check) {
+        return output.flushError(check.error(), kExitFailure);
+    }
+    settings.setString(QString::fromUtf8(config::keys::kUpdateLastCheckUtc),
+                       QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+    const update::UpdateCheck& result = check.value();
+    output.add(QStringLiteral("current_version"), currentVersion);
+    output.add(QStringLiteral("latest_version"), result.release.version);
+    output.add(QStringLiteral("update_available"), result.newer);
+    output.add(QStringLiteral("release_url"), result.release.notesUrl.toString());
+
+    if (!result.newer) {
+        output.line(QStringLiteral("Nesva %1 is up to date (latest published: %2).")
+                        .arg(currentVersion,
+                             result.release.version.isEmpty() ? QStringLiteral("unknown")
+                                                              : result.release.version));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    output.line(QStringLiteral("Nesva %1 is available; this installation runs %2.")
+                    .arg(result.release.version, currentVersion));
+    if (!result.release.notesUrl.isEmpty()) {
+        output.line(QStringLiteral("Release notes: %1").arg(result.release.notesUrl.toString()));
+    }
+
+    if (!install) {
+        output.line(QStringLiteral("Run '%1' to install it.")
+                        .arg(QStringLiteral("nesva-cli update --install")));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    const auto progress = [quiet = options.quiet](const QString& text) {
+        if (quiet) {
+            return;
+        }
+        std::fprintf(stderr, "  %s\n", qPrintable(text));
+        std::fflush(stderr);
+    };
+
+    const QString directory = QDir(Paths::cacheDirectory()).filePath(QStringLiteral("updates"));
+    const Result<QString> download =
+        update::downloadInstaller(transport, result.release, directory, progress);
+    if (!download) {
+        return output.flushError(download.error(), kExitFailure);
+    }
+    output.add(QStringLiteral("installer"), download.value());
+
+    if (dryRun) {
+        output.line(QStringLiteral("Dry run: %1 was downloaded and verified, nothing installed.")
+                        .arg(QFileInfo(download.value()).fileName()));
+        return output.flush(stdout, kExitSuccess);
+    }
+
+    // Everything that holds the executables open has to step aside first: the
+    // window (single-instance socket) and the background agent.
+    progress(QStringLiteral("Closing the Nesva window"));
+    quitRunningWindow();
+    progress(QStringLiteral("Stopping the background agent"));
+    stopRunningAgent();
+
+    settings.setString(QString::fromUtf8(config::keys::kUpdateLastInstallUtc),
+                       QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+    progress(QStringLiteral("Installing Nesva %1").arg(result.release.version));
+    const Status installed = update::runInstaller(download.value());
+    if (!installed) {
+        return output.flushError(installed.error(), kExitFailure);
+    }
+
+    output.add(QStringLiteral("installed"), result.release.version);
+    output.line(QStringLiteral("Nesva %1 is installed. Start it again to use it.")
+                    .arg(result.release.version));
+    logInfo("update.install", QStringLiteral("update installed"),
+            QJsonObject{{QStringLiteral("version"), result.release.version},
+                        {QStringLiteral("forced"), force}});
+    return output.flush(stdout, kExitSuccess);
+}
 int commandTools(Context& context, const Options& options) {
     Output output(options.json);
     config::SettingsStore settings(context.database);
@@ -3030,6 +3167,9 @@ int run(int argc, char** argv) {
     }
     if (command == QStringLiteral("tools")) {
         return commandTools(context, options);
+    }
+    if (command == QStringLiteral("update")) {
+        return commandUpdate(context, options);
     }
     if (command == QStringLiteral("rclone")) {
         return commandRclone(context, options);

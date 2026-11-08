@@ -25,10 +25,9 @@ SingleInstance::~SingleInstance() {
 }
 
 QString SingleInstance::socketName() const {
-    const QByteArray root = QDir::cleanPath(nesva::Paths::dataRoot()).toUtf8();
-    const QByteArray digest =
-        QCryptographicHash::hash(root, QCryptographicHash::Sha1).toHex().left(16);
-    return QStringLiteral("nesva-ui-") + QString::fromLatin1(digest);
+    // Shared with the CLI, which asks the window to quit before an update replaces
+    // the executables.
+    return nesva::Paths::desktopSocketName();
 }
 
 bool SingleInstance::notifyExistingInstance() {
@@ -80,8 +79,16 @@ bool SingleInstance::listen() {
             connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
             auto readRequest = [this, socket] {
                 while (socket->canReadLine()) {
-                    if (socket->readLine().trimmed() == QByteArrayLiteral("show")) {
+                    const QByteArray request = socket->readLine().trimmed();
+                    if (request == QByteArrayLiteral("show")) {
                         emit showRequested();
+                        socket->write("ok\n");
+                        socket->flush();
+                    } else if (request == QByteArrayLiteral("quit")) {
+                        // Sent by "nesva-cli update --install": the installers
+                        // replace the running executables and cannot do that while
+                        // this process holds them open.
+                        emit quitRequested();
                         socket->write("ok\n");
                         socket->flush();
                     }

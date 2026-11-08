@@ -5,6 +5,14 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
+#include <QtCore/QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
+
+#include "nesva/config/settings_store.hpp"
+#include "nesva/core/app_info.hpp"
+#include "nesva/core/http.hpp"
+#include "nesva/core/updater.hpp"
 #include <QtGui/QCloseEvent>
 #include <QtGui/QShortcut>
 #include <QtGui/QActionGroup>
@@ -73,6 +81,7 @@ MainWindow::MainWindow(AppContext& context, QWidget* parent)
     buildStatusBar();
     buildTray();
     restoreWindowState();
+    checkForUpdatesOnStart();
 
     refreshAll();
 
@@ -403,6 +412,56 @@ void MainWindow::notify(const QString& title, const QString& message) {
         return;
     }
     trayIcon_->showMessage(title, message, QSystemTrayIcon::Information, 6000);
+}
+
+void MainWindow::checkForUpdatesOnStart() {
+    config::SettingsStore settings(context_.database());
+    const bool enabled =
+        settings.getBoolean(QString::fromUtf8(config::keys::kUpdateCheckOnStart), true)
+            .valueOr(true);
+    if (!enabled) {
+        return;
+    }
+
+    // At most one automatic check every six hours, so restarting Nesva does not
+    // hammer the release service (which rate-limits anonymous clients).
+    const QString lastCheck =
+        settings.getString(QString::fromUtf8(config::keys::kUpdateLastCheckUtc), QString())
+            .valueOr(QString());
+    const QDateTime lastCheckUtc = QDateTime::fromString(lastCheck, Qt::ISODate);
+    if (lastCheckUtc.isValid() &&
+        lastCheckUtc.secsTo(QDateTime::currentDateTimeUtc()) < 6 * 3600) {
+        return;
+    }
+
+    const QString currentVersion = ApplicationInfo::version();
+    auto* watcher = new QFutureWatcher<Result<update::UpdateCheck>>(this);
+    connect(watcher, &QFutureWatcher<Result<update::UpdateCheck>>::finished, this,
+            [this, watcher, currentVersion] {
+                const Result<update::UpdateCheck> result = watcher->result();
+                watcher->deleteLater();
+                config::SettingsStore store(context_.database());
+                store.setString(QString::fromUtf8(config::keys::kUpdateLastCheckUtc),
+                                QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+                if (!result) {
+                    return;  // an offline start is not an error worth reporting
+                }
+                const update::UpdateCheck& check = result.value();
+                if (!check.newer) {
+                    return;
+                }
+                store.setString(QString::fromUtf8(config::keys::kUpdateAvailableVersion),
+                                check.release.version);
+                notify(QStringLiteral("Nesva %1 is available").arg(check.release.version),
+                       QStringLiteral("This installation runs %1. Open Settings -> Updates to "
+                                      "install it, or let the weekly update do it on Sunday at "
+                                      "18:00.")
+                           .arg(currentVersion));
+            });
+    watcher->setFuture(QtConcurrent::run([currentVersion]() -> Result<update::UpdateCheck> {
+        net::QNetworkHttpTransport transport;
+        return update::checkForUpdate(transport, currentVersion);
+    }));
 }
 
 void MainWindow::updateAgentIndicator() {

@@ -107,6 +107,7 @@ private slots:
     void mainWindowExposesEveryPage();
     void settingsPageOffersTheRcloneInstaller();
     void settingsPageOffersTrayAutostart();
+    void settingsPageDefaultsUpdatesToOn();
     void singleInstanceActivatesTheFirstInstance();
     void mailPageShowsAccountsAndFolderCounts();
     void dashboardCardsStackWhenNarrow();
@@ -553,6 +554,39 @@ void GuiSmokeTest::settingsPageOffersTrayAutostart() {
     QVERIFY2(installAgentAutostart, "the agent autostart button must name the agent");
 }
 
+void GuiSmokeTest::settingsPageDefaultsUpdatesToOn() {
+    // The user asked for both behaviours by default: a check on start and the
+    // forced weekly install. A regression that shipped them off would only show up
+    // as "updates never arrive", so the defaults are asserted here.
+    MainWindow window(*context_);
+    int settingsIndex = -1;
+    for (int index = 0; index < window.pageCount(); ++index) {
+        if (window.pageTitleAt(index) == QStringLiteral("Settings")) {
+            settingsIndex = index;
+            break;
+        }
+    }
+    QVERIFY(settingsIndex >= 0);
+    window.selectPage(settingsIndex);
+    QCoreApplication::processEvents();
+
+    Page* page = window.pageAt(settingsIndex);
+    QVERIFY(page != nullptr);
+    auto* checkOnStart = page->findChild<QCheckBox*>(QStringLiteral("updateCheckOnStart"));
+    auto* weekly = page->findChild<QCheckBox*>(QStringLiteral("updateWeekly"));
+    QVERIFY2(checkOnStart != nullptr, "the Updates card must offer the start check");
+    QVERIFY2(weekly != nullptr, "the Updates card must offer the weekly install");
+    QVERIFY(checkOnStart->isChecked());
+    QVERIFY(weekly->isChecked());
+
+    // Toggling must persist, or the settings would reset on the next launch.
+    weekly->setChecked(false);
+    QCoreApplication::processEvents();
+    const Result<bool> stored = context_->settings().getBoolean(
+        QString::fromUtf8(config::keys::kUpdateWeeklyAutoUpdate), true);
+    QVERIFY(stored);
+    QVERIFY(!stored.value());
+}
 void GuiSmokeTest::singleInstanceActivatesTheFirstInstance() {
     // A second launch must talk to the running process and exit instead of
     // creating another window, database connection and tray icon.

@@ -8,6 +8,32 @@ All notable changes to Nesva are documented here. The format follows
 
 Nothing yet.
 
+## [0.6.6] - 2026-11-08
+
+### Added (updates)
+
+- **Nesva updates itself from GitHub.** `nesva-cli update` reports the published release;
+  `nesva-cli update --install` downloads it, verifies the SHA-256 from the release checksum list,
+  stops the background agent and the window, and runs the platform installer silently. Nothing is
+  executed until the checksum matches.
+- **Check on start, on by default.** The window asks the release service once per start (rate
+  limited to one check per six hours) and shows a tray notification when a newer version exists.
+  Settings -> Updates shows the current version, the available one, and the last check.
+- **Forced weekly install, on by default.** The background agent installs the newest release every
+  **Sunday at 18:00 Europe/Ljubljana**, whether or not the window is open: it downloads, verifies,
+  stops itself, runs the installer and exits. The schedule is computed on wall-clock time in that
+  time zone, so it does not drift across a daylight-saving change.
+- **Settings -> Updates** with both switches, *Check now*, and *Install update* (which confirms,
+  closes the window and lets the CLI finish the job). Pre-releases and tags such as
+  `v0.6.6-candidate` are never installed automatically.
+- The desktop window now answers a `quit` request on its single-instance socket, so the updater can
+  ask it to step aside before the installer replaces the executables it is running from.
+
+### Changed
+
+- The update path is one implementation (`nesva-cli update`) used by the GUI, the agent and scripts,
+  so a manual update and the weekly one cannot diverge.
+
 ## [0.6.5] - 2026-11-05
 
 ### Fixed (Linux packaging - critical)

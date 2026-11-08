@@ -31,7 +31,14 @@
 #include "dialogs/tool_install_dialog.hpp"
 #include <QtCore/QTimeZone>
 
+#include <QtCore/QDateTime>
+#include <QtCore/QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
+
 #include "nesva/agent/autostart.hpp"
+#include "nesva/core/app_info.hpp"
+#include "nesva/core/http.hpp"
+#include "nesva/core/updater.hpp"
 #include "nesva/agent/client.hpp"
 #include "nesva/core/external_tool.hpp"
 #include "time_display.hpp"
@@ -67,6 +74,7 @@ SettingsPage::SettingsPage(AppContext& context, QWidget* parent)
     buildLoggingSection();
     buildSafetySection();
     buildBehaviourSection();
+    buildUpdateSection();
     buildAgentSection();
     buildLocationsSection();
 
@@ -537,6 +545,186 @@ void SettingsPage::refreshToolsStatus() {
     toolsStatusValue_->setTextFormat(Qt::RichText);
 }
 
+void SettingsPage::buildUpdateSection() {
+    QVBoxLayout* cardLayout = nullptr;
+    QFrame* card = makeCard(this, QStringLiteral("Updates"), cardLayout);
+
+    updateStatusValue_ = new QLabel(card);
+    updateStatusValue_->setObjectName(QStringLiteral("pageSubtitle"));
+    updateStatusValue_->setWordWrap(true);
+    updateStatusValue_->setTextFormat(Qt::RichText);
+    cardLayout->addWidget(updateStatusValue_);
+
+    auto* hint = new QLabel(
+        QStringLiteral("Updates are downloaded from <code>github.com/Linux-Alex/Nesva</code> and "
+                       "verified against the SHA-256 published with the release before anything "
+                       "is installed. Installing stops the background agent and this window, "
+                       "then runs the installer silently; the per-user installation needs no "
+                       "administrator rights."),
+        card);
+    hint->setObjectName(QStringLiteral("pageSubtitle"));
+    hint->setWordWrap(true);
+    hint->setTextFormat(Qt::RichText);
+    cardLayout->addWidget(hint);
+
+    updateCheckOnStart_ = new QCheckBox(QStringLiteral("Check for updates when Nesva starts"), card);
+    updateCheckOnStart_->setObjectName(QStringLiteral("updateCheckOnStart"));
+    cardLayout->addWidget(updateCheckOnStart_);
+
+    updateWeeklyCheck_ = new QCheckBox(
+        QStringLiteral("Install updates automatically once a week (Sunday 18:00, Europe/Ljubljana)"),
+        card);
+    updateWeeklyCheck_->setObjectName(QStringLiteral("updateWeekly"));
+    updateWeeklyCheck_->setToolTip(
+        QStringLiteral("The background agent checks on Sunday evening, downloads and verifies "
+                       "the release, stops itself, runs the installer silently and exits. This "
+                       "happens whether or not the window is open."));
+    cardLayout->addWidget(updateWeeklyCheck_);
+
+    const bool checkOnStart = context_.settings()
+                                  .getBoolean(QString::fromUtf8(config::keys::kUpdateCheckOnStart), true)
+                                  .valueOr(true);
+    const bool weekly = context_.settings()
+                            .getBoolean(QString::fromUtf8(config::keys::kUpdateWeeklyAutoUpdate), true)
+                            .valueOr(true);
+    updateCheckOnStart_->setChecked(checkOnStart);
+    updateWeeklyCheck_->setChecked(weekly);
+
+    auto* buttons = new QHBoxLayout();
+    auto* checkButton = new QPushButton(QStringLiteral("Check now"), card);
+    updateInstallButton_ = new QPushButton(QStringLiteral("Install update"), card);
+    updateInstallButton_->setEnabled(false);
+    buttons->addWidget(checkButton);
+    buttons->addWidget(updateInstallButton_);
+    buttons->addStretch(1);
+    cardLayout->addLayout(buttons);
+
+    connect(updateCheckOnStart_, &QCheckBox::toggled, this, [this](bool checked) {
+        context_.settings().setBoolean(QString::fromUtf8(config::keys::kUpdateCheckOnStart),
+                                       checked);
+        showSaved();
+    });
+    connect(updateWeeklyCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        context_.settings().setBoolean(QString::fromUtf8(config::keys::kUpdateWeeklyAutoUpdate),
+                                       checked);
+        showSaved();
+    });
+    connect(checkButton, &QPushButton::clicked, this, [this] { checkForUpdatesNow(); });
+    connect(updateInstallButton_, &QPushButton::clicked, this, [this] {
+        const QString version = context_.settings()
+                                    .getString(QString::fromUtf8(
+                                                   config::keys::kUpdateAvailableVersion),
+                                               QString())
+                                    .valueOr(QString());
+        if (version.isEmpty()) {
+            return;
+        }
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("Install update"),
+            QStringLiteral("Install Nesva %1 now? Nesva closes, the background agent stops, "
+                           "and the installer runs silently. Nothing in your archives or "
+                           "profile is touched.")
+                .arg(version),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes) {
+            installUpdate(version);
+        }
+    });
+
+    body()->addWidget(card);
+    refreshUpdateStatus();
+}
+void SettingsPage::refreshUpdateStatus() {
+    if (updateStatusValue_ == nullptr) {
+        return;
+    }
+    const QString current = ApplicationInfo::displayVersion();
+    const QString available = context_.settings()
+                                  .getString(QString::fromUtf8(
+                                                 config::keys::kUpdateAvailableVersion),
+                                             QString())
+                                  .valueOr(QString());
+    const QString lastCheck = context_.settings()
+                                  .getString(QString::fromUtf8(
+                                                 config::keys::kUpdateLastCheckUtc),
+                                             QString())
+                                  .valueOr(QString());
+    const QDateTime lastCheckUtc = QDateTime::fromString(lastCheck, Qt::ISODate);
+
+    QString line = QStringLiteral("<b>%1</b>").arg(current.toHtmlEscaped());
+    if (!available.isEmpty()) {
+        line += QStringLiteral(" &mdash; <b>%1 is available</b>").arg(available.toHtmlEscaped());
+    } else {
+        line += QStringLiteral(" &mdash; up to date");
+    }
+    if (lastCheckUtc.isValid()) {
+        line += QStringLiteral(" (last checked %1)")
+                    .arg(lastCheckUtc.toLocalTime().toString(
+                        QStringLiteral("yyyy-MM-dd HH:mm")));
+    }
+    updateStatusValue_->setText(line);
+    updateInstallButton_->setEnabled(!available.isEmpty());
+    updateInstallButton_->setText(available.isEmpty()
+                                      ? QStringLiteral("Install update")
+                                      : QStringLiteral("Install %1").arg(available));
+}
+
+void SettingsPage::checkForUpdatesNow() {
+    if (updateStatusValue_ == nullptr) {
+        return;
+    }
+    updateStatusValue_->setText(QStringLiteral("Contacting GitHub for the latest release..."));
+    const QString currentVersion = ApplicationInfo::version();
+    auto* watcher = new QFutureWatcher<Result<update::UpdateCheck>>(this);
+    connect(watcher, &QFutureWatcher<Result<update::UpdateCheck>>::finished, this,
+            [this, watcher] {
+                const Result<update::UpdateCheck> result = watcher->result();
+                watcher->deleteLater();
+                if (!result) {
+                    updateStatusValue_->setText(
+                        QStringLiteral("<b>Cannot check for updates:</b> %1")
+                            .arg(QString::fromStdString(result.error().toDisplayString())
+                                     .toHtmlEscaped()));
+                    return;
+                }
+                const update::UpdateCheck& check = result.value();
+                context_.settings().setString(
+                    QString::fromUtf8(config::keys::kUpdateLastCheckUtc),
+                    QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+                context_.settings().setString(
+                    QString::fromUtf8(config::keys::kUpdateAvailableVersion),
+                    check.newer ? check.release.version : QString());
+                refreshUpdateStatus();
+            });
+    watcher->setFuture(QtConcurrent::run([currentVersion]() -> Result<update::UpdateCheck> {
+        net::QNetworkHttpTransport transport;
+        return update::checkForUpdate(transport, currentVersion);
+    }));
+}
+
+void SettingsPage::installUpdate(const QString& version) {
+    // The CLI owns the whole sequence: download, verify, stop the window and the
+    // agent, run the installer. Spawning it detached lets this process exit
+    // instead of holding the executables the installer has to replace.
+    context_.settings().setString(QString::fromUtf8(config::keys::kUpdateLastInstallUtc),
+                                  QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    context_.recordEvent(LogLevel::Info, QStringLiteral("update"),
+                         QStringLiteral("installing Nesva %1").arg(version));
+    const QString cli = QCoreApplication::applicationDirPath() + QStringLiteral("/")
+#if defined(Q_OS_WIN)
+                        + QStringLiteral("nesva-cli.exe");
+#else
+                        + QStringLiteral("nesva-cli");
+#endif
+    const bool started = QProcess::startDetached(
+        cli, {QStringLiteral("update"), QStringLiteral("--install"), QStringLiteral("--force")});
+    if (!started) {
+        QMessageBox::warning(this, QStringLiteral("Updates"),
+                             QStringLiteral("Could not start %1.").arg(cli));
+        return;
+    }
+    QCoreApplication::quit();
+}
 void SettingsPage::buildAgentSection() {
     QVBoxLayout* cardLayout = nullptr;
     QFrame* card = makeCard(this, QStringLiteral("Background agent"), cardLayout);

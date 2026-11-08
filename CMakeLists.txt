@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(Nesva
-  VERSION 0.6.5
+  VERSION 0.6.6
   DESCRIPTION "Cross-platform desktop backup and archival application"
   HOMEPAGE_URL "https://github.com/Linux-Alex/Nesva"
   LANGUAGES CXX)
@@ -112,6 +112,7 @@ add_library(nesva_core STATIC
   src/mail/exporter.cpp
   src/mail/graph.cpp
   src/core/http.cpp
+  src/core/updater.cpp
   src/mail/mail_store.cpp
   src/mail/oauth.cpp
   src/mail/session.cpp

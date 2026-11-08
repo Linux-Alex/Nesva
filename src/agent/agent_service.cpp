@@ -6,7 +6,9 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QLockFile>
+#include <QtCore/QProcess>
 #include <QtCore/QTimer>
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
@@ -18,6 +20,7 @@
 #include "nesva/core/app_info.hpp"
 #include "nesva/core/logging.hpp"
 #include "nesva/core/paths.hpp"
+#include "nesva/core/updater.hpp"
 #include "nesva/db/database.hpp"
 #include "nesva/jobs/job_worker.hpp"
 
@@ -166,6 +169,8 @@ void AgentService::tick() {
         return;
     }
 
+    startWeeklyUpdateIfDue();
+
     // Startup-triggered jobs run once, right after the agent comes up.
     if (store_ && worker_ && !worker_->isRunning()) {
         startNextDueJob();
@@ -173,6 +178,70 @@ void AgentService::tick() {
     writeHeartbeatNow();
 }
 
+void AgentService::startWeeklyUpdateIfDue() {
+    if (!database_) {
+        return;
+    }
+    config::SettingsStore settings(*database_);
+    const bool enabled =
+        settings.getBoolean(QString::fromUtf8(config::keys::kUpdateWeeklyAutoUpdate), true)
+            .valueOr(true);
+    if (!enabled) {
+        return;
+    }
+
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const QString lastAttempt =
+        settings.getString(QString::fromUtf8(config::keys::kUpdateLastInstallUtc), QString())
+            .valueOr(QString());
+    QDateTime anchor = QDateTime::fromString(lastAttempt, Qt::ISODate);
+    if (!anchor.isValid()) {
+        // Nothing was attempted yet: wait for the coming Sunday instead of firing
+        // on the very first tick of a fresh installation.
+        anchor = now;
+    }
+
+    // Forced weekly update: Sunday 18:00 in Europe/Ljubljana. The due time is
+    // computed on wall-clock terms so it does not drift by an hour across a DST
+    // change.
+    const QDateTime due = update::nextWeeklyUpdate(anchor);
+    if (now < due) {
+        return;
+    }
+
+    // The updater is the CLI, started detached: this process has to exit before
+    // the installer replaces the executables it is running from, and a detached
+    // child keeps the upgrade moving after we are gone.
+    const QString cli =
+        QCoreApplication::applicationDirPath() + QStringLiteral("/") +
+#if defined(Q_OS_WIN)
+        QStringLiteral("nesva-cli.exe");
+#else
+        QStringLiteral("nesva-cli");
+#endif
+    if (!QFileInfo::exists(cli)) {
+        logWarn("agent.update", QStringLiteral("cannot find nesva-cli next to the agent"),
+                QJsonObject{{QStringLiteral("expected"), cli}});
+        return;
+    }
+
+    // Record the attempt first: a failing update must not retry on every tick.
+    settings.setString(QString::fromUtf8(config::keys::kUpdateLastInstallUtc),
+                       now.toString(Qt::ISODate));
+
+    logInfo("agent.update", QStringLiteral("starting the weekly update"),
+            QJsonObject{{QStringLiteral("due_utc"), due.toUTC().toString(Qt::ISODate)},
+                        {QStringLiteral("cli"), cli}});
+    if (!QProcess::startDetached(cli, {QStringLiteral("update"), QStringLiteral("--install"),
+                                       QStringLiteral("--quiet")})) {
+        logWarn("agent.update", QStringLiteral("cannot start the updater"),
+                QJsonObject{{QStringLiteral("cli"), cli}});
+        return;
+    }
+
+    // Step aside so the updater can stop us cleanly and replace the files.
+    requestStop();
+}
 void AgentService::startNextDueJob() {
     Result<QVector<QPair<qint64, jobs::ScheduleRecord>>> schedules = store_->listSchedules();
     if (!schedules) {

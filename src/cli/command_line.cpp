@@ -17,7 +17,7 @@ const QStringList& knownCommands() {
         QStringLiteral("verify"),  QStringLiteral("agent"),   QStringLiteral("schedule"),
         QStringLiteral("repository"), QStringLiteral("snapshots"), QStringLiteral("retention"),
         QStringLiteral("mail"),    QStringLiteral("tools"),   QStringLiteral("rclone"),
-        QStringLiteral("maintenance"),
+        QStringLiteral("maintenance"), QStringLiteral("update"),
         QStringLiteral("backup"),  QStringLiteral("version"), QStringLiteral("help"),
     };
     return commands;
@@ -170,6 +170,8 @@ QString usageText() {
         "  agent reload              Reload schedules in the agent\n"
         "  agent stop                Stop the agent gracefully\n"
         "  verify <job-id>           Re-check archived objects against the manifest\n"
+        "  update                    Check GitHub for a newer release\n"
+        "                            (--install, --dry-run) stops the agent and installs it\n"
         "  version                   Show version information\n"
         "  help                      Show this help\n"
         "\n"

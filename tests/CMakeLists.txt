@@ -42,6 +42,7 @@ nesva_add_unit_test(tst_backup_runner unit/tst_backup_runner.cpp)
 nesva_add_unit_test(tst_mail unit/tst_mail.cpp)
 nesva_add_unit_test(tst_tool_installer unit/tst_tool_installer.cpp)
 nesva_add_unit_test(tst_safety unit/tst_safety.cpp)
+nesva_add_unit_test(tst_updater unit/tst_updater.cpp)
 # The Secret Service backend only exists on UNIX, so the DBus half of this test
 # only links there (Windows uses the Credential Manager backend).
 if(UNIX)
