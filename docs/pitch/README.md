@@ -4,14 +4,15 @@ Two documents, one per language:
 
 | File | Language | Pages |
 | --- | --- | --- |
-| `Nesva-0.6.6-SL.pdf` | Slovenian | 9 |
-| `Nesva-0.6.6-EN.pdf` | English | 9 |
+| `Nesva-0.6.6-SL.pdf` | Slovenian | 10 |
+| `Nesva-0.6.6-EN.pdf` | English | 10 |
 
 Each one is a pitch followed by a complete tutorial: what Nesva is and what archive mode and
-backup mode promise, installation on Windows and Linux, a tour of the nine GUI pages (with
-screenshots), the external tools (Rclone, Restic), storage and remotes, archive and versioned
-backup jobs, Microsoft 365 mail, schedules and the background agent, restore, maintenance,
-updates, security, the whole command line, and troubleshooting.
+backup mode promise, installation on Windows and Linux, where the release lives on GitHub (with a
+sketch of the release page), a tour of the nine GUI pages (with screenshots), the external tools
+(Rclone, Restic), storage and remotes, archive and versioned backup jobs, Microsoft 365 mail,
+schedules and the background agent, restore, maintenance, updates, security, the whole command
+line, troubleshooting and next steps.
 
 The HTML next to each PDF is the source. Rebuild after editing:
 

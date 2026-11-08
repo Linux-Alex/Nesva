@@ -117,6 +117,28 @@ tr:nth-child(even) td { background: #fbfdfe; }
 .shot-cap { font-size: 8.4pt; color: #6b8190; margin: .5em 0 1.4em; }
 .shot-wide { width: 100%; border: 1px solid #dbe6ec; border-radius: 2.4mm; display: block; margin: .7em 0 .2em; }
 .cv-mark svg { width: 100%; height: 100%; display: block; border-radius: 3mm; }
+
+/* github release sketch */
+.gh { border: 1px solid #dbe6ec; border-radius: 3mm; overflow: hidden; background: #fff;
+      box-shadow: 0 5mm 12mm rgba(15,61,92,.10); margin: .8em 0 .6em; page-break-inside: avoid; }
+.gh-bar { background: #f4f8fa; border-bottom: 1px solid #e6eef3; padding: 2.2mm 3mm; display: flex; align-items: center; gap: 2mm; }
+.gh-dot { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: #d5e2e9; }
+.gh-url { flex: 1; margin-left: 2mm; background: #fff; border: 1px solid #e2ebf0; border-radius: 99px;
+          padding: 1.2mm 3mm; font-size: 8pt; color: #4b6472; font-family: "DejaVu Sans Mono", monospace; }
+.gh-body { padding: 4mm 4.5mm 4.5mm; }
+.gh-head { display: flex; align-items: baseline; gap: 2.5mm; margin-bottom: 3mm; }
+.gh-pill { font-size: 7.4pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+           color: #0f6b52; background: rgba(15,138,106,.14); border-radius: 99px; padding: .3em .8em; }
+.gh-title { font-size: 11pt; font-weight: 700; color: #0f2c3d; }
+.gh-date { font-size: 8.4pt; color: #8298a6; margin-left: auto; }
+.gh-asset { display: flex; align-items: center; gap: 3mm; border-top: 1px solid #eef4f7; padding: 2.1mm 0; }
+.gh-asset:first-of-type { border-top: 1px solid #e8f0f4; }
+.gh-file { font-family: "DejaVu Sans Mono", monospace; font-size: 8.4pt; color: #1e3644; flex: 1; }
+.gh-size { font-size: 8pt; color: #8298a6; width: 16mm; text-align: right; }
+.gh-chip { font-size: 7.6pt; font-weight: 700; color: #0b6b51; border: 1px solid rgba(15,138,106,.5);
+           background: rgba(15,138,106,.08); border-radius: 99px; padding: .28em .85em; }
+.gh-verify { margin-top: 3mm; font-size: 8.2pt; color: #6b8190; }
+.gh-verify code { font-size: 8pt; }
 </style>
 </head>
 <body>
@@ -235,6 +257,33 @@ tar -xzf nesva-0.6.6-linux-x86_64.tar.gz
 <p><b>Iskrena opomba:</b> podpisi kode še ne obstajajo. Windows SmartScreen bo ob prvem zagonu opozoril; to je pričakovano in ga brez certifikata ni mogoče utišati. macOS ni podprt, ker ni bil nikoli preizkušen.</p>
 </div>
 
+<h3>Kje je izdaja</h3>
+<p>Vse izdaje živijo na GitHubu; ni registracije, ni posrednika in ni plačila. Tri povezave so dovolj:</p>
+<table>
+<tr><th>Kaj</th><th>Povezava</th></tr>
+<tr><td>Repozitorij (koda, navodila, dnevnik sprememb)</td><td><code>github.com/Linux-Alex/Nesva</code></td></tr>
+<tr><td>Vse izdaje</td><td><code>github.com/Linux-Alex/Nesva/releases</code></td></tr>
+<tr><td><b>Najnovejša izdaja</b> &mdash; ta povezava se ne spreminja</td><td><code>github.com/Linux-Alex/Nesva/releases/latest</code></td></tr>
+</table>
+<p>Vsaka izdaja ima štiri datoteke (po dve na platformo) in po eno datoteko s kontrolnimi vsotami:</p>
+<div class="gh">
+  <div class="gh-bar"><span class="gh-dot"></span><span class="gh-dot"></span><span class="gh-dot"></span>
+    <span class="gh-url">github.com/Linux-Alex/Nesva/releases/latest</span></div>
+  <div class="gh-body">
+    <div class="gh-head"><span class="gh-pill">v0.6.6</span><span class="gh-title">Nesva v0.6.6</span>
+      <span class="gh-date">assets: 6</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-windows-x86_64-setup.exe</span><span class="gh-size">24.4 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-windows-x86_64.zip</span><span class="gh-size">33.9 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva_0.6.6_amd64.deb</span><span class="gh-size">30.8 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-linux-x86_64.tar.gz</span><span class="gh-size">30.8 MB</span><span class="gh-chip">Download</span></div>
+    <div class="gh-verify">Vsaka vrstica je <code>&lt;sha256&gt;  &lt;ime datoteke&gt;</code>; <code>SHA256SUMS-windows.txt</code> pokrije obe datoteki za Windows.</div>
+  </div>
+</div>
+<p>Kontrolno vsoto preverite preden karkoli zaženete; na Linuxu je dovolj en ukaz:</p>
+<pre>curl -LO https://github.com/Linux-Alex/Nesva/releases/latest/download/SHA256SUMS-linux.txt
+curl -LO https://github.com/Linux-Alex/Nesva/releases/latest/download/nesva_0.6.6_amd64.deb
+sha256sum -c SHA256SUMS-linux.txt</pre>
+<p>Nesva to pozna tudi sama: <b>Nastavitve &rarr; Posodobitve &rarr; Preveri zdaj</b> prebere objavljeno izdajo, <i>Namesti posodobitev</i> pa jo prenese, preveri in namesti. Enako naredita <code>nesva-cli update</code> in <code>nesva-cli update --install</code>.</p>
 <h2>2. Prvi zagon in pregled okna</h2>
 <p>Ob prvem zagonu Nesva pripravi svojo bazo (<code>%LOCALAPPDATA%\nesva</code> oziroma <code>~/.local/share/nesva</code>) in odpre <b>Nadzorno ploščo</b>. Levo je navigacija, spodaj dnevnik dogodkov, zgoraj vrstica stanja z indikatorjem agenta.</p>
 <table>
@@ -398,6 +447,15 @@ nesva-cli jobs run 1 --quiet &amp;&amp; nesva-cli jobs run 2 --quiet &amp;&amp; 
 <tr><td>Dvom o okolju</td><td><code>nesva-cli doctor</code> pove, kaj manjka, in izpiše, kot kdo teče Nesva.</td></tr>
 </table>
 
+<h2>Naslednji koraki</h2>
+<p>Pet korakov, ki jih priporočamo takoj po namestitvi:</p>
+<ol>
+<li><b>Nastavitve &rarr; Zunanja orodja</b> &mdash; namestite Rclone in Restic (predogled, nato namestitev).</li>
+<li><b>Shramba &rarr; Nastavi / ponovno overi</b> &mdash; povežite cilj: iCloud, Backblaze B2 ali zunanji disk.</li>
+<li><b>Posli kopiranja &rarr; Nov posel</b> &mdash; en arhiv za Namizje, Dokumente in Prenose; prvi zagon zaženite ročno.</li>
+<li><b>Nastavitve &rarr; Ozadni agent</b> &mdash; <i>Namesti samodejni zagon</i>, nato <i>Zaženi agenta</i>.</li>
+<li><b>Po enem tednu</b> &mdash; obnovite nekaj datotek, da veste, da postopek deluje. Varnostna kopija, ki je niste nikoli obnovili, je le upanje.</li>
+</ol>
 <div class="box"><p><b>Kaj Nesva ne dela:</b> ne sinhronizira v obe smeri, ne briše virov, ne ponuja spletnega dostopa do vaših datotek, ne šifrira arhiva (šifriranje prinaša Restic) in ne nadzoruje, kaj ponudnik počne s podatki. To so omejitve, ne podrobnosti.</p></div>
 <div class="foot">
 Nesva 0.6.6 &middot; Apache-2.0 &middot; C++20 + Qt 6 Widgets &middot; Windows x86_64 in Linux x86_64 &middot;

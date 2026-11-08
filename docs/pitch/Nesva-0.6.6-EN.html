@@ -117,6 +117,28 @@ tr:nth-child(even) td { background: #fbfdfe; }
 .shot-cap { font-size: 8.4pt; color: #6b8190; margin: .5em 0 1.4em; }
 .shot-wide { width: 100%; border: 1px solid #dbe6ec; border-radius: 2.4mm; display: block; margin: .7em 0 .2em; }
 .cv-mark svg { width: 100%; height: 100%; display: block; border-radius: 3mm; }
+
+/* github release sketch */
+.gh { border: 1px solid #dbe6ec; border-radius: 3mm; overflow: hidden; background: #fff;
+      box-shadow: 0 5mm 12mm rgba(15,61,92,.10); margin: .8em 0 .6em; page-break-inside: avoid; }
+.gh-bar { background: #f4f8fa; border-bottom: 1px solid #e6eef3; padding: 2.2mm 3mm; display: flex; align-items: center; gap: 2mm; }
+.gh-dot { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: #d5e2e9; }
+.gh-url { flex: 1; margin-left: 2mm; background: #fff; border: 1px solid #e2ebf0; border-radius: 99px;
+          padding: 1.2mm 3mm; font-size: 8pt; color: #4b6472; font-family: "DejaVu Sans Mono", monospace; }
+.gh-body { padding: 4mm 4.5mm 4.5mm; }
+.gh-head { display: flex; align-items: baseline; gap: 2.5mm; margin-bottom: 3mm; }
+.gh-pill { font-size: 7.4pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+           color: #0f6b52; background: rgba(15,138,106,.14); border-radius: 99px; padding: .3em .8em; }
+.gh-title { font-size: 11pt; font-weight: 700; color: #0f2c3d; }
+.gh-date { font-size: 8.4pt; color: #8298a6; margin-left: auto; }
+.gh-asset { display: flex; align-items: center; gap: 3mm; border-top: 1px solid #eef4f7; padding: 2.1mm 0; }
+.gh-asset:first-of-type { border-top: 1px solid #e8f0f4; }
+.gh-file { font-family: "DejaVu Sans Mono", monospace; font-size: 8.4pt; color: #1e3644; flex: 1; }
+.gh-size { font-size: 8pt; color: #8298a6; width: 16mm; text-align: right; }
+.gh-chip { font-size: 7.6pt; font-weight: 700; color: #0b6b51; border: 1px solid rgba(15,138,106,.5);
+           background: rgba(15,138,106,.08); border-radius: 99px; padding: .28em .85em; }
+.gh-verify { margin-top: 3mm; font-size: 8.2pt; color: #6b8190; }
+.gh-verify code { font-size: 8pt; }
 </style>
 </head>
 <body>
@@ -227,6 +249,33 @@ tar -xzf nesva-0.6.6-linux-x86_64.tar.gz
 <p>The package puts the whole application into its own directory, <code>/usr/lib/nesva</code>, with only symlinks in <code>/usr/bin</code>. That is why Nesva cannot disturb system Qt applications, which matters on KDE and Wayland.</p>
 <div class="box warn"><p><b>Honest note:</b> code signing does not exist yet. Windows SmartScreen will warn on the first launch; that is expected and cannot be silenced without a certificate. macOS is not supported because it was never tested.</p></div>
 
+<h3>Where the release lives</h3>
+<p>Every release lives on GitHub; no account, no middleman, no payment. Three links are enough:</p>
+<table>
+<tr><th>What</th><th>Link</th></tr>
+<tr><td>Repository (code, docs, changelog)</td><td><code>github.com/Linux-Alex/Nesva</code></td></tr>
+<tr><td>All releases</td><td><code>github.com/Linux-Alex/Nesva/releases</code></td></tr>
+<tr><td><b>Latest release</b> &mdash; this link never changes</td><td><code>github.com/Linux-Alex/Nesva/releases/latest</code></td></tr>
+</table>
+<p>Each release carries four files (two per platform) and one checksum list per platform:</p>
+<div class="gh">
+  <div class="gh-bar"><span class="gh-dot"></span><span class="gh-dot"></span><span class="gh-dot"></span>
+    <span class="gh-url">github.com/Linux-Alex/Nesva/releases/latest</span></div>
+  <div class="gh-body">
+    <div class="gh-head"><span class="gh-pill">v0.6.6</span><span class="gh-title">Nesva v0.6.6</span>
+      <span class="gh-date">assets: 6</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-windows-x86_64-setup.exe</span><span class="gh-size">24.4 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-windows-x86_64.zip</span><span class="gh-size">33.9 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva_0.6.6_amd64.deb</span><span class="gh-size">30.8 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-linux-x86_64.tar.gz</span><span class="gh-size">30.8 MB</span><span class="gh-chip">Download</span></div>
+    <div class="gh-verify">Every line is <code>&lt;sha256&gt;  &lt;file name&gt;</code>; <code>SHA256SUMS-windows.txt</code> covers both Windows files.</div>
+  </div>
+</div>
+<p>Verify the checksum before running anything; on Linux one command is enough:</p>
+<pre>curl -LO https://github.com/Linux-Alex/Nesva/releases/latest/download/SHA256SUMS-linux.txt
+curl -LO https://github.com/Linux-Alex/Nesva/releases/latest/download/nesva_0.6.6_amd64.deb
+sha256sum -c SHA256SUMS-linux.txt</pre>
+<p>Nesva also knows this itself: <b>Settings &rarr; Updates &rarr; Check now</b> reads the published release, and <i>Install update</i> downloads, verifies and installs it. <code>nesva-cli update</code> and <code>nesva-cli update --install</code> do the same.</p>
 <h2>2. First run and the window</h2>
 <p>On first launch Nesva creates its database (<code>%LOCALAPPDATA%\nesva</code> or <code>~/.local/share/nesva</code>) and opens the <b>Dashboard</b>. Navigation is on the left, the activity dock at the bottom, and the status bar at the top shows the agent indicator.</p>
 <table>
@@ -391,6 +440,15 @@ nesva-cli jobs run 1 --quiet &amp;&amp; nesva-cli jobs run 2 --quiet &amp;&amp; 
 <tr><td>Unsure about the environment</td><td><code>nesva-cli doctor</code> reports what is missing and which user Nesva runs as.</td></tr>
 </table>
 
+<h2>Next steps</h2>
+<p>Five steps worth doing right after installation:</p>
+<ol>
+<li><b>Settings &rarr; External tools</b> &mdash; install Rclone and Restic (preview, then install).</li>
+<li><b>Storage &rarr; Configure / re-authenticate</b> &mdash; connect the destination: iCloud, Backblaze B2 or an external disk.</li>
+<li><b>Backup Jobs &rarr; New job</b> &mdash; one archive for Desktop, Documents and Downloads; run it once by hand.</li>
+<li><b>Settings &rarr; Background agent</b> &mdash; <i>Install autostart</i>, then <i>Start agent</i>.</li>
+<li><b>After a week</b> &mdash; restore a few files so you know the path works. A backup that was never restored is only a hope.</li>
+</ol>
 <div class="box"><p><b>What Nesva does not do:</b> it does not sync in two directions, does not delete sources, does not offer web access to your files, does not encrypt an archive (encryption is what Restic adds) and does not control what a provider does with the data. Those are limits, not details.</p></div>
 
 <div class="foot">
