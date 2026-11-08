@@ -326,6 +326,11 @@ Status runInstaller(const QString& installerPath, const QString& installPrefix) 
     }
 
 #if defined(Q_OS_WIN)
+    // The install location is fixed by the installer itself (%LOCALAPPDATA%),
+    // so a caller-supplied prefix is meaningless here. Q_UNUSED rather than an
+    // ifdef around the parameter keeps the signature identical on both platforms
+    // and keeps -Werror=unused-parameter happy on Windows.
+    Q_UNUSED(installPrefix);
     // The per-user NSIS installer: /S is unattended and needs no elevation,
     // because everything lands in %LOCALAPPDATA%.
     if (!QProcess::startDetached(installerPath, {QStringLiteral("/S")})) {
