@@ -166,7 +166,7 @@ is real, working functionality - not mockups:
   real path inspection, and an External tools card that reports Rclone/Restic and offers the
   Rclone installer with its full step preview - all persisted in SQLite
 - Light and dark palettes, programmatic theme-aware icon set, high-DPI, keyboard navigation
-  (Ctrl+1..Ctrl+8), native menu bar, system tray integration
+  (Ctrl+1..Ctrl+9), native menu bar, system tray integration
 - `--gui-selftest` mode that drives every page and writes PNG screenshots (headless or X11)
 
 **nesva-cli (automation and diagnostics)**

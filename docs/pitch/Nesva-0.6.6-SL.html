@@ -54,40 +54,114 @@ tr:nth-child(even) td { background: #fbfdfe; }
 .toc li { margin-bottom: .3em; }
 .foot { margin-top: 1.6em; padding-top: .6em; border-top: 1px solid var(--line); font-size: 8.6pt; color: var(--muted); }
 
-/* cover */
-.cover { height: 297mm; padding: 34mm 22mm 20mm; background: linear-gradient(160deg, #0b2d43 0%, #123f59 55%, #0f8a6a 130%); color: #fff; }
-.cover .kicker { color: #9fe3cd; }
-.cover h1 { color: #fff; font-size: 46pt; letter-spacing: -1.4px; margin: 6mm 0 0; }
-.cover .sub { font-size: 15pt; color: #cfe6f0; margin-top: 3mm; max-width: 150mm; }
-.cover .rule { width: 62mm; height: 3px; background: #6fd3b4; margin: 8mm 0; }
-.cover .meta { font-size: 10pt; color: #bcd7e3; line-height: 1.75; }
-.cover .meta b { color: #fff; font-weight: 600; }
-.cover .lang { margin-top: 12mm; font-size: 9.6pt; color: #9fc4d3; }
-.cover .badges { margin-top: 6mm; }
-.cover .badges span { border: 1px solid rgba(255,255,255,.45); color: #e6f4f9; border-radius: 99px;
-  padding: .18em .7em; font-size: 8.6pt; margin-right: .35em; display: inline-block; }
+/* cover v2: light, structured, product-card feel */
+.cv { height: 297mm; width: 210mm; position: relative; overflow: hidden; background: #ffffff; }
+.cv-wash { position: absolute; top: -40mm; right: -50mm; width: 190mm; height: 190mm;
+  background: radial-gradient(closest-side, rgba(15,138,106,.16), rgba(15,61,92,.10) 55%, rgba(255,255,255,0) 72%); }
+.cv-dots { position: absolute; left: 0; bottom: 0; width: 120mm; height: 90mm;
+  background-image: radial-gradient(rgba(15,61,92,.16) 1.1px, transparent 1.1px);
+  background-size: 6mm 6mm; opacity: .55; }
+.cv-rule { position: absolute; left: 0; top: 0; width: 100%; height: 6mm;
+  background: linear-gradient(90deg, #0f3d5c 0%, #0f8a6a 62%, #7fd8bd 100%); }
+.cv-inner { position: relative; padding: 26mm 20mm 0; }
+.cv-brand { display: flex; align-items: center; gap: 3.4mm; margin-bottom: 16mm; }
+.cv-mark { width: 11mm; height: 11mm; border-radius: 3mm; background: #0f3d5c; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 15pt; font-weight: 700;
+  letter-spacing: -.5px; }
+.cv-brand-name { font-size: 13pt; font-weight: 700; color: #0f3d5c; letter-spacing: -.2px; }
+.cv-brand-sub { font-size: 8.6pt; color: #6b8190; letter-spacing: .16em; text-transform: uppercase; }
+.cv-eyebrow { font-size: 8.8pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+  color: #0f8a6a; margin-bottom: 5mm; }
+.cv-title { font-size: 52pt; line-height: 1.02; letter-spacing: -2.2px; color: #0f2c3d; margin: 0 0 6mm; }
+.cv-title em { font-style: normal; color: #0f8a6a; }
+.cv-lead { font-size: 13.5pt; line-height: 1.45; color: #33454f; max-width: 138mm; margin: 0 0 9mm; }
+.cv-points { list-style: none; padding: 0; margin: 0 0 11mm; max-width: 145mm; }
+.cv-points li { position: relative; padding-left: 7mm; margin-bottom: 3.2mm; font-size: 10.4pt; color: #2b3d47; }
+.cv-points li:before { content: ""; position: absolute; left: 0; top: 1.6mm; width: 3.2mm; height: 3.2mm;
+  border-radius: 1mm; background: #0f8a6a; opacity: .85; }
+.cv-points b { color: #0f2c3d; }
+.cv-specs { display: flex; gap: 3mm; flex-wrap: wrap; margin-bottom: 12mm; }
+.cv-spec { border: 1px solid #dbe6ec; border-radius: 2.4mm; padding: 2.2mm 3.4mm; background: #fbfdfe; }
+.cv-spec span { display: block; font-size: 7.6pt; letter-spacing: .12em; text-transform: uppercase; color: #7c8f9c; }
+.cv-spec b { font-size: 10pt; color: #0f2c3d; font-weight: 600; }
+.cv-foot { position: absolute; left: 20mm; right: 20mm; bottom: 10mm; font-size: 8.8pt; color: #6b8190;
+  border-top: 1px solid #e4ecf1; padding-top: 3mm; display: flex; justify-content: space-between; }
+
+/* css-drawn app window */
+.cv-app { position: absolute; left: 20mm; right: 20mm; bottom: 24mm; border-radius: 4mm; overflow: hidden;
+  border: 1px solid #dbe6ec; box-shadow: 0 14mm 26mm rgba(15,61,92,.13); background: #fff; height: 62mm; }
+.cv-app-bar { height: 7mm; background: #f6fafc; border-bottom: 1px solid #e8f0f4; display: flex;
+  align-items: center; gap: 1.8mm; padding: 0 3.6mm; }
+.cv-dot { width: 2.4mm; height: 2.4mm; border-radius: 50%; background: #d7e3ea; }
+.cv-app-body { display: table; width: 100%; height: 55mm; }
+.cv-side { display: table-cell; width: 42mm; background: #0f3d5c; padding: 4mm 3.6mm; vertical-align: top; }
+.cv-side-row { height: 2.6mm; border-radius: 1mm; background: rgba(255,255,255,.22); margin-bottom: 2.6mm; }
+.cv-side-row.on { background: #6fd3b4; width: 78%; }
+.cv-side-row.short { width: 62%; }
+.cv-main { display: table-cell; padding: 4.4mm 5mm; vertical-align: top; background: #fff; }
+.cv-main-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4mm; }
+.cv-main-title { height: 3.2mm; width: 46mm; border-radius: 1mm; background: #dbe6ec; }
+.cv-pill { height: 4.2mm; width: 20mm; border-radius: 99px; background: rgba(15,138,106,.16); }
+.cv-row { height: 6.4mm; border-bottom: 1px solid #eef4f7; display: flex; align-items: center; gap: 3mm; }
+.cv-row i { display: block; height: 2.4mm; border-radius: 1mm; background: #e3ebf0; }
+.cv-row i.a { width: 52mm; } .cv-row i.b { width: 18mm; background: #eef4f7; }
+.cv-bar { height: 2.6mm; border-radius: 99px; background: #eaf1f5; position: relative; width: 64mm; }
+.cv-bar span { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 99px;
+  background: linear-gradient(90deg, #0f8a6a, #6fd3b4); }
 </style>
 </head>
 <body>
 
-<div class="cover">
-  <div class="kicker">Arhiviranje in varnostne kopije</div>
-  <h1>Nesva</h1>
-  <div class="sub">Namizna aplikacija, ki vaše datoteke in pošto spravi v oblak &mdash; berljivo in razumljivo, ali pa šifrirano in različicam prijazno.</div>
-  <div class="rule"></div>
-  <div class="meta">
-    <b>Verzija:</b> 0.6.6<br>
-    <b>Avtor:</b> Aleks Marinič<br>
-    <b>Repozitorij:</b> github.com/Linux-Alex/Nesva<br>
-    <b>Licenca:</b> Apache-2.0<br>
-    <b>Platforme:</b> Windows x86_64 &middot; Linux x86_64
+<div class="cv">
+  <div class="cv-rule"></div>
+  <div class="cv-wash"></div>
+  <div class="cv-dots"></div>
+  <div class="cv-inner">
+    <div class="cv-brand">
+      <span class="cv-mark">N</span>
+      <div>
+        <div class="cv-brand-name">Nesva</div>
+        <div class="cv-brand-sub">Predstavitev in navodila za uporabo</div>
+      </div>
+    </div>
+    <div class="cv-eyebrow">Arhiviranje in varnostne kopije</div>
+    <h1 class="cv-title">Nesva<em>.</em></h1>
+    <p class="cv-lead">Namizna aplikacija, ki vaše datoteke in pošto spravi v oblak &mdash; berljivo in razumljivo, ali pa šifrirano in različicam prijazno.</p>
+    <ul class="cv-points">
+    <li><b>Dve obljubi, jasno ločeni.</b> Arhiv je kopija, ki jo berete kjerkoli. Varnostna kopija so šifrirane različice, ki jih obnovite kadar koli.</li>
+    <li><b>Pošta kot arhiv.</b> Microsoft 365 pošta se izvozi v datoteke .eml, berljive brez najema licence.</li>
+    <li><b>Teče brez odprtega okna.</b> Razporede izvaja ozadni agent, tudi ko je aplikacija zaprta.</li>
+    </ul>
+    <div class="cv-specs">
+    <div class="cv-spec"><span>Verzija</span><b>0.6.6</b></div>
+    <div class="cv-spec"><span>Platforme</span><b>Windows in Linux</b></div>
+    <div class="cv-spec"><span>Licenca</span><b>Apache-2.0</b></div>
+    <div class="cv-spec"><span>Jedro</span><b>C++20 + Qt 6</b></div>
+    </div>
   </div>
-  <div class="badges">
-    <span>C++20 + Qt 6 Widgets</span><span>Rclone</span><span>Restic</span><span>SQLite</span><span>Brez oblaka kot posrednika</span>
+  <div class="cv-app">
+    <div class="cv-app-bar"><span class="cv-dot"></span><span class="cv-dot"></span><span class="cv-dot"></span></div>
+    <div class="cv-app-body">
+      <div class="cv-side">
+        <div class="cv-side-row on"></div>
+        <div class="cv-side-row"></div>
+        <div class="cv-side-row short"></div>
+        <div class="cv-side-row"></div>
+        <div class="cv-side-row short"></div>
+        <div class="cv-side-row"></div>
+      </div>
+      <div class="cv-main">
+        <div class="cv-main-head"><span class="cv-main-title"></span><span class="cv-pill"></span></div>
+        <div class="cv-row"><i class="a"></i><i class="b"></i></div>
+        <div class="cv-row"><i class="a" style="width:44mm"></i><i class="b"></i></div>
+        <div class="cv-row"><i class="a" style="width:56mm"></i><i class="b"></i></div>
+        <div class="cv-row"><span class="cv-bar"><span></span></span></div>
+      </div>
+    </div>
   </div>
-  <div class="lang">Predstavitev in navodila za uporabo &mdash; slovenska izdaja.</div>
+  <div class="cv-foot"><span>Aleks Marinič &middot; github.com/Linux-Alex/Nesva</span><span>Slovenska izdaja</span></div>
 </div>
-<div class="kicker">Slovensko</div>
+<div class="page-break"></div>
 <h1 class="section">Kaj je Nesva in komu je namenjena</h1>
 <p class="lead">Nesva je namizna aplikacija za dva različna, a sorodna opravila: <b>arhiviranje</b> datotek v shrambo v oblaku in <b>varnostno kopiranje</b> z različicami. Namenoma ju loči, ker sta to dve različni obljubi in ju je nesramno zamenjevati.</p>
 
@@ -157,7 +231,7 @@ tar -xzf nesva-0.6.6-linux-x86_64.tar.gz
 <tr><td><b>Posnetki</b></td><td>Restic posnetki: seznam, preverjanje repozitorija, pravila hrambe.</td></tr>
 <tr><td><b>Obnovi</b></td><td>Vračanje iz arhiva ali iz posnetka, z izbiro pravila prepisovanja.</td></tr>
 <tr><td><b>Aktivnost</b></td><td>Kronologija poslov in dogodkov aplikacije.</td></tr>
-<tr><td><b>Nastavitve (Ctrl+8)</b></td><td>Videz, dnevniki, varnost, mape, vedenje okna, Microsoft 365, zunanja orodja, ozadni agent, posodobitve.</td></tr>
+<tr><td><b>Nastavitve (Ctrl+9)</b></td><td>Videz, dnevniki, varnost, mape, vedenje okna, Microsoft 365, zunanja orodja, ozadni agent, posodobitve.</td></tr>
 </table>
 
 <h2>3. Zunanja orodja: Rclone in Restic</h2>

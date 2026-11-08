@@ -16,7 +16,7 @@ Start here:
 
 1. Start the application: `nesva` (`--gui-selftest <dir>` renders every page headlessly and
    exits, which is how the UI is verified in CI).
-2. Browse the eight pages from the sidebar (Ctrl+1 to Ctrl+8): Dashboard, Jobs, Storage, Archive,
+2. Browse the nine pages from the sidebar (Ctrl+1 to Ctrl+9): Dashboard, Jobs, Storage, Archive,
    Snapshots, Restore, Activity, Settings.
 3. Create **archive** jobs (copy files, destination stays browsable) and **backup** jobs (Restic
    snapshots, encrypted and versioned), on a manual or scheduled trigger, with exclusions,

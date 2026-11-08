@@ -189,7 +189,7 @@ void MainWindow::buildUi() {
         pages_.at(row)->refresh();
     });
 
-    // Keyboard navigation: Ctrl+1 .. Ctrl+8 jump straight to a page.
+    // Keyboard navigation: Ctrl+1 .. Ctrl+9 jump straight to a page.
     for (int index = 0; index < pages_.size() && index < 9; ++index) {
         auto* shortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+%1").arg(index + 1)), this);
         connect(shortcut, &QShortcut::activated, this, [this, index] { selectPage(index); });

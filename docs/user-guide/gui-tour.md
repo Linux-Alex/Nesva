@@ -12,7 +12,7 @@ scrolls, so a small window never hides a control.
 
 ## The five-minute path
 
-1. **Settings (Ctrl+8) -> External tools -> Install Rclone...** - review the shown steps, press
+1. **Settings (Ctrl+9) -> External tools -> Install Rclone...** - review the shown steps, press
    Install, wait for "Installed rclone 1.75.2 at ...". Close the dialog.
 2. **Backup Jobs (Ctrl+2) -> New job...** - Mode **Archive**, pick a folder, pick a destination
    folder, tick *Verify checksums*, **Save**.
