@@ -168,7 +168,7 @@ tr:nth-child(even) td { background: #fbfdfe; }
     <ul class="cv-points">
     <li><b>Dve obljubi, jasno ločeni.</b> Arhiv je kopija, ki jo berete kjerkoli. Varnostna kopija so šifrirane različice, ki jih obnovite kadar koli.</li>
     <li><b>Pošta kot arhiv.</b> Microsoft 365 pošta se izvozi v datoteke .eml, berljive brez najema licence.</li>
-    <li><b>Teče brez odprtega okna.</b> Razporede izvaja ozadni agent, tudi ko je aplikacija zaprta.</li>
+    <li><b>Teče brez odprtega okna.</b> Razporede izvaja zaledni agent, tudi ko je aplikacija zaprta.</li>
     </ul>
     <div class="cv-specs">
     <div class="cv-spec"><span>Verzija</span><b>0.6.6</b></div>
@@ -214,7 +214,7 @@ tr:nth-child(even) td { background: #fbfdfe; }
   <li><b>Pošta kot arhiv.</b> Microsoft 365 pošto izvozi v datoteke <code>.eml</code> — berljive, prenosljive, neodvisne od najema licence.</li>
   <li><b>Brez skrivnosti v ukazih in dnevnikih.</b> Gesla in žetoni živijo v sistemskem shrambi poverilnic, dnevniki pa so pred izpisom redigirani.</li>
   <li><b>Brez presenečenj.</b> Nesva nikoli ne izbriše vira, ne sinhronizira v obe smeri in ne piše v mapo, ki pripada drugemu poslu.</li>
-  <li><b>Izvaja se brez odprtega okna.</b> Razporede izvaja ozadni agent, tudi ko je aplikacija zaprta.</li>
+  <li><b>Izvaja se brez odprtega okna.</b> Razporede izvaja zaledni agent, tudi ko je aplikacija zaprta.</li>
 </ul>
 
 <div class="box">
@@ -296,7 +296,7 @@ sha256sum -c SHA256SUMS-linux.txt</pre>
 <tr><td><b>Posnetki</b></td><td>Restic posnetki: seznam, preverjanje repozitorija, pravila hrambe.</td></tr>
 <tr><td><b>Obnovi</b></td><td>Vračanje iz arhiva ali iz posnetka, z izbiro pravila prepisovanja.</td></tr>
 <tr><td><b>Aktivnost</b></td><td>Kronologija poslov in dogodkov aplikacije.</td></tr>
-<tr><td><b>Nastavitve (Ctrl+9)</b></td><td>Videz, dnevniki, varnost, mape, vedenje okna, Microsoft 365, zunanja orodja, ozadni agent, posodobitve.</td></tr>
+<tr><td><b>Nastavitve (Ctrl+9)</b></td><td>Videz, dnevniki, varnost, mape, vedenje okna, Microsoft 365, zunanja orodja, zaledni agent, posodobitve.</td></tr>
 </table>
 <div class="shots">
   <div class="col"><img class="shot" src="img/crop-1-dashboard.png" alt="Nesva dashboard"><div class="shot-cap">Nadzorna plošča: stanje shramb, zadnji posli in opozorila na enem mestu.</div></div>
@@ -365,7 +365,7 @@ nesva-cli mail sync vas@example.com --to ~/Arhiv/Posta</pre>
 
 <h2>8. Razporedi, agent in samodejni zagon</h2>
 <p>Razporede izvaja <code>nesva-agent</code>, ločen proces brez okna. Zato posli tečejo tudi, ko je okno zaprto, in se nadaljujejo po neuspeli noči (nadoknaditev zamujenih terminov, ponovni poskusi z naraščajočim razmikom, največje trajanje posla).</p>
-<p><b>Nastavitve → Ozadni agent</b> ponuja <i>Zaženi agenta</i>, <i>Ustavi agenta</i>, <i>Namesti samodejni zagon</i> in <i>Odstrani samodejni zagon</i>.</p>
+<p><b>Nastavitve → Zaledni agent</b> ponuja <i>Zaženi agenta</i>, <i>Ustavi agenta</i>, <i>Namesti samodejni zagon</i> in <i>Odstrani samodejni zagon</i>.</p>
 <ul>
 <li><b>Windows:</b> vnos v <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code> — brez PowerShell-a, brez načrtovanega opravila, brez dviga pravic, zato deluje tudi pod skupinskimi pravilniki, ki blokirajo skripte.</li>
 <li><b>Linux:</b> uporabniška enota systemd (<code>nesva-agent.service</code>), ki teče v vaši seji in zato vidi vaše poverilnice.</li>
@@ -429,7 +429,7 @@ nesva-cli update --install      <span class="c"># prenesi, preveri, ustavi agent
 <tr><td><code>repository init | info | check | locks | unlock</code></td><td>Restic repozitorij.</td></tr>
 <tr><td><code>snapshots list</code>, <code>backup restore</code></td><td>Posnetki in obnovitev.</td></tr>
 <tr><td><code>retention preview | apply</code></td><td>Pravila hrambe: najprej predogled, nato uveljavitev.</td></tr>
-<tr><td><code>schedule list</code>, <code>agent status | run | cancel | reload | stop</code></td><td>Razporedi in nadzor ozadnega agenta.</td></tr>
+<tr><td><code>schedule list</code>, <code>agent status | run | cancel | reload | stop</code></td><td>Razporedi in nadzor zalednega agenta.</td></tr>
 <tr><td><code>tools rclone | restic [--install]</code></td><td>Predogled in namestitev zunanjih orodij.</td></tr>
 <tr><td><code>update [--install]</code></td><td>Preverjanje in namestitev posodobitve.</td></tr>
 </table>
@@ -442,7 +442,7 @@ nesva-cli jobs run 1 --quiet &amp;&amp; nesva-cli jobs run 2 --quiet &amp;&amp; 
 <tr><td>Shramba je označena kot <i>potrebna ponovna overitev</i></td><td>Shramba → Nastavi / ponovno overi; pri iCloudu vnesite svežo kodo za dvostopenjsko overitev.</td></tr>
 <tr><td>Na voljo ni prostora</td><td>Nesva se ustavi pred pisanjem; počistite shrambo ali izberite drugo pot.</td></tr>
 <tr><td>Datoteke so preskočene kot <i>označevalec v oblaku</i></td><td>V Raziskovalcu datotek izberite <i>Vedno hrani na tej napravi</i>, nato posel zaženite znova.</td></tr>
-<tr><td>Agent po ponovnem zagonu ni aktiven</td><td>Nastavitve → Ozadni agent → <i>Namesti samodejni zagon</i>, nato <i>Zaženi agenta</i>.</td></tr>
+<tr><td>Agent po ponovnem zagonu ni aktiven</td><td>Nastavitve → Zaledni agent → <i>Namesti samodejni zagon</i>, nato <i>Zaženi agenta</i>.</td></tr>
 <tr><td>Kaj se je zgodilo ponoči</td><td>Stran <b>Aktivnost</b> ali <code>nesva-cli history list</code>; dnevnik je v mapi <code>logs</code>.</td></tr>
 <tr><td>Dvom o okolju</td><td><code>nesva-cli doctor</code> pove, kaj manjka, in izpiše, kot kdo teče Nesva.</td></tr>
 </table>
@@ -453,7 +453,7 @@ nesva-cli jobs run 1 --quiet &amp;&amp; nesva-cli jobs run 2 --quiet &amp;&amp; 
 <li><b>Nastavitve &rarr; Zunanja orodja</b> &mdash; namestite Rclone in Restic (predogled, nato namestitev).</li>
 <li><b>Shramba &rarr; Nastavi / ponovno overi</b> &mdash; povežite cilj: iCloud, Backblaze B2 ali zunanji disk.</li>
 <li><b>Posli kopiranja &rarr; Nov posel</b> &mdash; en arhiv za Namizje, Dokumente in Prenose; prvi zagon zaženite ročno.</li>
-<li><b>Nastavitve &rarr; Ozadni agent</b> &mdash; <i>Namesti samodejni zagon</i>, nato <i>Zaženi agenta</i>.</li>
+<li><b>Nastavitve &rarr; Zaledni agent</b> &mdash; <i>Namesti samodejni zagon</i>, nato <i>Zaženi agenta</i>.</li>
 <li><b>Po enem tednu</b> &mdash; obnovite nekaj datotek, da veste, da postopek deluje. Varnostna kopija, ki je niste nikoli obnovili, je le upanje.</li>
 </ol>
 <div class="box"><p><b>Kaj Nesva ne dela:</b> ne sinhronizira v obe smeri, ne briše virov, ne ponuja spletnega dostopa do vaših datotek, ne šifrira arhiva (šifriranje prinaša Restic) in ne nadzoruje, kaj ponudnik počne s podatki. To so omejitve, ne podrobnosti.</p></div>
