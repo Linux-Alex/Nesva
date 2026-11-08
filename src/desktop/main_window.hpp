@@ -29,7 +29,11 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit MainWindow(AppContext& context, QWidget* parent = nullptr);
+    /// \param backgroundChecks false makes the constructor skip network work (the
+    ///          release check, agent polling). The GUI self-test sets it: a test
+    ///          must not depend on a network or wait for an HTTP timeout.
+    explicit MainWindow(AppContext& context, bool backgroundChecks = true,
+                        QWidget* parent = nullptr);
     ~MainWindow() override;
 
     int pageCount() const { return static_cast<int>(pages_.size()); }
@@ -66,6 +70,8 @@ private:
     /// Reads the release service once per start (rate-limited) and notifies when a
     /// newer version is published. Enabled by default; see Settings -> Updates.
     void checkForUpdatesOnStart();
+
+
     void notify(const QString& title, const QString& message);
     bool notificationsEnabled() const;
     bool minimizeToTrayEnabled() const;
@@ -79,6 +85,8 @@ private:
     void saveWindowState();
 
     AppContext& context_;
+    /// False in the GUI self-test: no release check, no network waits.
+    bool backgroundChecks_ = true;
     QListWidget* navigation_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     QLabel* applicationTitle_ = nullptr;

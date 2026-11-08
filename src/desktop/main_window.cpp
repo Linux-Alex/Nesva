@@ -68,8 +68,8 @@ QIcon tintedGlyph(Glyph glyph, const QPalette& palette) {
 
 } // namespace
 
-MainWindow::MainWindow(AppContext& context, QWidget* parent)
-    : QMainWindow(parent), context_(context) {
+MainWindow::MainWindow(AppContext& context, bool backgroundChecks, QWidget* parent)
+    : QMainWindow(parent), context_(context), backgroundChecks_(backgroundChecks) {
     setWindowTitle(QString::fromUtf8(kApplicationName));
     setWindowIcon(applicationIcon());
     setMinimumSize(940, 620);
@@ -81,7 +81,9 @@ MainWindow::MainWindow(AppContext& context, QWidget* parent)
     buildStatusBar();
     buildTray();
     restoreWindowState();
-    checkForUpdatesOnStart();
+    if (backgroundChecks_) {
+        checkForUpdatesOnStart();
+    }
 
     refreshAll();
 
@@ -415,6 +417,9 @@ void MainWindow::notify(const QString& title, const QString& message) {
 }
 
 void MainWindow::checkForUpdatesOnStart() {
+    if (!backgroundChecks_) {
+        return;
+    }
     config::SettingsStore settings(context_.database());
     const bool enabled =
         settings.getBoolean(QString::fromUtf8(config::keys::kUpdateCheckOnStart), true)

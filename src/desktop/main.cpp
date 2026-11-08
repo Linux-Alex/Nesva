@@ -188,7 +188,9 @@ int main(int argc, char** argv) {
 
     nesva::ui::applyTheme(application, context.themeMode());
 
-    nesva::ui::MainWindow window(context);
+    // The GUI self-test must not depend on the network: a release check that times
+    // out would keep the process alive long after the screenshots were taken.
+    nesva::ui::MainWindow window(context, /*backgroundChecks=*/!options.selfTest);
     QObject::connect(&context, &nesva::ui::AppContext::themeModeChanged, &window,
                      &nesva::ui::MainWindow::applyTheme);
     QObject::connect(
