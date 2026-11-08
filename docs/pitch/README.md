@@ -1,11 +1,12 @@
 # Nesva presentation & tutorial
 
-Two documents, one per language:
+Three documents, one per language:
 
 | File | Language | Pages |
 | --- | --- | --- |
 | `Nesva-0.6.6-SL.pdf` | Slovenian | 10 |
 | `Nesva-0.6.6-EN.pdf` | English | 10 |
+| `Nesva-0.6.6-DE.pdf` | German | 11 |
 
 Each one is a pitch followed by a complete tutorial: what Nesva is and what archive mode and
 backup mode promise, installation on Windows and Linux, where the release lives on GitHub (with a
@@ -21,6 +22,9 @@ google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
   --print-to-pdf=Nesva-0.6.6-SL.pdf Nesva-0.6.6-SL.html
 google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
   --print-to-pdf=Nesva-0.6.6-EN.pdf Nesva-0.6.6-EN.html
+
+google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
+  --print-to-pdf=Nesva-0.6.6-DE.pdf Nesva-0.6.6-DE.html
 ```
 
 A4 page size, print colours, margins and page breaks are in the embedded stylesheet, so any

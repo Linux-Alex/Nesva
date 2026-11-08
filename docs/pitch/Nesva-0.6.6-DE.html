@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Nesva 0.6.6 — Archivierung und Sicherung (deutsche Ausgabe)</title>
+<style>
+@page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+@page :first { margin: 0; }
+:root {
+  --ink: #16222b; --muted: #5b6b78; --line: #dde5ea;
+  --brand: #0f3d5c; --accent: #0f8a6a; --warn: #b4690e; --bg: #f3f7f9;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+  font-size: 10.2pt; line-height: 1.5; color: var(--ink); margin: 0;
+  -weasy-hyphens: none;
+}
+h1, h2, h3, h4 { color: var(--brand); line-height: 1.2; margin: 0 0 .35em 0; page-break-after: avoid; }
+h1 { font-size: 19pt; margin-top: 0; letter-spacing: -.2px; }
+h1.section { border-bottom: 2.5px solid var(--accent); padding-bottom: .25em; margin-bottom: .8em; }
+h2 { font-size: 13.5pt; margin-top: 1.5em; }
+h3 { font-size: 11.4pt; margin-top: 1.1em; color: #14506f; }
+p, ul, ol, table { margin: 0 0 .7em 0; }
+ul, ol { padding-left: 1.25em; }
+li { margin-bottom: .22em; }
+a { color: #0b5d86; text-decoration: none; }
+code, pre { font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; }
+code { background: #eef3f6; padding: .08em .3em; border-radius: 3px; font-size: 9.2pt; }
+pre { background: #0f2632; color: #e8f1f4; padding: .7em .9em; border-radius: 6px; font-size: 8.6pt;
+      line-height: 1.42; overflow-wrap: break-word; white-space: pre-wrap; page-break-inside: avoid; margin: .4em 0 .9em; }
+pre .c { color: #8fb3c4; }
+table { width: 100%; border-collapse: collapse; font-size: 9.4pt; page-break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: .38em .55em; vertical-align: top; text-align: left; }
+th { background: var(--bg); color: var(--brand); font-weight: 600; }
+tr:nth-child(even) td { background: #fbfdfe; }
+.lead { font-size: 11pt; color: #24404f; }
+.muted { color: var(--muted); }
+.tag { display: inline-block; font-size: 8pt; letter-spacing: .06em; text-transform: uppercase;
+       color: var(--accent); border: 1px solid var(--accent); border-radius: 99px; padding: .12em .6em; margin-right: .35em; }
+.box { background: var(--bg); border-left: 3px solid var(--accent); padding: .7em .9em; border-radius: 0 6px 6px 0; margin: .6em 0 1em; page-break-inside: avoid; }
+.box.warn { border-left-color: var(--warn); background: #fdf6ec; }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+.grid { display: table; width: 100%; border-spacing: 8px 0; margin-bottom: .6em; }
+.grid > div { display: table-cell; width: 50%; vertical-align: top; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: .7em .85em; background: #fff; }
+.card h4 { margin: 0 0 .3em; font-size: 10.4pt; }
+.card p { margin: 0; font-size: 9.4pt; color: #33454f; }
+.kicker { color: var(--accent); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; font-size: 8.4pt; }
+.page-break { page-break-before: always; }
+.avoid { page-break-inside: avoid; }
+.toc { columns: 2; column-gap: 26px; font-size: 10pt; }
+.toc ol { margin: 0; padding-left: 1.1em; }
+.toc li { margin-bottom: .3em; }
+.foot { margin-top: 1.6em; padding-top: .6em; border-top: 1px solid var(--line); font-size: 8.6pt; color: var(--muted); }
+
+/* cover v2: light, structured, product-card feel */
+.cv { height: 297mm; width: 210mm; position: relative; overflow: hidden; background: #ffffff; }
+.cv-wash { position: absolute; top: -40mm; right: -50mm; width: 190mm; height: 190mm;
+  background: radial-gradient(closest-side, rgba(15,138,106,.16), rgba(15,61,92,.10) 55%, rgba(255,255,255,0) 72%); }
+.cv-dots { position: absolute; left: 0; bottom: 0; width: 120mm; height: 90mm;
+  background-image: radial-gradient(rgba(15,61,92,.16) 1.1px, transparent 1.1px);
+  background-size: 6mm 6mm; opacity: .55; }
+.cv-rule { position: absolute; left: 0; top: 0; width: 100%; height: 6mm;
+  background: linear-gradient(90deg, #0f3d5c 0%, #0f8a6a 62%, #7fd8bd 100%); }
+.cv-inner { position: relative; padding: 26mm 20mm 0; }
+.cv-brand { display: flex; align-items: center; gap: 3.4mm; margin-bottom: 16mm; }
+.cv-mark { width: 11mm; height: 11mm; border-radius: 3mm; background: #0f3d5c; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 15pt; font-weight: 700;
+  letter-spacing: -.5px; }
+.cv-brand-name { font-size: 13pt; font-weight: 700; color: #0f3d5c; letter-spacing: -.2px; }
+.cv-brand-sub { font-size: 8.6pt; color: #6b8190; letter-spacing: .16em; text-transform: uppercase; }
+.cv-eyebrow { font-size: 8.8pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+  color: #0f8a6a; margin-bottom: 5mm; }
+.cv-title { font-size: 52pt; line-height: 1.02; letter-spacing: -2.2px; color: #0f2c3d; margin: 0 0 6mm; }
+.cv-title em { font-style: normal; color: #0f8a6a; }
+.cv-lead { font-size: 13.5pt; line-height: 1.45; color: #33454f; max-width: 138mm; margin: 0 0 9mm; }
+.cv-points { list-style: none; padding: 0; margin: 0 0 11mm; max-width: 145mm; }
+.cv-points li { position: relative; padding-left: 7mm; margin-bottom: 3.2mm; font-size: 10.4pt; color: #2b3d47; }
+.cv-points li:before { content: ""; position: absolute; left: 0; top: 1.6mm; width: 3.2mm; height: 3.2mm;
+  border-radius: 1mm; background: #0f8a6a; opacity: .85; }
+.cv-points b { color: #0f2c3d; }
+.cv-specs { display: flex; gap: 3mm; flex-wrap: wrap; margin-bottom: 12mm; }
+.cv-spec { border: 1px solid #dbe6ec; border-radius: 2.4mm; padding: 2.2mm 3.4mm; background: #fbfdfe; }
+.cv-spec span { display: block; font-size: 7.6pt; letter-spacing: .12em; text-transform: uppercase; color: #7c8f9c; }
+.cv-spec b { font-size: 10pt; color: #0f2c3d; font-weight: 600; }
+.cv-foot { position: absolute; left: 20mm; right: 20mm; bottom: 10mm; font-size: 8.8pt; color: #6b8190;
+  border-top: 1px solid #e4ecf1; padding-top: 3mm; display: flex; justify-content: space-between; }
+
+/* css-drawn app window */
+.cv-app { position: absolute; left: 20mm; right: 20mm; bottom: 24mm; border-radius: 4mm; overflow: hidden;
+  border: 1px solid #dbe6ec; box-shadow: 0 14mm 26mm rgba(15,61,92,.13); background: #fff; height: 62mm; }
+.cv-app-bar { height: 7mm; background: #f6fafc; border-bottom: 1px solid #e8f0f4; display: flex;
+  align-items: center; gap: 1.8mm; padding: 0 3.6mm; }
+.cv-dot { width: 2.4mm; height: 2.4mm; border-radius: 50%; background: #d7e3ea; }
+.cv-app-body { display: table; width: 100%; height: 55mm; }
+.cv-side { display: table-cell; width: 42mm; background: #0f3d5c; padding: 4mm 3.6mm; vertical-align: top; }
+.cv-side-row { height: 2.6mm; border-radius: 1mm; background: rgba(255,255,255,.22); margin-bottom: 2.6mm; }
+.cv-side-row.on { background: #6fd3b4; width: 78%; }
+.cv-side-row.short { width: 62%; }
+.cv-main { display: table-cell; padding: 4.4mm 5mm; vertical-align: top; background: #fff; }
+.cv-main-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4mm; }
+.cv-main-title { height: 3.2mm; width: 46mm; border-radius: 1mm; background: #dbe6ec; }
+.cv-pill { height: 4.2mm; width: 20mm; border-radius: 99px; background: rgba(15,138,106,.16); }
+.cv-row { height: 6.4mm; border-bottom: 1px solid #eef4f7; display: flex; align-items: center; gap: 3mm; }
+.cv-row i { display: block; height: 2.4mm; border-radius: 1mm; background: #e3ebf0; }
+.cv-row i.a { width: 52mm; } .cv-row i.b { width: 18mm; background: #eef4f7; }
+.cv-bar { height: 2.6mm; border-radius: 99px; background: #eaf1f5; position: relative; width: 64mm; }
+.cv-bar span { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 99px;
+  background: linear-gradient(90deg, #0f8a6a, #6fd3b4); }
+
+/* screenshots */
+.shots { display: table; width: 100%; border-spacing: 0; margin: .5em 0 .2em; page-break-inside: avoid; }
+.shots .col { display: table-cell; width: 50%; vertical-align: top; }
+.shots .col:first-child { padding-right: 3mm; }
+.shot { width: 100%; border: 1px solid #dbe6ec; border-radius: 2.4mm; display: block; }
+.shot-cap { font-size: 8.4pt; color: #6b8190; margin: .5em 0 1.4em; }
+.shot-wide { width: 100%; border: 1px solid #dbe6ec; border-radius: 2.4mm; display: block; margin: .7em 0 .2em; }
+.cv-mark svg { width: 100%; height: 100%; display: block; border-radius: 3mm; }
+
+/* github release sketch */
+.gh { border: 1px solid #dbe6ec; border-radius: 3mm; overflow: hidden; background: #fff;
+      box-shadow: 0 5mm 12mm rgba(15,61,92,.10); margin: .8em 0 .6em; page-break-inside: avoid; }
+.gh-bar { background: #f4f8fa; border-bottom: 1px solid #e6eef3; padding: 2.2mm 3mm; display: flex; align-items: center; gap: 2mm; }
+.gh-dot { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: #d5e2e9; }
+.gh-url { flex: 1; margin-left: 2mm; background: #fff; border: 1px solid #e2ebf0; border-radius: 99px;
+          padding: 1.2mm 3mm; font-size: 8pt; color: #4b6472; font-family: "DejaVu Sans Mono", monospace; }
+.gh-body { padding: 4mm 4.5mm 4.5mm; }
+.gh-head { display: flex; align-items: baseline; gap: 2.5mm; margin-bottom: 3mm; }
+.gh-pill { font-size: 7.4pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+           color: #0f6b52; background: rgba(15,138,106,.14); border-radius: 99px; padding: .3em .8em; }
+.gh-title { font-size: 11pt; font-weight: 700; color: #0f2c3d; }
+.gh-date { font-size: 8.4pt; color: #8298a6; margin-left: auto; }
+.gh-asset { display: flex; align-items: center; gap: 3mm; border-top: 1px solid #eef4f7; padding: 2.1mm 0; }
+.gh-asset:first-of-type { border-top: 1px solid #e8f0f4; }
+.gh-file { font-family: "DejaVu Sans Mono", monospace; font-size: 8.4pt; color: #1e3644; flex: 1; }
+.gh-size { font-size: 8pt; color: #8298a6; width: 16mm; text-align: right; }
+.gh-chip { font-size: 7.6pt; font-weight: 700; color: #0b6b51; border: 1px solid rgba(15,138,106,.5);
+           background: rgba(15,138,106,.08); border-radius: 99px; padding: .28em .85em; }
+.gh-verify { margin-top: 3mm; font-size: 8.2pt; color: #6b8190; }
+.gh-verify code { font-size: 8pt; }
+</style>
+</head>
+<body>
+<div class="cv">
+  <div class="cv-rule"></div>
+  <div class="cv-wash"></div>
+  <div class="cv-dots"></div>
+  <div class="cv-inner">
+    <div class="cv-brand">
+      <span class="cv-mark"><svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"><defs>
+    <linearGradient id="nesva-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2b6ce8"/>
+      <stop offset="100%" stop-color="#1a3f8f"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" ry="56" fill="url(#nesva-gradient)"/>
+  <path d="M78 178V78h17l66 76V78h17v100h-17l-66-76v76z" fill="#ffffff"/></svg></span>
+      <div>
+        <div class="cv-brand-name">Nesva</div>
+        <div class="cv-brand-sub">Präsentation und Benutzerhandbuch</div>
+      </div>
+    </div>
+    <div class="cv-eyebrow">Archivierung und Sicherung</div>
+    <h1 class="cv-title">Nesva<em>.</em></h1>
+    <p class="cv-lead">Eine Desktop-Anwendung, die Ihre Dateien und Ihre E-Mails in die Cloud bringt &mdash; lesbar und durchsuchbar oder verschlüsselt und mit Versionen.</p>
+    <ul class="cv-points">
+      <li><b>Zwei Zusagen, klar getrennt.</b> Ein Archiv ist eine Kopie, die Sie überall lesen können. Eine Sicherung sind verschlüsselte Versionen, die Sie jederzeit wiederherstellen können.</li>
+      <li><b>E-Mail als Archiv.</b> Microsoft-365-Postfächer werden als .eml-Dateien exportiert, die auch ohne Lizenz lesbar bleiben.</li>
+      <li><b>Läuft ohne offenes Fenster.</b> Zeitpläne führt ein Hintergrunddienst aus, auch wenn die Anwendung geschlossen ist.</li>
+    </ul>
+    <div class="cv-specs">
+      <div class="cv-spec"><span>Version</span><b>0.6.6</b></div>
+      <div class="cv-spec"><span>Plattformen</span><b>Windows und Linux</b></div>
+      <div class="cv-spec"><span>Lizenz</span><b>Apache-2.0</b></div>
+      <div class="cv-spec"><span>Basis</span><b>C++20 + Qt 6</b></div>
+    </div>
+  </div>
+  <div class="cv-app">
+    <div class="cv-app-bar"><span class="cv-dot"></span><span class="cv-dot"></span><span class="cv-dot"></span></div>
+    <div class="cv-app-body">
+      <div class="cv-side">
+        <div class="cv-side-row on"></div><div class="cv-side-row"></div><div class="cv-side-row short"></div>
+        <div class="cv-side-row"></div><div class="cv-side-row short"></div><div class="cv-side-row"></div>
+      </div>
+      <div class="cv-main">
+        <div class="cv-main-head"><span class="cv-main-title"></span><span class="cv-pill"></span></div>
+        <div class="cv-row"><i class="a"></i><i class="b"></i></div>
+        <div class="cv-row"><i class="a" style="width:44mm"></i><i class="b"></i></div>
+        <div class="cv-row"><i class="a" style="width:56mm"></i><i class="b"></i></div>
+        <div class="cv-row"><span class="cv-bar"><span></span></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="cv-foot"><span>Aleks Marinič &middot; github.com/Linux-Alex/Nesva</span><span>Deutsche Ausgabe</span></div>
+</div>
+<div class="page-break"></div><h1 class="section">Was Nesva ist und für wen es gedacht ist</h1>
+<p class="lead">Nesva ist eine Desktop-Anwendung für zwei verwandte, aber unterschiedliche Aufgaben: das <b>Archivieren</b> von Dateien in Cloud-Speicher und das <b>Sichern</b> mit Versionen. Sie trennt beides bewusst, weil es zwei verschiedene Versprechen sind und es unredlich wäre, sie zu vermischen.</p>
+
+<div class="grid">
+<div class="card"><h4>Archiv (eine Kopie)</h4><p>Dateien werden in den Speicher kopiert (iCloud, Google Drive, pCloud, B2, NAS) und bleiben dort lesbar. Sie öffnen sie in der Weboberfläche des Anbieters oder auf dem Telefon &mdash; ohne Nesva und ohne Spezialwerkzeug.</p></div>
+<div class="card"><h4>Sicherung (Versionen)</h4><p>Restic schreibt verschlüsselte Snapshots. Jeder Snapshot ist ein vollständiger Zustand, den Sie jederzeit wiederherstellen können &mdash; auch nach versehentlichem Löschen oder einem Erpressungstrojaner. Eine Aufbewahrungsregel bestimmt, was bleibt.</p></div>
+</div>
+
+<h2>Warum überhaupt</h2>
+<ul>
+  <li><b>Zwei Arten von Speicher, ein Werkzeug.</b> Für „ich habe eine Kopie in iCloud“ und für „ich habe eine wiederherstellbare Version von letzter Woche“.</li>
+  <li><b>E-Mail als Archiv.</b> Microsoft-365-Post wird als <code>.eml</code> exportiert &mdash; lesbar, portabel, unabhängig von einer Lizenz.</li>
+  <li><b>Keine Geheimnisse in Befehlen oder Protokollen.</b> Passwörter und Tokens liegen im Anmeldeinformationsspeicher des Systems; Protokolle werden vor dem Schreiben bereinigt.</li>
+  <li><b>Keine Überraschungen.</b> Nesva löscht niemals eine Quelle, synchronisiert nicht in beide Richtungen und schreibt nicht in ein Ziel, das zu einem anderen Auftrag gehört.</li>
+  <li><b>Läuft ohne Fenster.</b> Zeitpläne führt ein Hintergrunddienst aus, auch bei geschlossener Anwendung.</li>
+</ul>
+
+<div class="box">
+<p><b>Das Prinzip hinter dem Code:</b> Nesva ist der Transporteur, nie der Eigentümer. Ihre Dateien bleiben Ihre &mdash; in der Cloud in einer Form, die der Anbieter versteht, und am ursprünglichen Ort.</p>
+</div>
+
+<h2>Inhalt</h2>
+<div class="toc"><ol>
+<li>Was Nesva ist und für wen es gedacht ist</li>
+<li>Installation (Windows, Linux)</li>
+<li>Erster Start und das Fenster</li>
+<li>Externe Werkzeuge: Rclone und Restic</li>
+<li>Speicher: lokaler Ordner und Clouds</li>
+<li>Ein Archivauftrag (Dateien und Ordner)</li>
+<li>Versionierte Sicherungen</li>
+<li>Microsoft 365: E-Mail archivieren</li>
+<li>Zeitpläne, Hintergrunddienst und Autostart</li>
+<li>Wiederherstellen und Durchsuchen</li>
+<li>Wartung und Prüfung</li>
+<li>Updates</li>
+<li>Sicherheit und Datenschutz</li>
+<li>Kommandozeile (CLI) &mdash; Übersicht</li>
+<li>Fehlerbehebung</li>
+</ol></div>
+<h2>1. Installation</h2>
+<h3>Windows</h3>
+<p>Laden Sie <code>nesva-0.6.6-windows-x86_64-setup.exe</code> von GitHub Releases und starten Sie es. Die Installation erfolgt nach <code>%LOCALAPPDATA%\Programs\Nesva</code>, für einen Benutzer, <b>ohne Administratorrechte</b> und ohne UAC-Abfrage. Eine Verknüpfung im Startmenü wird angelegt, ein Eintrag unter „Apps und Features“ erscheint.</p>
+<p>Wer es portabel mag: <code>nesva-0.6.6-windows-x86_64.zip</code> entpacken, irgendwo ablegen und <code>nesva.exe</code> starten. Qt und die Compiler-Laufzeit sind enthalten, es muss nichts weiter installiert werden.</p>
+<h3>Linux</h3>
+<pre><span class="c"># Debian / Ubuntu - empfiehlt rclone und restic</span>
+sudo apt install ./nesva_0.6.6_amd64.deb
+
+<span class="c"># portables Verzeichnis (Qt enthalten, installiert nichts ins System)</span>
+tar -xzf nesva-0.6.6-linux-x86_64.tar.gz
+./nesva-0.6.6-linux-x86_64/bin/nesva</pre>
+<p>Das Paket installiert die gesamte Anwendung in ein eigenes Verzeichnis, <code>/usr/lib/nesva</code>, und legt in <code>/usr/bin</code> nur Verknüpfungen an. Deshalb kann Nesva keine Qt-Anwendungen des Systems stören &mdash; unter KDE und Wayland ist das wichtig.</p>
+<div class="box warn">
+<p><b>Ehrlicher Hinweis:</b> Eine Code-Signierung gibt es noch nicht. Windows SmartScreen warnt beim ersten Start; das ist zu erwarten und ohne Zertifikat nicht abzuschalten. macOS wird nicht unterstützt, weil es nie geprüft wurde.</p>
+</div>
+
+<h3>Wo die Release liegt</h3>
+<p>Alle Releases liegen auf GitHub; kein Konto, kein Zwischenhändler, keine Zahlung. Drei Links genügen:</p>
+<table>
+<tr><th>Was</th><th>Link</th></tr>
+<tr><td>Repository (Code, Dokumentation, Änderungsprotokoll)</td><td><code>github.com/Linux-Alex/Nesva</code></td></tr>
+<tr><td>Alle Releases</td><td><code>github.com/Linux-Alex/Nesva/releases</code></td></tr>
+<tr><td><b>Neueste Release</b> &mdash; dieser Link ändert sich nie</td><td><code>github.com/Linux-Alex/Nesva/releases/latest</code></td></tr>
+</table>
+<p>Jede Release enthält vier Dateien (zwei pro Plattform) und je eine Prüfsummendatei pro Plattform:</p>
+<div class="gh">
+  <div class="gh-bar"><span class="gh-dot"></span><span class="gh-dot"></span><span class="gh-dot"></span>
+    <span class="gh-url">github.com/Linux-Alex/Nesva/releases/latest</span></div>
+  <div class="gh-body">
+    <div class="gh-head"><span class="gh-pill">v0.6.6</span><span class="gh-title">Nesva v0.6.6</span>
+      <span class="gh-date">Assets: 6</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-windows-x86_64-setup.exe</span><span class="gh-size">24,4 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-windows-x86_64.zip</span><span class="gh-size">33,9 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva_0.6.6_amd64.deb</span><span class="gh-size">30,8 MB</span><span class="gh-chip">Download</span></div>
+      <div class="gh-asset"><span class="gh-file">nesva-0.6.6-linux-x86_64.tar.gz</span><span class="gh-size">30,8 MB</span><span class="gh-chip">Download</span></div>
+    <div class="gh-verify">Jede Zeile ist <code>&amp;lt;sha256&amp;gt;  &amp;lt;Dateiname&amp;gt;</code>; <code>SHA256SUMS-windows.txt</code> deckt beide Windows-Dateien ab.</div>
+  </div>
+</div><p>Prüfen Sie die Prüfsumme, bevor Sie etwas starten; unter Linux genügt ein Befehl:</p>
+<pre>curl -LO https://github.com/Linux-Alex/Nesva/releases/latest/download/SHA256SUMS-linux.txt
+curl -LO https://github.com/Linux-Alex/Nesva/releases/latest/download/nesva_0.6.6_amd64.deb
+sha256sum -c SHA256SUMS-linux.txt</pre>
+<p>Nesva kennt das selbst: <b>Einstellungen &rarr; Updates &rarr; Jetzt prüfen</b> liest die veröffentlichte Release, <i>Update installieren</i> lädt sie, prüft sie und installiert sie. <code>nesva-cli update</code> und <code>nesva-cli update --install</code> tun dasselbe.</p>
+<h2>2. Erster Start und das Fenster</h2>
+<p>Beim ersten Start legt Nesva seine Datenbank an (<code>%LOCALAPPDATA%\nesva</code> bzw. <code>~/.local/share/nesva</code>) und öffnet das <b>Dashboard</b>. Navigation links, Ereignisprotokoll unten, Statusleiste oben mit der Anzeige des Hintergrunddienstes.</p>
+<table>
+<tr><th>Seite</th><th>Wofür</th></tr>
+<tr><td><b>Dashboard</b></td><td>Zustand der Speicher, letzte Aufträge, Größen, Warnungen.</td></tr>
+<tr><td><b>Sicherungsaufträge</b></td><td>Auftragsliste mit <i>Neuer Auftrag</i>, <i>Bearbeiten</i>, <i>Jetzt ausführen</i>, <i>Abbrechen</i>, <i>Verlauf</i>.</td></tr>
+<tr><td><b>Speicher</b></td><td>Lokale Ordner und Remotes; hinzufügen, Verbindung testen, Status der Anmeldedaten.</td></tr>
+<tr><td><b>Archiv-Explorer</b></td><td>Inhalt des Archivs: Pfade, Größen, SHA-256, Prüfstatus.</td></tr>
+<tr><td><b>E-Mail</b></td><td>Microsoft-365-Konten, Ordner mit Nachrichtenzahl, <i>Schätzen</i>, <i>Synchronisieren</i>.</td></tr>
+<tr><td><b>Snapshots</b></td><td>Restic-Snapshots, Repository prüfen, Aufbewahrungsregel.</td></tr>
+<tr><td><b>Wiederherstellen</b></td><td>Zurückspielen aus Archiv oder Snapshot, mit Überschreibregel.</td></tr>
+<tr><td><b>Aktivität</b></td><td>Chronik aller Aufträge und Anwendungsereignisse.</td></tr>
+<tr><td><b>Einstellungen (Strg+9)</b></td><td>Aussehen, Protokolle, Sicherheit, Orte, Fensterverhalten, Microsoft 365, externe Werkzeuge, Hintergrunddienst, Updates.</td></tr>
+</table>
+<div class="shots">
+  <div class="col"><img class="shot" src="img/crop-1-dashboard.png" alt="Nesva Dashboard"><div class="shot-cap">Dashboard: Zustand der Speicher, letzte Aufträge und Warnungen an einem Ort.</div></div>
+  <div class="col"><img class="shot" src="img/crop-2-backup-jobs.png" alt="Nesva Sicherungsauftraege"><div class="shot-cap">Sicherungsaufträge: Archive und eine versionierte Sicherung, mit Zeitplan und letztem Ergebnis.</div></div>
+</div>
+<img class="shot-wide" src="img/crop-3-storage.png" alt="Nesva Speicher">
+<div class="shot-cap">Speicher: iCloud, Backblaze B2 und eine externe Festplatte, jeweils mit Verbindungsstatus.</div>
+<h2>3. Externe Werkzeuge: Rclone und Restic</h2>
+<p>Nesva liefert beide Programme nicht mit. Sie installiert sie mit Ihnen gemeinsam, sodass Sie jeden Schritt vorher sehen: Download-Adresse, Prüfsumme, Entpackbefehl, Zielpfad und eine eventuelle Rechteerhöhung.</p>
+<p><b>Einstellungen &rarr; Externe Werkzeuge &rarr;</b> <i>Rclone installieren…</i> und <i>Restic installieren…</i>. Die Installation lädt die offizielle Release über HTTPS, prüft die veröffentlichte SHA-256 und entpackt erst dann eine einzige Datei in Ihr eigenes Verzeichnis &mdash; ohne Passwort.</p>
+<pre>nesva-cli tools restic        <span class="c"># nur Vorschau</span>
+nesva-cli tools restic --install
+nesva-cli tools rclone --install --system  <span class="c"># alle Benutzer, pkexec wird gefragt</span></pre>
+<h2>4. Speicher: lokaler Ordner und Clouds</h2>
+<p><b>Speicher</b> kennt zwei Arten von Zielen: einen lokalen Ordner (externe Festplatte, NAS, andere Partition) und ein Remote, das Rclone ausführt. Ein Remote wird durch den <i>Namen</i>, den Rclone bereits kennt, und ein Basisverzeichnis darin beschrieben.</p>
+<table>
+<tr><th>Feld</th><th>Bedeutung</th></tr>
+<tr><td>Name des Remotes</td><td>Zum Beispiel <code>icloud</code>, <code>b2kraken</code>, <code>gdrive</code>, <code>pcloud</code>.</td></tr>
+<tr><td>Basisverzeichnis</td><td>Zum Beispiel <code>Nesva/Archive</code>. Darin legt Nesva Unterordner pro Auftrag an.</td></tr>
+<tr><td>Anzeigename</td><td>Wie Sie den Speicher in Aufträgen nennen.</td></tr>
+</table>
+<p>Das Einrichten des Remotes ist eingebaut: <b>Speicher &rarr; Konfigurieren / neu anmelden …</b> öffnet links eine Anbieter-Anleitung (iCloud Drive, Google Drive, pCloud, Backblaze B2, OneDrive, WebDAV/NAS) und rechts eine laufende <code>rclone config</code>-Sitzung. Das Apple-ID-Passwort und der Zwei-Faktor-Code gehen direkt an Rclone; Nesva speichert sie nicht.</p>
+<div class="box"><p><b>Wichtig:</b> Vor jedem Auftrag prüft Nesva den Zugriff auf das Ziel. Ist die Sitzung abgelaufen, markiert es den Speicher als <i>Anmeldung erforderlich</i> und stoppt den Auftrag mit einer klaren Meldung &mdash; statt an jeder Datei einzeln zu scheitern.</p></div>
+<h2>5. Ein Archivauftrag (Dateien und Ordner)</h2>
+<p><b>Sicherungsaufträge &rarr; Neuer Auftrag</b>, dann das Formular ausfüllen:</p>
+<table>
+<tr><th>Feld</th><th>Wert / Bedeutung</th></tr>
+<tr><td>Name</td><td>Etwas, das Ihnen in einem Jahr noch etwas sagt.</td></tr>
+<tr><td>Modus</td><td><b>Archiv &mdash; Dateien kopieren, keine Versionen</b>.</td></tr>
+<tr><td>Inhalt</td><td><b>Dateien und Ordner</b>.</td></tr>
+<tr><td>Quellen</td><td>Ein oder mehrere Ordner (Desktop, Dokumente, Downloads).</td></tr>
+<tr><td>Ziel</td><td>Ein Speicher aus der Liste plus optionales Unterverzeichnis.</td></tr>
+<tr><td>Ausschlüsse</td><td>Ein Muster pro Zeile: <code>*.tmp</code>, <code>build/**</code>, <code>Thumbs.db</code>.</td></tr>
+<tr><td>Prüfsummen prüfen</td><td>Liest jede hochgeladene Datei erneut und vergleicht sie.</td></tr>
+<tr><td>Bandbreitenlimit</td><td>KiB/s, damit ein Auftrag nicht die ganze Leitung belegt.</td></tr>
+<tr><td>Wiederholung</td><td>Täglich, wöchentlich oder monatlich, mit Uhrzeit und Zeitzone.</td></tr>
+</table>
+<p>Der erste Lauf überträgt alles; jeder weitere ist <b>inkrementell</b>: Nesva vergleicht mit der Liste der bereits übertragenen Dateien und sendet nur neue oder geänderte. Bei Rclone geschieht das als eine Übertragung pro Quellordner &mdash; ein Vielfaches schneller als Datei für Datei.</p>
+<div class="box"><p><b>Was Nesva ablehnt:</b> ein Ziel, das bereits die Ausgabe eines anderen Auftrags enthält; eine Quelle, die dem Ziel entspricht oder darin liegt; ein Ziel ohne freien Platz (es warnt und schlägt einen anderen Pfad oder Anbieter vor).</p></div>
+<h2>6. Versionierte Sicherungen</h2>
+<p>Gleiches Formular, aber <b>Modus: Sicherung</b>. Dann erscheinen die Restic-Felder:</p>
+<ul>
+<li><b>Repository</b> &mdash; ein Ordner oder Remote, in dem Restic liegt (zum Beispiel <code>icloud:Nesva/Restic</code>).</li>
+<li><b>Passwort</b> &mdash; liegt im Anmeldeinformationsspeicher des Systems (Windows Credential Manager, Linux Secret Service). Restic erhält es über eine temporäre Datei, die sofort gelöscht wird; auf einer Kommandozeile erscheint es nie.</li>
+<li><b>Aufbewahrung</b> &mdash; zum Beispiel 7 täglich, 4 wöchentlich, 12 monatlich. Die Wirkung lässt sich <i>vorher ansehen</i>, bevor sie angewendet wird.</li>
+<li><b>Nach der Sicherung prüfen</b> &mdash; führt <code>restic check</code> aus.</li>
+</ul>
+<pre>nesva-cli repository init 3            <span class="c"># Passwort speichern, restic init</span>
+nesva-cli snapshots list 3
+nesva-cli retention preview 3         <span class="c"># was die Regel entfernen würde</span>
+nesva-cli retention apply 3 --prune
+nesva-cli repository check 3 --read-data 5%</pre>
+<h2>7. Microsoft 365: E-Mail archivieren</h2>
+<p>E-Mail wird als weitere Quelle behandelt, nicht als Anhang. Die Anwendung wird in Entra ID als <i>öffentlicher Client</i> registriert (ohne Geheimnis), mit der Weiterleitung <code>http://localhost</code>, den delegierten Berechtigungen <b>Mail.Read</b> und <b>User.Read</b> sowie der Zustimmung eines Administrators.</p>
+<p><b>Einstellungen &rarr; Microsoft 365</b>: Mandanten-ID, Client-ID und den Ordner für <code>.eml</code>-Dateien eintragen. Dann <b>Verbinden …</b>, im Browser anmelden und auf der Seite <b>E-Mail</b> die Ordner wählen.</p>
+<pre>nesva-cli mail connect --account sie@example.com --tenant TENANT --client CLIENT
+nesva-cli mail folders sie@example.com
+nesva-cli mail estimate sie@example.com     <span class="c"># Anzahl und Zeitschätzung</span>
+nesva-cli mail sync sie@example.com --to ~/Archiv/Post</pre>
+<p>Die Synchronisierung ist inkrementell (Graph Delta): jeder Lauf überträgt nur neue Post. Während des Exports sehen Sie Prozent, Rate und Restzeit. Für ein Archiv in der Cloud legen Sie einen zweiten Auftrag mit <b>Inhalt: Microsoft-365-Postfach</b> und einem Cloud-Ziel an.</p>
+<h2>8. Zeitpläne, Hintergrunddienst und Autostart</h2>
+<p>Zeitpläne führt <code>nesva-agent</code> aus, ein eigener Prozess ohne Fenster. Aufträge laufen daher auch bei geschlossenem Fenster und überstehen eine schlechte Nacht: verpasste Termine werden nachgeholt, Fehler mit wachsendem Abstand wiederholt, eine maximale Laufzeit wird erzwungen.</p>
+<p><b>Einstellungen &rarr; Hintergrunddienst</b> bietet <i>Dienst starten</i>, <i>Dienst stoppen</i>, <i>Autostart einrichten</i> und <i>Autostart entfernen</i>.</p>
+<ul>
+<li><b>Windows:</b> ein Eintrag in <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code> &mdash; kein PowerShell, keine geplante Aufgabe, keine Rechteerhöhung; funktioniert daher auch unter Gruppenrichtlinien, die Skripte blockieren.</li>
+<li><b>Linux:</b> eine systemd-Benutzereinheit (<code>nesva-agent.service</code>), die in Ihrer Sitzung läuft und deshalb Ihre Anmeldedaten sieht.</li>
+<li><b>Tray:</b> Das Fenster selbst kann bei der Anmeldung im Infobereich starten (<code>nesva --tray</code>), getrennt vom Dienst.</li>
+</ul>
+<pre>nesva-cli agent status
+nesva-cli agent run 1        <span class="c"># Dienst bitten, einen Auftrag zu starten</span>
+nesva-cli agent stop
+nesva-cli schedule list</pre>
+<h2>9. Wiederherstellen und Durchsuchen</h2>
+<p>Der <b>Archiv-Explorer</b> zeigt, was ein Auftrag enthält: Pfad, Größe, SHA-256 und ob die Datei nach dem Hochladen geprüft wurde. <b>Wiederherstellen</b> schreibt eine Auswahl in einen Zielordner, mit einer Regel für bereits vorhandene Dateien (überspringen, überschreiben, umbenennen).</p>
+<pre>nesva-cli archive list 1
+nesva-cli archive restore 1 --to /media/platte/zurueck --policy skip
+nesva-cli verify 1                          <span class="c"># veröffentlichte Dateien erneut prüfen</span>
+
+<span class="c"># aus einer verschlüsselten Sicherung</span>
+nesva-cli backup restore 3 --snapshot latest --to /media/platte/zurueck</pre>
+<p>Ein Archiv lässt sich auch ohne Nesva wiederherstellen: Dateien liegen im Speicher in ihrer normalen Form, Post als <code>.eml</code>, das jeder Mail-Client öffnet.</p>
+<h2>10. Wartung und Prüfung</h2>
+<pre>nesva-cli doctor            <span class="c"># Umgebung, Datenbank, Platz, Werkzeuge, Benutzerkontext</span>
+nesva-cli status            <span class="c"># Zustand der Speicher und letzte Aufträge</span>
+nesva-cli history list --limit 10
+nesva-cli repository check 3 --read-data 5%
+nesva-cli repository unlock 3              <span class="c"># veraltete Sperren entfernen</span>
+nesva-cli maintenance                      <span class="c"># Aufräumen und Zusammenfassung</span></pre>
+<p>Empfohlener Rhythmus: einmal im Monat <code>verify</code> für ein Archiv, einmal im Monat <code>repository check</code> für eine Sicherung und mindestens zweimal im Jahr eine Probewiederherstellung einiger Dateien. Eine Sicherung, die nie wiederhergestellt wurde, ist nur eine Hoffnung.</p>
+<h2>11. Updates</h2>
+<p>Nesva aktualisiert sich selbst über GitHub Releases und prüft die Prüfsumme vor der Installation.</p>
+<ul>
+<li><b>Beim Start</b> (standardmäßig aktiv): eine Prüfung alle sechs Stunden; gibt es eine neuere Version, erscheint ein Hinweis im Infobereich.</li>
+<li><b>Automatisch, wöchentlich</b> (standardmäßig aktiv): Sonntags um <b>18:00 Europe/Ljubljana</b> lädt der Dienst herunter, prüft, beendet sich und das Fenster und führt die Installation still aus.</li>
+<li><b>Von Hand:</b> <b>Einstellungen &rarr; Updates &rarr;</b> <i>Jetzt prüfen</i> und <i>Update installieren</i>.</li>
+<li>Vorabversionen und Tags mit der Endung <code>-candidate</code> werden nie automatisch installiert.</li>
+</ul>
+<pre>nesva-cli update                <span class="c"># was verfügbar ist</span>
+nesva-cli update --install      <span class="c"># laden, prüfen, Dienst stoppen, installieren</span></pre>
+<h2>12. Sicherheit und Datenschutz</h2>
+<table>
+<tr><th>Bereich</th><th>Umsetzung</th></tr>
+<tr><td>Geheimnisse</td><td>Das Microsoft-365-Refresh-Token und das Restic-Passwort liegen im Anmeldeinformationsspeicher des Systems; in Konfigurationsdateien, Protokollen oder Kommandozeilen stehen sie nicht.</td></tr>
+<tr><td>Protokolle</td><td>Alles läuft vor dem Schreiben durch einen Filter: registrierte Geheimnisse, <code>key=value</code>, Bearer/Basic-Header, PEM-Schlüssel, JWT-förmige Tokens.</td></tr>
+<tr><td>Rechte</td><td>Alles läuft als angemeldeter Benutzer. Wird Nesva von einem Dienstkonto gestartet (SYSTEM, LocalService, NetworkService, root), lehnt der Auftrag ab &mdash; sonst würde das falsche Profil archiviert.</td></tr>
+<tr><td>Befehle</td><td>Keine Shell: jedes externe Programm erhält genau den Argumentvektor, den die Vorschau zeigt.</td></tr>
+<tr><td>Quellen</td><td>Werden nie gelöscht, verschoben oder umbenannt. Dateien, die nur als Cloud-Platzhalter existieren, werden übersprungen, damit Nesva sie nicht unbemerkt herunterlädt.</td></tr>
+<tr><td>Netzwerk</td><td>Keine Telemetrie. Automatisch passiert nur die Update-Prüfung und die von Ihnen eingerichtete Synchronisierung.</td></tr>
+</table>
+<h2>13. Kommandozeile (CLI) &mdash; Übersicht</h2>
+<p><code>nesva-cli</code> deckt alles ab, was das Fenster kann, plus Automatisierung. <code>--json</code> liefert maschinenlesbare Ausgabe, die Exit-Codes sind stabil (0 Erfolg, 1 Nutzungsfehler, 2 Laufzeitfehler, 3 nicht gefunden, 4 nicht umgesetzt).</p>
+<table>
+<tr><th>Befehl</th><th>Zweck</th></tr>
+<tr><td><code>status</code>, <code>doctor</code></td><td>Überblick und Diagnose der Umgebung.</td></tr>
+<tr><td><code>jobs list | run | cancel</code></td><td>Aufträge auflisten, sofort starten (auch <code>--dry-run</code>), abbrechen.</td></tr>
+<tr><td><code>storage list | test</code></td><td>Speicher und Verbindungstest.</td></tr>
+<tr><td><code>archive list | restore</code></td><td>Inhalt des Archivs und Wiederherstellung.</td></tr>
+<tr><td><code>verify</code>, <code>history list</code></td><td>Veröffentlichte Dateien erneut prüfen, Laufhistorie.</td></tr>
+<tr><td><code>mail connect | accounts | folders | estimate | sync | status</code></td><td>Microsoft 365 von der ersten Anmeldung bis zum Export.</td></tr>
+<tr><td><code>repository init | info | check | locks | unlock</code></td><td>Restic-Repository.</td></tr>
+<tr><td><code>snapshots list</code>, <code>backup restore</code></td><td>Snapshots und Wiederherstellung.</td></tr>
+<tr><td><code>retention preview | apply</code></td><td>Aufbewahrung: erst ansehen, dann anwenden.</td></tr>
+<tr><td><code>schedule list</code>, <code>agent status | run | cancel | reload | stop</code></td><td>Zeitpläne und Steuerung des Hintergrunddienstes.</td></tr>
+<tr><td><code>tools rclone | restic [--install]</code></td><td>Vorschau und Installation der externen Werkzeuge.</td></tr>
+<tr><td><code>update [--install]</code></td><td>Update prüfen und installieren.</td></tr>
+</table>
+<pre><span class="c"># ein typisches Wochenszenario in einer einzigen geplanten Aufgabe</span>
+nesva-cli jobs run 1 --quiet &amp;&amp; nesva-cli jobs run 2 --quiet &amp;&amp; nesva-cli verify 1</pre>
+<h2>14. Fehlerbehebung</h2>
+<table>
+<tr><th>Symptom</th><th>Was tun</th></tr>
+<tr><td>Speicher als <i>Anmeldung erforderlich</i> markiert</td><td>Speicher &rarr; Konfigurieren / neu anmelden; bei iCloud einen frischen Zwei-Faktor-Code eingeben.</td></tr>
+<tr><td>Kein Platz mehr</td><td>Nesva stoppt vor dem Schreiben; Platz schaffen oder anderen Pfad bzw. Anbieter wählen.</td></tr>
+<tr><td>Dateien als <i>Cloud-Platzhalter</i> übersprungen</td><td>Im Dateimanager <i>Immer auf diesem Gerät behalten</i> wählen, dann den Auftrag erneut starten.</td></tr>
+<tr><td>Dienst läuft nach einem Neustart nicht</td><td>Einstellungen &rarr; Hintergrunddienst &rarr; <i>Autostart einrichten</i>, dann <i>Dienst starten</i>.</td></tr>
+<tr><td>Was ist letzte Nacht passiert</td><td>Seite <b>Aktivität</b> oder <code>nesva-cli history list</code>; das Protokoll liegt im Ordner <code>logs</code>.</td></tr>
+<tr><td>Unsicherheit über die Umgebung</td><td><code>nesva-cli doctor</code> meldet, was fehlt, und als welcher Benutzer Nesva läuft.</td></tr>
+</table>
+
+<div class="box"><p><b>Was Nesva nicht tut:</b> Es synchronisiert nicht in beide Richtungen, löscht keine Quellen, bietet keinen Web-Zugriff auf Ihre Dateien, verschlüsselt kein Archiv (Verschlüsselung bringt Restic mit) und kontrolliert nicht, was ein Anbieter mit den Daten tut. Das sind Grenzen, keine Kleinigkeiten.</p></div>
+<h2>Nächste Schritte</h2>
+<p>Fünf Schritte, die sich direkt nach der Installation lohnen:</p>
+<ol>
+<li><b>Einstellungen &rarr; Externe Werkzeuge</b> &mdash; Rclone und Restic installieren (Vorschau, dann Installation).</li>
+<li><b>Speicher &rarr; Konfigurieren / neu anmelden</b> &mdash; das Ziel verbinden: iCloud, Backblaze B2 oder eine externe Festplatte.</li>
+<li><b>Sicherungsaufträge &rarr; Neuer Auftrag</b> &mdash; ein Archiv für Desktop, Dokumente und Downloads; einmal von Hand starten.</li>
+<li><b>Einstellungen &rarr; Hintergrunddienst</b> &mdash; <i>Autostart einrichten</i>, dann <i>Dienst starten</i>.</li>
+<li><b>Nach einer Woche</b> &mdash; einige Dateien wiederherstellen, damit Sie wissen, dass der Weg funktioniert. Eine Sicherung, die nie wiederhergestellt wurde, ist nur eine Hoffnung.</li>
+</ol>
+<div class="foot">
+Nesva 0.6.6 &middot; Apache-2.0 &middot; C++20 + Qt 6 Widgets &middot; Windows x86_64 und Linux x86_64 &middot;
+Autor Aleks Marinič &middot; github.com/Linux-Alex/Nesva &middot; Rclone und Restic sind eigenständige Programme, die Sie selbst installieren und die vor der Nutzung geprüft werden.
+</div>
+</body>
+</html>
