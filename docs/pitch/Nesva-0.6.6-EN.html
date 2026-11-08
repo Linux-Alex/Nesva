@@ -108,6 +108,15 @@ tr:nth-child(even) td { background: #fbfdfe; }
 .cv-bar { height: 2.6mm; border-radius: 99px; background: #eaf1f5; position: relative; width: 64mm; }
 .cv-bar span { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 99px;
   background: linear-gradient(90deg, #0f8a6a, #6fd3b4); }
+
+/* screenshots */
+.shots { display: table; width: 100%; border-spacing: 0; margin: .5em 0 .2em; page-break-inside: avoid; }
+.shots .col { display: table-cell; width: 50%; vertical-align: top; }
+.shots .col:first-child { padding-right: 3mm; }
+.shot { width: 100%; border: 1px solid #dbe6ec; border-radius: 2.4mm; display: block; }
+.shot-cap { font-size: 8.4pt; color: #6b8190; margin: .5em 0 1.4em; }
+.shot-wide { width: 100%; border: 1px solid #dbe6ec; border-radius: 2.4mm; display: block; margin: .7em 0 .2em; }
+.cv-mark svg { width: 100%; height: 100%; display: block; border-radius: 3mm; }
 </style>
 </head>
 <body>
@@ -118,7 +127,14 @@ tr:nth-child(even) td { background: #fbfdfe; }
   <div class="cv-dots"></div>
   <div class="cv-inner">
     <div class="cv-brand">
-      <span class="cv-mark">N</span>
+      <span class="cv-mark"><svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"><defs>
+    <linearGradient id="nesva-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2b6ce8"/>
+      <stop offset="100%" stop-color="#1a3f8f"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" ry="56" fill="url(#nesva-gradient)"/>
+  <path d="M78 178V78h17l66 76V78h17v100h-17l-66-76v76z" fill="#ffffff"/></svg></span>
       <div>
         <div class="cv-brand-name">Nesva</div>
         <div class="cv-brand-sub">Pitch and user guide</div>
@@ -225,6 +241,13 @@ tar -xzf nesva-0.6.6-linux-x86_64.tar.gz
 <tr><td><b>Activity</b></td><td>Timeline of jobs and application events.</td></tr>
 <tr><td><b>Settings (Ctrl+9)</b></td><td>Appearance, logging, safety, locations, window behaviour, Microsoft 365, external tools, background agent, updates.</td></tr>
 </table>
+<div class="shots">
+  <div class="col"><img class="shot" src="img/crop-1-dashboard.png" alt="Nesva dashboard"><div class="shot-cap">Dashboard: storage state, recent jobs and warnings in one place.</div></div>
+  <div class="col"><img class="shot" src="img/crop-2-backup-jobs.png" alt="Nesva backup jobs"><div class="shot-cap">Backup Jobs: archives and a versioned backup, with schedule and last result.</div></div>
+</div>
+<img class="shot-wide" src="img/crop-3-storage.png" alt="Nesva storage">
+<div class="shot-cap">Storage: iCloud, Backblaze B2 and an external disk, each with its connection state.</div>
+
 
 <h2>3. External tools: Rclone and Restic</h2>
 <p>Nesva ships neither program. It installs them with you watching: download URL, checksum, unpack command, target path and any elevation are shown before anything happens.</p>
