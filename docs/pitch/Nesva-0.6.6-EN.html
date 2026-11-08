@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="sl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Nesva 0.6.6 — arhiviranje in varnostne kopije / archiving and backups</title>
+<title>Nesva 0.6.6 — archiving and backups (English edition)</title>
 <style>
 @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
 @page :first { margin: 0; }
@@ -71,239 +71,22 @@ tr:nth-child(even) td { background: #fbfdfe; }
 <body>
 
 <div class="cover">
-  <div class="kicker">Arhiviranje in varnostne kopije / Archiving and backups</div>
+  <div class="kicker">Archiving and backups</div>
   <h1>Nesva</h1>
-  <div class="sub">Namizna aplikacija, ki vaše datoteke in pošto spravi v oblak — berljivo in razumljivo, ali pa šifrirano in različicam prijazno.</div>
+  <div class="sub">A desktop application that gets your files and your mail into the cloud &mdash; readable and browsable, or encrypted and versioned.</div>
   <div class="rule"></div>
   <div class="meta">
-    <b>Verzija / Version:</b> 0.6.6<br>
-    <b>Avtor / Author:</b> Aleks Marinič<br>
-    <b>Repozitorij / Repository:</b> github.com/Linux-Alex/Nesva<br>
-    <b>Licenca / Licence:</b> Apache-2.0<br>
-    <b>Platforme / Platforms:</b> Windows x86_64 · Linux x86_64
+    <b>Version:</b> 0.6.6<br>
+    <b>Author:</b> Aleks Marinič<br>
+    <b>Repository:</b> github.com/Linux-Alex/Nesva<br>
+    <b>Licence:</b> Apache-2.0<br>
+    <b>Platforms:</b> Windows x86_64 &middot; Linux x86_64
   </div>
   <div class="badges">
-    <span>C++20 + Qt 6 Widgets</span><span>Rclone</span><span>Restic</span><span>SQLite</span><span>Brez oblaka kot posrednika / no cloud middleman</span>
+    <span>C++20 + Qt 6 Widgets</span><span>Rclone</span><span>Restic</span><span>SQLite</span><span>No cloud middleman</span>
   </div>
-  <div class="lang">Ta dokument je dvojezičen: najprej slovensko, nato v angleščini.<br>This document is bilingual: Slovenian first, then English.</div>
+  <div class="lang">Pitch and user guide &mdash; English edition.</div>
 </div>
-<div class="page-break"></div>
-<div class="kicker">Slovensko</div>
-<h1 class="section">Kaj je Nesva in komu je namenjena</h1>
-<p class="lead">Nesva je namizna aplikacija za dva različna, a sorodna opravila: <b>arhiviranje</b> datotek v shrambo v oblaku in <b>varnostno kopiranje</b> z različicami. Namenoma ju loči, ker sta to dve različni obljubi in ju je nesramno zamenjevati.</p>
-
-<div class="grid">
-<div class="card"><h4>Arhiv (kopija)</h4><p>Datoteke se prekopirajo v shrambo (iCloud, Google Drive, pCloud, B2, NAS …) in tam ostanejo berljive. Odprete jih lahko v spletnem vmesniku ponudnika ali na telefonu, brez Nesve in brez posebnega orodja.</p></div>
-<div class="card"><h4>Varnostna kopija (različice)</h4><p>Restic ustvari šifrirane posnetke stanja. Vsak posnetek je celota, ki jo lahko obnovite kadar koli, tudi po pomotoma izbrisani datoteki ali po okužbi z izsiljevalskim virusom. Pravila hrambe odločijo, kaj ostane.</p></div>
-</div>
-
-<h2>Zakaj bi jo uporabili</h2>
-<ul>
-  <li><b>Dve vrsti shranjevanja, eno orodje.</b> Za »imam kopijo v iCloudu« in za »imam obnovljivo verzijo od prejšnjega tedna«.</li>
-  <li><b>Pošta kot arhiv.</b> Microsoft 365 pošto izvozi v datoteke <code>.eml</code> — berljive, prenosljive, neodvisne od najema licence.</li>
-  <li><b>Brez skrivnosti v ukazih in dnevnikih.</b> Gesla in žetoni živijo v sistemskem shrambi poverilnic, dnevniki pa so pred izpisom redigirani.</li>
-  <li><b>Brez presenečenj.</b> Nesva nikoli ne izbriše vira, ne sinhronizira v obe smeri in ne piše v mapo, ki pripada drugemu poslu.</li>
-  <li><b>Izvaja se brez odprtega okna.</b> Razporede izvaja ozadni agent, tudi ko je aplikacija zaprta.</li>
-</ul>
-
-<div class="box">
-<p><b>Načelo, ki se ga drži vsa koda:</b> Nesva je prevoznik, ne lastnik. Vaše datoteke ostanejo vaše, v oblaku v obliki, ki jo razume ponudnik, in v izvirniku tam, kjer so bile.</p>
-</div>
-
-<h2>Kazalo — slovenski del</h2>
-<div class="toc"><ol>
-<li>Kaj je Nesva in komu je namenjena</li>
-<li>Namestitev (Windows, Linux)</li>
-<li>Prvi zagon in pregled okna</li>
-<li>Zunanja orodja: Rclone in Restic</li>
-<li>Shramba: lokalna mapa in oblaki</li>
-<li>Arhivski posel (datoteke in mape)</li>
-<li>Varnostna kopija z različicami</li>
-<li>Microsoft 365: arhiv pošte</li>
-<li>Razporedi, agent in samodejni zagon</li>
-<li>Obnavljanje in pregledovanje arhiva</li>
-<li>Vzdrževanje in preverjanje</li>
-<li>Posodobitve</li>
-<li>Varnost in zasebnost</li>
-<li>Ukazna vrstica (CLI) — pregled</li>
-<li>Odpravljanje težav</li>
-</ol></div>
-
-<h2>1. Namestitev</h2>
-<h3>Windows</h3>
-<p>Prenesite <code>nesva-0.6.6-windows-x86_64-setup.exe</code> z GitHub Releases in ga zaženite. Namesti se v <code>%LOCALAPPDATA%\Programs\Nesva</code>, za enega uporabnika, <b>brez skrbniških pravic</b> in brez sistema UAC. V mapi Start se pojavi bližnjica, v »Aplikacije in funkcije« pa je vpis za odstranitev.</p>
-<p>Če vam je ljubša prenosna različica, vzemite <code>nesva-0.6.6-windows-x86_64.zip</code>, ga razpakirajte kamor koli in zaženite <code>nesva.exe</code>. Qt in prevedeno okolje sta priložena, zato ni potrebnih dodatnih namestitev.</p>
-<h3>Linux</h3>
-<pre><span class="c"># Debian / Ubuntu — priporoča rclone in restic</span>
-sudo apt install ./nesva_0.6.6_amd64.deb
-
-<span class="c"># prenosna različica (Qt je priložen, ničesar ne namesti v sistem)</span>
-tar -xzf nesva-0.6.6-linux-x86_64.tar.gz
-./nesva-0.6.6-linux-x86_64/bin/nesva</pre>
-<p>Paket namesti vso aplikacijo v zasebno mapo <code>/usr/lib/nesva</code>, v <code>/usr/bin</code> pa so le povezave. Zato Nesva ne vpliva na sistemske Qt aplikacije — kar je za KDE in Wayland pomembno.</p>
-
-<div class="box warn">
-<p><b>Iskrena opomba:</b> podpisi kode še ne obstajajo. Windows SmartScreen bo ob prvem zagonu opozoril; to je pričakovano in ga brez certifikata ni mogoče utišati. macOS ni podprt, ker ni bil nikoli preizkušen.</p>
-</div>
-
-<h2>2. Prvi zagon in pregled okna</h2>
-<p>Ob prvem zagonu Nesva pripravi svojo bazo (<code>%LOCALAPPDATA%\nesva</code> oziroma <code>~/.local/share/nesva</code>) in odpre <b>Nadzorno ploščo</b>. Levo je navigacija, spodaj dnevnik dogodkov, zgoraj vrstica stanja z indikatorjem agenta.</p>
-<table>
-<tr><th>Stran</th><th>Čemu je namenjena</th></tr>
-<tr><td><b>Nadzorna plošča</b></td><td>Stanje shramb, zadnji posli, velikosti, opozorila.</td></tr>
-<tr><td><b>Posli kopiranja</b></td><td>Seznam poslov, gumbi <i>Nov posel</i>, <i>Uredi</i>, <i>Zaženi zdaj</i>, <i>Prekliči</i>, <i>Zgodovina</i>.</td></tr>
-<tr><td><b>Shramba</b></td><td>Lokalne mape in oddaljene shrambe; dodajanje, preizkus povezave, stanje poverilnic.</td></tr>
-<tr><td><b>Raziskovalec arhiva</b></td><td>Kaj je v arhivu: poti, velikosti, SHA-256, stanje preveritve.</td></tr>
-<tr><td><b>Pošta</b></td><td>Računi Microsoft 365, mape s številom sporočil, <i>Oceni</i>, <i>Sinhroniziraj</i>.</td></tr>
-<tr><td><b>Posnetki</b></td><td>Restic posnetki: seznam, preverjanje repozitorija, pravila hrambe.</td></tr>
-<tr><td><b>Obnovi</b></td><td>Vračanje iz arhiva ali iz posnetka, z izbiro pravila prepisovanja.</td></tr>
-<tr><td><b>Aktivnost</b></td><td>Kronologija poslov in dogodkov aplikacije.</td></tr>
-<tr><td><b>Nastavitve (Ctrl+8)</b></td><td>Videz, dnevniki, varnost, mape, vedenje okna, Microsoft 365, zunanja orodja, ozadni agent, posodobitve.</td></tr>
-</table>
-
-<h2>3. Zunanja orodja: Rclone in Restic</h2>
-<p>Nesva teh dveh programov ne priloži. Zato ju namesti z vami vred, tako da vsak korak vidite vnaprej: URL prenosa, kontrolno vsoto, ukaz za razpakiranje, ciljno pot in morebitni dvig pravic.</p>
-<p><b>Nastavitve → Zunanja orodja →</b> <i>Namesti Rclone…</i> in <i>Namesti Restic…</i>. Namestitev prenese uradno izdajo prek HTTPS, preveri objavljeni SHA-256 in šele nato razpakira ter namesti eno samo datoteko. Privzeto v vašo mapo, brez gesla.</p>
-<pre>nesva-cli tools restic        <span class="c"># samo predogled korakov</span>
-nesva-cli tools restic --install
-nesva-cli tools rclone --install --system  <span class="c"># za vse uporabnike, zahteva pkexec</span></pre>
-<h2>4. Shramba: lokalna mapa in oblaki</h2>
-<p>Stran <b>Shramba</b> pozna dve vrsti ciljev: lokalno mapo (zunanji disk, NAS, druga particija) in oddaljeno shrambo, ki jo izvaja Rclone. Za oddaljeno shrambo velja pravilo: <i>ime remota, ki ga pozna Rclone</i>, plus osnovna mapa znotraj njega.</p>
-<table>
-<tr><th>Polje</th><th>Pomen</th></tr>
-<tr><td>Ime remota</td><td>Na primer <code>icloud</code>, <code>b2kraken</code>, <code>gdrive</code>, <code>pcloud</code>.</td></tr>
-<tr><td>Osnovna mapa</td><td>Na primer <code>Nesva/Archive</code>. Znotraj nje Nesva ustvari podmape po poslih.</td></tr>
-<tr><td>Prikazno ime</td><td>Kako shrambo imenujete v poslih.</td></tr>
-</table>
-<p>Nastavitev remota je vgrajena: <b>Shramba → Nastavi / ponovno overi …</b> odpre vodič za ponudnika (iCloud Drive, Google Drive, pCloud, Backblaze B2, OneDrive, WebDAV/NAS) na levi in živi <code>rclone config</code> na desni. Geslo Apple ID in koda za dvostopenjsko overitev gresta neposredno v Rclone; Nesva ju ne shrani.</p>
-<div class="box"><p><b>Pomembno:</b> pred vsakim poslom Nesva preveri dostop do cilja. Če je seja potekla, shrambo označi kot <i>potrebna je ponovna overitev</i> in posel ustavi z jasnim sporočilom — namesto da bi odpovedala vsaka datoteka posebej.</p></div>
-
-<h2>5. Arhivski posel (datoteke in mape)</h2>
-<p><b>Posli kopiranja → Nov posel</b> in izpolnite obrazec:</p>
-<table>
-<tr><th>Polje</th><th>Vrednost / pomen</th></tr>
-<tr><td>Ime</td><td>Karkoli, kar vam bo čez leto dni še kaj pomenilo.</td></tr>
-<tr><td>Način</td><td><b>Arhiv — kopiraj datoteke, brez različic</b>.</td></tr>
-<tr><td>Vsebina</td><td><b>Datoteke in mape</b>.</td></tr>
-<tr><td>Viri</td><td>Ena ali več map (na primer Namizje, Dokumenti, Prenosi).</td></tr>
-<tr><td>Cilj</td><td>Shramba s seznama in neobvezna podmapa.</td></tr>
-<tr><td>Izključitve</td><td>Vzorec na vrstico: <code>*.tmp</code>, <code>build/**</code>, <code>Thumbs.db</code>.</td></tr>
-<tr><td>Preveri kontrolne vsote</td><td>Po prenosu datoteko še enkrat prebere in primerja.</td></tr>
-<tr><td>Omejitev pasovne širine</td><td>KiB/s, da posel ne požre celotnega omrežja.</td></tr>
-<tr><td>Ponavljanje</td><td>Dnevno, tedensko, mesečno; ura in časovni pas.</td></tr>
-</table>
-<p>Prvi zagon prenese vse; vsak naslednji je <b>prirastni</b>: Nesva primerja s seznamom že prenešenih datotek in pošlje le nove ali spremenjene. Pri Rclone se to zgodi v enem prenosu za celo mapo, kar je nekajkrat hitreje od prenosa datoteke po datoteko.</p>
-<div class="box"><p><b>Kaj Nesva zavrne:</b> cilj, ki že vsebuje rezultat drugega posla; vir, ki je enak cilju ali leži znotraj njega; cilj brez prostora (opozori in predlaga drugo pot ali ponudnika).</p></div>
-
-<h2>6. Varnostna kopija z različicami</h2>
-<p>Isti obrazec, le da izberete <b>Način: Varnostna kopija</b>. Pojavijo se polja za Restic:</p>
-<ul>
-<li><b>Repozitorij</b> — mapa ali oddaljena shramba, kjer živi Restic (na primer <code>icloud:Nesva/Restic</code>).</li>
-<li><b>Geslo</b> — shrani se v sistemsko shrambo poverilnic (Windows Credential Manager, Linux Secret Service). Restic ga dobi prek začasne datoteke, ki se takoj izbriše; nikoli ni v ukazni vrstici.</li>
-<li><b>Hramba</b> — na primer 7 dnevnih, 4 tedenske, 12 mesečnih. Pravilo lahko najprej <i>pregledate</i>, šele nato uveljavite.</li>
-<li><b>Preveri po kopiranju</b> — zažene <code>restic check</code>.</li>
-</ul>
-<pre>nesva-cli repository init 3            <span class="c"># nastavi geslo in restic init</span>
-nesva-cli snapshots list 3
-nesva-cli retention preview 3         <span class="c"># kaj bi pravilo odstranilo</span>
-nesva-cli retention apply 3 --prune
-nesva-cli repository check 3 --read-data 5%</pre>
-
-<h2>7. Microsoft 365: arhiv pošte</h2>
-<p>Pošta je obravnavana kot še en vir, ne kot stranska funkcija. Aplikacijo v Entra ID registrirate kot <i>javnega odjemalca</i> (brez skrivnosti), s preusmeritvijo <code>http://localhost</code>, dovoljenji <b>Mail.Read</b> in <b>User.Read</b> ter soglasjem skrbnika.</p>
-<p><b>Nastavitve → Microsoft 365</b>: vpišete ID najemnika, ID odjemalca in mapo za <code>.eml</code>. Nato <b>Poveži …</b>, prijava v brskalniku in izbira map na strani <b>Pošta</b>.</p>
-<pre>nesva-cli mail connect --account vas@example.com --tenant TENANT --client CLIENT
-nesva-cli mail folders vas@example.com
-nesva-cli mail estimate vas@example.com       <span class="c"># število in ocena časa</span>
-nesva-cli mail sync vas@example.com --to ~/Arhiv/Posta</pre>
-<p>Sinhronizacija je prirastna (Graph delta): vsak zagon prenese le novo pošto. Med izvozom vidite odstotek, hitrost in preostali čas. Za arhiv v oblak ustvarite ločen posel z <b>Vsebina: Microsoft 365 nabiralnik</b> in ciljem v oblaku.</p>
-
-<h2>8. Razporedi, agent in samodejni zagon</h2>
-<p>Razporede izvaja <code>nesva-agent</code>, ločen proces brez okna. Zato posli tečejo tudi, ko je okno zaprto, in se nadaljujejo po neuspeli noči (nadoknaditev zamujenih terminov, ponovni poskusi z naraščajočim razmikom, največje trajanje posla).</p>
-<p><b>Nastavitve → Ozadni agent</b> ponuja <i>Zaženi agenta</i>, <i>Ustavi agenta</i>, <i>Namesti samodejni zagon</i> in <i>Odstrani samodejni zagon</i>.</p>
-<ul>
-<li><b>Windows:</b> vnos v <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code> — brez PowerShell-a, brez načrtovanega opravila, brez dviga pravic, zato deluje tudi pod skupinskimi pravilniki, ki blokirajo skripte.</li>
-<li><b>Linux:</b> uporabniška enota systemd (<code>nesva-agent.service</code>), ki teče v vaši seji in zato vidi vaše poverilnice.</li>
-<li><b>Tray:</b> okno lahko ob prijavi zaženete v sistemski pladenj (<code>nesva --tray</code>), ločeno od agenta.</li>
-</ul>
-<pre>nesva-cli agent status
-nesva-cli agent run 1        <span class="c"># prosi agenta, naj zažene posel</span>
-nesva-cli agent stop
-nesva-cli schedule list</pre>
-<h2>9. Obnavljanje in pregledovanje arhiva</h2>
-<p><b>Raziskovalec arhiva</b> pokaže, kaj posel vsebuje: pot, velikost, SHA-256 in ali je bila datoteka po prenosu preverjena. <b>Obnovi</b> vrne izbrano v ciljno mapo, pri čemer izberete pravilo, če datoteka že obstaja (preskoči, prepiši, preimenuj).</p>
-<pre>nesva-cli archive list 1
-nesva-cli archive restore 1 --to /media/disk/obnova --policy skip
-nesva-cli verify 1                          <span class="c"># ponovno preveri objavljene datoteke</span>
-
-<span class="c"># iz šifrirane varnostne kopije</span>
-nesva-cli backup restore 3 --snapshot latest --to /media/disk/obnova</pre>
-<p>Arhiv lahko obnovite tudi brez Nesve: datoteke so v shrambi v običajni obliki, pošta pa kot <code>.eml</code>, ki se odpre v vsakem poštnem odjemalcu.</p>
-
-<h2>10. Vzdrževanje in preverjanje</h2>
-<pre>nesva-cli doctor            <span class="c"># okolje, baza, prostor, orodja, uporabniški kontekst</span>
-nesva-cli status            <span class="c"># stanje shramb in zadnjih poslov</span>
-nesva-cli history list --limit 10
-nesva-cli repository check 3 --read-data 5%
-nesva-cli repository unlock 3              <span class="c"># odstrani zastarele zaklepe</span>
-nesva-cli maintenance                      <span class="c"># čiščenje in povzetek</span></pre>
-<p>Ritem, ki ga priporočamo: enkrat mesečno <code>verify</code> za arhiv, enkrat mesečno <code>repository check</code> za varnostno kopijo in vsaj dvakrat letno poskusno obnovitev nekaj datotek. Varnostna kopija, ki je niste nikoli obnovili, je le upanje.</p>
-
-<h2>11. Posodobitve</h2>
-<p>Nesva se posodablja sama z GitHub Releases, s preverjanjem kontrolne vsote pred namestitvijo.</p>
-<ul>
-<li><b>Ob zagonu</b> (privzeto vključeno): eno preverjanje na šest ur; če je na voljo novejša različica, se oglasi obvestilo v pladnju.</li>
-<li><b>Samodejno enkrat tedensko</b> (privzeto vključeno): agent v nedeljo ob <b>18.00 po času Europe/Ljubljana</b> prenese, preveri, ustavi sebe in okno ter tiho zažene namestitev.</li>
-<li><b>Ročno:</b> <b>Nastavitve → Posodobitve →</b> <i>Preveri zdaj</i> in <i>Namesti posodobitev</i>.</li>
-<li>Predizdaje in oznake s pripono <code>-candidate</code> se nikoli ne namestijo samodejno.</li>
-</ul>
-<pre>nesva-cli update                <span class="c"># kaj je na voljo</span>
-nesva-cli update --install      <span class="c"># prenesi, preveri, ustavi agenta, namesti</span></pre>
-
-<h2>12. Varnost in zasebnost</h2>
-<table>
-<tr><th>Področje</th><th>Kako je rešeno</th></tr>
-<tr><td>Skrivnosti</td><td>Žeton Microsoft 365 in Restic geslo sta v sistemski shrambi poverilnic; v konfiguracijskih datotekah, dnevnikih in ukazni vrstici jih ni.</td></tr>
-<tr><td>Dnevniki</td><td>Pred izpisom gredo skozi redaktor: registrirane skrivnosti, <code>key=value</code>, glave Bearer/Basic, zasebni ključi PEM, žetoni v obliki JWT.</td></tr>
-<tr><td>Pravice</td><td>Vse teče kot uporabnik, ki je prijavljen. Če Nesvo zažene sistemska storitev (SYSTEM, LocalService, NetworkService, root), posel zavrne, ker bi arhivirala napačen profil.</td></tr>
-<tr><td>Ukazi</td><td>Brez lupine: vsak zunanji program se zažene z argumenti, ki jih vidite v predogledu.</td></tr>
-<tr><td>Viri</td><td>Nikoli se ne brišejo, ne premikajo in ne preimenujejo. Datoteke, ki v oblaku obstajajo le kot označevalci, se preskočijo, da jih Nesva ne bi nehote prenesla.</td></tr>
-<tr><td>Omrežje</td><td>Nesva ne pošilja telemetrije. Edina samodejna omrežna opravila so preverjanje posodobitev in sinhronizacija, ki jo sami nastavite.</td></tr>
-</table>
-
-<h2>13. Ukazna vrstica (CLI) — pregled</h2>
-<p><code>nesva-cli</code> pokriva vse, kar zna okno, plus avtomatizacijo. Z <code>--json</code> dobite strojno berljiv izhod, izhodne kode pa so stabilne (0 uspeh, 1 napaka v uporabi, 2 napaka med izvajanjem, 3 ni najdeno, 4 ni izvedeno).</p>
-<table>
-<tr><th>Ukaz</th><th>Namen</th></tr>
-<tr><td><code>status</code>, <code>doctor</code></td><td>Pregled stanja in diagnostika okolja.</td></tr>
-<tr><td><code>jobs list | run | cancel</code></td><td>Seznam poslov, takojšen zagon (tudi <code>--dry-run</code>), prekinitev.</td></tr>
-<tr><td><code>storage list | test</code></td><td>Shrambe in preizkus povezave.</td></tr>
-<tr><td><code>archive list | restore</code></td><td>Vsebina arhiva in obnovitev.</td></tr>
-<tr><td><code>verify</code>, <code>history list</code></td><td>Preverjanje objavljenih datotek, zgodovina zagonov.</td></tr>
-<tr><td><code>mail connect | accounts | folders | estimate | sync | status</code></td><td>Microsoft 365 od začetka do izvoza.</td></tr>
-<tr><td><code>repository init | info | check | locks | unlock</code></td><td>Restic repozitorij.</td></tr>
-<tr><td><code>snapshots list</code>, <code>backup restore</code></td><td>Posnetki in obnovitev.</td></tr>
-<tr><td><code>retention preview | apply</code></td><td>Pravila hrambe: najprej predogled, nato uveljavitev.</td></tr>
-<tr><td><code>schedule list</code>, <code>agent status | run | cancel | reload | stop</code></td><td>Razporedi in nadzor ozadnega agenta.</td></tr>
-<tr><td><code>tools rclone | restic [--install]</code></td><td>Predogled in namestitev zunanjih orodij.</td></tr>
-<tr><td><code>update [--install]</code></td><td>Preverjanje in namestitev posodobitve.</td></tr>
-</table>
-<pre><span class="c"># tipičen tedenski scenarij v enem samem opravilu cron</span>
-nesva-cli jobs run 1 --quiet &amp;&amp; nesva-cli jobs run 2 --quiet &amp;&amp; nesva-cli verify 1</pre>
-
-<h2>14. Odpravljanje težav</h2>
-<table>
-<tr><th>Simptom</th><th>Kaj storiti</th></tr>
-<tr><td>Shramba je označena kot <i>potrebna ponovna overitev</i></td><td>Shramba → Nastavi / ponovno overi; pri iCloudu vnesite svežo kodo za dvostopenjsko overitev.</td></tr>
-<tr><td>Na voljo ni prostora</td><td>Nesva se ustavi pred pisanjem; počistite shrambo ali izberite drugo pot.</td></tr>
-<tr><td>Datoteke so preskočene kot <i>označevalec v oblaku</i></td><td>V Raziskovalcu datotek izberite <i>Vedno hrani na tej napravi</i>, nato posel zaženite znova.</td></tr>
-<tr><td>Agent po ponovnem zagonu ni aktiven</td><td>Nastavitve → Ozadni agent → <i>Namesti samodejni zagon</i>, nato <i>Zaženi agenta</i>.</td></tr>
-<tr><td>Kaj se je zgodilo ponoči</td><td>Stran <b>Aktivnost</b> ali <code>nesva-cli history list</code>; dnevnik je v mapi <code>logs</code>.</td></tr>
-<tr><td>Dvom o okolju</td><td><code>nesva-cli doctor</code> pove, kaj manjka, in izpiše, kot kdo teče Nesva.</td></tr>
-</table>
-
-<div class="box"><p><b>Kaj Nesva ne dela:</b> ne sinhronizira v obe smeri, ne briše virov, ne ponuja spletnega dostopa do vaših datotek, ne šifrira arhiva (šifriranje prinaša Restic) in ne nadzoruje, kaj ponudnik počne s podatki. To so omejitve, ne podrobnosti.</p></div>
-<div class="page-break"></div>
 <div class="kicker">English</div>
 <h1 class="section">What Nesva is, and who it is for</h1>
 <p class="lead">Nesva is a desktop application for two related but different jobs: <b>archiving</b> files into cloud storage, and <b>backing them up</b> with versions. It keeps those apart on purpose, because they are two different promises and it is dishonest to blur them.</p>

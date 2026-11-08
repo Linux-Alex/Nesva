@@ -1,17 +1,26 @@
-# Nesva presentation & tutorial (bilingual)
+# Nesva presentation & tutorial
 
-`Nesva-0.6.6-SL-EN.pdf` is a 16-page document: a pitch plus a complete tutorial, in Slovenian
-(pages 2-8) followed by English (pages 9-16). It covers what Nesva is, installation on Windows and
-Linux, every GUI page, external tools (Rclone, Restic), storage, archive and backup jobs,
-Microsoft 365 mail, schedules and the background agent, restore, maintenance, updates, security and
-the whole command line.
+Two documents, one per language:
 
-Rebuild after editing `Nesva-0.6.6-SL-EN.html`:
+| File | Language | Pages |
+| --- | --- | --- |
+| `Nesva-0.6.6-SL.pdf` | Slovenian | 8 |
+| `Nesva-0.6.6-EN.pdf` | English | 9 |
+
+Each one is a pitch followed by a complete tutorial: what Nesva is and what archive mode and
+backup mode promise, installation on Windows and Linux, every GUI page, the external tools
+(Rclone, Restic), storage and remotes, archive and versioned backup jobs, Microsoft 365 mail,
+schedules and the background agent, restore, maintenance, updates, security, the whole command
+line, and troubleshooting.
+
+The HTML next to each PDF is the source. Rebuild after editing:
 
 ```bash
 google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
-  --print-to-pdf=Nesva-0.6.6-SL-EN.pdf Nesva-0.6.6-SL-EN.html
+  --print-to-pdf=Nesva-0.6.6-SL.pdf Nesva-0.6.6-SL.html
+google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
+  --print-to-pdf=Nesva-0.6.6-EN.pdf Nesva-0.6.6-EN.html
 ```
 
-The HTML is the source: A4 page size, print colours, margins and page breaks are all in the
-embedded stylesheet, so any Chromium-based browser produces the same document.
+A4 page size, print colours, margins and page breaks are in the embedded stylesheet, so any
+Chromium-based browser produces the same document.
